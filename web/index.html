@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cloudity Maps</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --ink: #e8eef4;
+      --muted: #8b9aab;
+      --accent: #3d9a6a;
+      --panel: rgba(15, 20, 25, 0.88);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+    #map { position: absolute; inset: 0; }
+    .hud {
+      position: absolute; z-index: 1000; left: 12px; right: 12px; top: 12px;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 10px 12px; border-radius: 10px; background: var(--panel);
+      backdrop-filter: blur(8px); max-width: 640px;
+    }
+    .hud h1 { margin: 0; font-size: 1.05rem; font-weight: 650; letter-spacing: 0.02em; }
+    .hud p { margin: 0; font-size: 0.78rem; color: var(--muted); flex: 1 1 100%; }
+    .hud input {
+      flex: 1 1 140px; min-width: 120px; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid #2a3540; background: #1a222b; color: var(--ink);
+    }
+    .hud button {
+      padding: 8px 14px; border: 0; border-radius: 8px; cursor: pointer;
+      background: var(--accent); color: #04140c; font-weight: 600;
+    }
+    .hud button.secondary { background: #2a3540; color: var(--ink); }
+    .status { position: absolute; z-index: 1000; left: 12px; bottom: 24px; right: 12px;
+      max-width: 480px; font-size: 0.8rem; color: var(--muted); background: var(--panel);
+      padding: 8px 12px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="hud">
+    <h1>Cloudity Maps</h1>
+    <p>OSM + OSRM public — prototype. Pas de Waze embarqué.</p>
+    <input id="toLat" type="text" placeholder="lat destination" value="48.8566" />
+    <input id="toLon" type="text" placeholder="lon destination" value="2.3522" />
+    <button type="button" id="btnGo">Itinéraire</button>
+    <button type="button" class="secondary" id="btnHere">Ma position</button>
+  </div>
+  <div class="status" id="status">Cliquez « Ma position » puis « Itinéraire ».</div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
