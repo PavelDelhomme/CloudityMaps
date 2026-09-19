@@ -19,3 +19,13 @@ Portainer (plus tard) : `docker-compose.portainer.yml` → conteneur `hubera-map
 
 Schéma cible : `hubera-maps://navigate?lat=&lon=&label=` (historique `cloudity-maps://` encore documenté).  
 Voir [`docs/deep-links.md`](docs/deep-links.md).
+
+## Portainer
+
+- Stack Git : `hubera-maps`
+- Compose : `docker-compose.portainer.yml`
+- Réseau : `shared-network-copy` (env `NPM_NETWORK`)
+- Env : `.env` local (gitignoré), pas dans Git
+- Updates : `https://hubera.cloud/updates/maps.json`
+
+Ne pas `down -v`. Ne pas fusionner avec Cloudity / PLM / Gasoil / JT.

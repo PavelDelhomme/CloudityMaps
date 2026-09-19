@@ -1,17 +1,29 @@
-# Hubera Maps — nginx statique (Leaflet) sur shared-network-copy.
-# Ne pas down -v. Volume users : aucun.
+# Hubera Portainer Git — unitaire.
+# Stack: hubera-maps
+# Compose: docker-compose.portainer.yml
+# Réseau: ${NPM_NETWORK:-shared-network-copy}
+# Ne jamais: docker compose down -v · Remove volumes · rename stacks users.
 
 services:
-  hubera-maps:
+  web:
     image: nginx:alpine
     container_name: hubera-maps
     restart: unless-stopped
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+      - hubera.slug=maps
+      - hubera.update_channel=maps
     volumes:
       - ./web:/usr/share/nginx/html:ro
+      - hubera-maps-html:/var/cache/nginx
     networks:
       - proxy
+
+volumes:
+  hubera-maps-html:
+    name: hubera-maps-html
 
 networks:
   proxy:
     external: true
-    name: shared-network-copy
+    name: ${NPM_NETWORK:-shared-network-copy}
