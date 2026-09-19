@@ -1,25 +1,21 @@
-# Cloudity Maps
+# Hubera Maps
 
-Produit **cartes / navigation** de la suite Cloudity (OSM, offline-friendly).
+Produit **cartes / navigation** Hubera (OSM, offline-friendly).  
+Repo GitHub historique : `PavelDelhomme/CloudityMaps` (pas de rename GitHub).
 
-- **Pas** de moteur Waze embarqué — deep links optionnels uniquement.
-- Stack / volume **séparés** de GasoilTracking, YTMusic, JobbingTrack.
-- Développé dans ce repo ; intégré à Cloudity via submodule `products/maps`.
+- Stack / volume **séparés** de GasoilTracking, Music, Jobs.
+- Développé ici ; lien Hubera : `products/maps`.
 
 ## MVP web
 
 ```bash
-# Servir le prototype Leaflet + OSRM public
 python3 -m http.server 8765 --directory web
 # → http://127.0.0.1:8765
 ```
 
+Portainer (plus tard) : `docker-compose.portainer.yml` → conteneur `hubera-maps` sur `shared-network-copy`.
+
 ## Deep links
 
-Schéma cible : `cloudity-maps://navigate?lat=&lon=&label=`  
+Schéma cible : `hubera-maps://navigate?lat=&lon=&label=` (historique `cloudity-maps://` encore documenté).  
 Voir [`docs/deep-links.md`](docs/deep-links.md).
-
-## Suite Cloudity
-
-Parent : `PavelDelhomme/Cloudity` → `products/maps` (submodule).  
-Ne pas fusionner les bases / volumes avec Gasoil.

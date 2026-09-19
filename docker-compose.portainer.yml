@@ -1,0 +1,17 @@
+# Hubera Maps — nginx statique (Leaflet) sur shared-network-copy.
+# Ne pas down -v. Volume users : aucun.
+
+services:
+  hubera-maps:
+    image: nginx:alpine
+    container_name: hubera-maps
+    restart: unless-stopped
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: shared-network-copy
