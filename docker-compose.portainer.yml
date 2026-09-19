@@ -6,15 +6,15 @@
 
 services:
   web:
-    image: nginx:alpine
+    build: .
+    image: hubera-maps:local
     container_name: hubera-maps
     restart: unless-stopped
     labels:
-      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.enable=false
       - hubera.slug=maps
       - hubera.update_channel=maps
     volumes:
-      - ./web:/usr/share/nginx/html:ro
       - hubera-maps-html:/var/cache/nginx
     networks:
       - proxy
