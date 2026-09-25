@@ -6,6 +6,7 @@ dist/
 mobile/node_modules/
 mobile/.expo/
 mobile/dist/
+mobile/android/
 apk/app/build/
 apk/.gradle/
 apk/build/
