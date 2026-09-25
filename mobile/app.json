@@ -7,11 +7,11 @@
     "icon": "./assets/icon.png",
     "scheme": "hubera-maps",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1a1a2e"
     },
     "ios": {
       "supportsTablet": true,
@@ -29,7 +29,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#1a73e8"
+        "backgroundColor": "#1a1a2e"
       },
       "package": "ovh.delhomme.maps",
       "permissions": [

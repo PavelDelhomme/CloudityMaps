@@ -78,7 +78,7 @@ let routeGen = 0;
 let routeAbort = null;
 const routeCache = new Map();
 const LAST_ME_KEY = 'hubera-maps-last-me';
-const ID_KEY = 'hubera-maps-id';
+const HUBERA_OWNER = { email: 'paul@delhomme.ovh', name: 'Paul' };
 let appVisible = !document.hidden;
 let idleGeoTimer = 0;
 let musicPollTimer = 0;
@@ -177,90 +177,26 @@ function geoOpts({ accurate, freshMs, timeout }) {
 }
 
 function loadId() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(ID_KEY) || 'null');
-    if (raw && raw.email) return raw;
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
-
-function saveId(id) {
-  if (!id || !id.email) localStorage.removeItem(ID_KEY);
-  else localStorage.setItem(ID_KEY, JSON.stringify(id));
-  paintId();
+  return HUBERA_OWNER;
 }
 
 function paintId() {
-  const id = loadId();
+  const id = HUBERA_OWNER;
   const mail = document.getElementById('drawerMail');
   const who = document.querySelector('.drawer .who');
-  const connectBtn = document.getElementById('btnIdConnect');
   const avatars = [document.getElementById('btnUser'), document.getElementById('drawerAvatar')];
-  if (id) {
-    if (who) who.textContent = id.name || 'Hubera';
-    if (mail) mail.textContent = id.email;
-    const initial = String(id.name || id.email || 'H').trim().charAt(0).toUpperCase();
-    avatars.forEach((a) => {
-      if (a) a.textContent = initial;
-    });
-    if (connectBtn) connectBtn.textContent = 'Déconnecter Hubera ID';
-  } else {
-    if (who) who.textContent = 'Hubera';
-    if (mail) mail.textContent = 'Non connecté';
-    avatars.forEach((a) => {
-      if (a) a.textContent = 'H';
-    });
-    if (connectBtn) connectBtn.textContent = 'Connexion Hubera ID';
-  }
+  if (who) who.textContent = id.name;
+  if (mail) mail.textContent = id.email;
+  avatars.forEach((a) => {
+    if (a) a.textContent = 'P';
+  });
 }
 
-function applyHuberaIdFromParams(p) {
-  const email = (p.get('email') || p.get('huberaUser') || '').trim();
-  if (!email || !email.includes('@')) return false;
-  const name = (p.get('name') || email.split('@')[0] || 'Hubera').trim();
-  saveId({ email, name, at: Date.now() });
+function applyHuberaIdFromParams() {
   return true;
 }
 
-function showIdConnect() {
-  closeDrawer();
-  const current = loadId();
-  if (current) {
-    saveId(null);
-    toast('Hubera ID déconnecté. Tes lieux restent sur cet appareil.');
-    return;
-  }
-  sheetEl.hidden = false;
-  sheetEl.innerHTML =
-    `<strong>Connexion Hubera ID</strong>` +
-    `<span>Opt-in : Maison, Travail et récents restent ici. Pas de SSO forcé.</span>` +
-    `<input id="idEmail" type="email" value="" placeholder="paul@delhomme.ovh" ` +
-    `style="width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid #2d2d44;background:#16213e;color:#f1f5f9;font-size:16px" />` +
-    `<button type="button" class="go" id="btnIdSave">Connecter</button>` +
-    `<button type="button" class="go" id="btnIdOwner" style="margin-top:8px;background:#16213e">Utiliser paul@delhomme.ovh</button>`;
-  const save = (email) => {
-    const em = String(email || '').trim().toLowerCase();
-    if (!em.includes('@')) {
-      toast('Indique un e-mail Hubera ID.');
-      return;
-    }
-    saveId({ email: em, name: em.split('@')[0], at: Date.now() });
-    sheetEl.hidden = true;
-    toast(`Connecté : ${em}`);
-  };
-  document.getElementById('btnIdSave').onclick = () => save(document.getElementById('idEmail').value);
-  document.getElementById('btnIdOwner').onclick = () => save('paul@delhomme.ovh');
-}
-
-window.__mapsApplyAuth = function (qs) {
-  try {
-    applyHuberaIdFromParams(new URLSearchParams(String(qs || '').replace(/^\?/, '')));
-  } catch {
-    /* ignore */
-  }
-};
+window.__mapsApplyAuth = function () {};
 
 function persistMe(lat, lon) {
   lastFixAt = Date.now();
@@ -1268,14 +1204,9 @@ drawer.addEventListener('click', (e) => {
   if (go === 'maps' || go === 'trips' || go === 'saved') setTab(go);
   else if (go === 'fuel') location.href = fuelUrl('maps');
   else if (go === 'music') musicCall('openApp');
-  else if (go === 'id-connect') showIdConnect();
   else if (go === 'account') {
     closeDrawer();
-    if (loadId()) {
-      toast(`Hubera ID : ${loadId().email}`);
-    } else {
-      showIdConnect();
-    }
+    toast('Hubera ID · paul@delhomme.ovh');
   }
   else if (go === 'settings' || go === 'offline') {
     closeDrawer();
@@ -1313,7 +1244,6 @@ document.getElementById('btnFuelTrack').addEventListener('click', () => {
 
 function applyFuelFromQuery() {
   const p = new URLSearchParams(location.search);
-  applyHuberaIdFromParams(p);
   const tripId = p.get('tripId');
   const q = p.get('q') || p.get('label');
   const lat = parseFloat(p.get('lat') || p.get('toLat'));

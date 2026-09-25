@@ -1,0 +1,15 @@
+{
+  "app": "hubera_maps",
+  "slug": "maps",
+  "name": "Hubera Maps",
+  "version": "0.1.11",
+  "versionCode": 13,
+  "min_supported": "0.1.0",
+  "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
+  "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
+  "install": "https://maps.hubera.cloud/install",
+  "mandatory": false,
+  "notes": "Compte principal Paul (paul@delhomme.ovh). Overlay -r, lieux conservés.",
+  "published_at": "2026-09-25T15:30:00+00:00",
+  "sha256": "dcc3af71c2b6d6199d08e27db6bc122dc755d6ee798493e4df2d91cdbe4a0696"
+}

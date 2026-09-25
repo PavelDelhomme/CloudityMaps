@@ -6,6 +6,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.WebChromeClient
@@ -21,6 +27,8 @@ import androidx.core.view.WindowCompat
 class MainActivity : AppCompatActivity() {
     private lateinit var web: WebView
     private lateinit var music: MusicBridge
+
+    private var updateChecked = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,6 +97,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         web.loadUrl(urlFromIntent(intent))
+        Handler(Looper.getMainLooper()).postDelayed({ checkHuberaUpdate() }, 2500)
     }
 
     override fun onResume() {
@@ -175,5 +184,58 @@ class MainActivity : AppCompatActivity() {
         } else {
             "file:///android_asset/index.html"
         }
+    }
+
+    private fun checkHuberaUpdate() {
+        if (updateChecked) return
+        updateChecked = true
+        Thread {
+            val local = runCatching {
+                packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+            }.getOrElse { "0" }
+            val remote = fetchMapsVersion() ?: return@Thread
+            if (!isNewer(remote, local)) return@Thread
+            runOnUiThread {
+                runCatching {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.hubera.cloud/install")),
+                    )
+                }
+            }
+        }.start()
+    }
+
+    private fun fetchMapsVersion(): String? {
+        val urls = arrayOf(
+            "https://maps.hubera.cloud/updates.json",
+            "https://hubera.cloud/updates/maps.json",
+        )
+        for (u in urls) {
+            try {
+                val conn = URL(u).openConnection() as HttpURLConnection
+                conn.connectTimeout = 6000
+                conn.readTimeout = 6000
+                conn.setRequestProperty("Accept", "application/json")
+                conn.inputStream.bufferedReader().use { reader ->
+                    val v = JSONObject(reader.readText()).optString("version")
+                    if (v.isNotBlank()) return v
+                }
+            } catch (_: Throwable) {
+                /* feed suivant */
+            }
+        }
+        return null
+    }
+
+    private fun isNewer(remote: String, local: String): Boolean {
+        val a = remote.split('.').map { it.toIntOrNull() ?: 0 }
+        val b = local.split('.').map { it.toIntOrNull() ?: 0 }
+        val n = maxOf(a.size, b.size)
+        for (i in 0 until n) {
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return false
     }
 }

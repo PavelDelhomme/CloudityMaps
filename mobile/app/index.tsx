@@ -213,11 +213,11 @@ export default function MapScreen() {
           <Marker
             coordinate={{ latitude: dest.latitude, longitude: dest.longitude }}
             title={dest.label}
-            pinColor="#ea4335"
+            pinColor="#e94560"
           />
         ) : null}
         {route ? (
-          <Polyline coordinates={route.coordinates} strokeColor="#1a73e8" strokeWidth={5} />
+          <Polyline coordinates={route.coordinates} strokeColor="#e94560" strokeWidth={5} />
         ) : null}
         {trace.length >= 2 ? (
           <Polyline coordinates={trace} strokeColor="#188038" strokeWidth={4} />
@@ -226,12 +226,12 @@ export default function MapScreen() {
 
       <View style={[styles.searchWrap, { paddingTop: insets.top + 8 }]}>
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#5f6368" />
+            <Ionicons name="search" size={20} color="#e94560" />
           <TextInput
             value={query}
             onChangeText={(t) => void onSearch(t)}
             placeholder="Rechercher ici"
-            placeholderTextColor="#80868b"
+                placeholderTextColor="#64748b"
             style={styles.searchInput}
             returnKeyType="search"
             onSubmitEditing={() => hits[0] && pickHit(hits[0])}
@@ -251,7 +251,7 @@ export default function MapScreen() {
       </View>
 
       <Pressable style={[styles.fab, { bottom: (fuel?.tripId ? 168 : 96) + insets.bottom }]} onPress={goMe}>
-        <Ionicons name="navigate" size={22} color="#1a73e8" />
+        <Ionicons name="navigate" size={22} color="#e94560" />
       </Pressable>
 
       {route && dest ? (
@@ -305,27 +305,29 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#e8eaed' },
+  root: { flex: 1, backgroundColor: '#0f0f1a' },
   searchWrap: { position: 'absolute', left: 12, right: 12, zIndex: 10 },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a2e',
     borderRadius: 28,
     paddingHorizontal: 16,
     height: 48,
     elevation: 4,
     shadowColor: '#000',
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#2d2d44',
   },
-  searchInput: { flex: 1, fontSize: 16, color: '#202124', paddingVertical: 0 },
+  searchInput: { flex: 1, fontSize: 16, color: '#f1f5f9', paddingVertical: 0 },
   hits: {
     marginTop: 8,
     maxHeight: 240,
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a2e',
     borderRadius: 12,
     elevation: 3,
   },
@@ -336,67 +338,69 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e8eaed',
+    borderBottomColor: '#2d2d44',
   },
-  hitText: { flex: 1, color: '#202124', fontSize: 15 },
+  hitText: { flex: 1, color: '#f1f5f9', fontSize: 15 },
   fab: {
     position: 'absolute',
     right: 16,
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a2e',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 4,
     shadowColor: '#000',
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.35,
     shadowRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#2d2d44',
   },
   sheet: {
     position: 'absolute',
     left: 12,
     right: 12,
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a2e',
     borderRadius: 16,
     padding: 14,
     elevation: 4,
   },
-  sheetTitle: { fontSize: 16, fontWeight: '700', color: '#202124' },
-  sheetMeta: { marginTop: 4, color: '#5f6368', fontSize: 13 },
+  sheetTitle: { fontSize: 16, fontWeight: '700', color: '#f1f5f9' },
+  sheetMeta: { marginTop: 4, color: '#94a3b8', fontSize: 13 },
   fuelBar: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a2e',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingHorizontal: 16,
     paddingTop: 12,
     elevation: 12,
   },
-  fuelTitle: { fontWeight: '700', color: '#188038', marginBottom: 10 },
+  fuelTitle: { fontWeight: '700', color: '#e94560', marginBottom: 10 },
   fuelRow: { flexDirection: 'row', gap: 8 },
   fuelBtn: { flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
-  fuelGhost: { backgroundColor: '#e8f0fe' },
-  fuelGhostText: { color: '#1a73e8', fontWeight: '700' },
-  fuelStop: { backgroundColor: '#fce8e6' },
-  fuelStopText: { color: '#c5221f', fontWeight: '700' },
-  fuelFill: { backgroundColor: '#e6f4ea' },
-  fuelFillText: { color: '#137333', fontWeight: '700' },
+  fuelGhost: { backgroundColor: '#16213e' },
+  fuelGhostText: { color: '#f1f5f9', fontWeight: '700' },
+  fuelStop: { backgroundColor: '#3f1d2e' },
+  fuelStopText: { color: '#e94560', fontWeight: '700' },
+  fuelFill: { backgroundColor: '#16302a' },
+  fuelFillText: { color: '#34d399', fontWeight: '700' },
   tabs: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a2e',
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#dadce0',
+    borderTopColor: '#2d2d44',
   },
-  tabActive: { color: '#1a73e8', fontWeight: '700' },
-  tab: { color: '#5f6368' },
+  tabActive: { color: '#e94560', fontWeight: '700' },
+  tab: { color: '#94a3b8' },
 });
