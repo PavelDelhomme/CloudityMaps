@@ -6,4 +6,9 @@ dist/
 mobile/node_modules/
 mobile/.expo/
 mobile/dist/
+apk/app/build/
+apk/.gradle/
+apk/build/
+apk/local.properties
+
 
