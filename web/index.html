@@ -47,6 +47,13 @@
     .hud-sub { color: #94a3b8; font-size: 13px; margin-top: 2px; }
     .hud-then { margin-top: 8px; padding-top: 8px; border-top: 1px solid #2d2d44; color: #cbd5e1; font-size: 13px; }
     .hud-meta { color: #94a3b8; font-size: 12px; margin-top: 8px; font-weight: 650; }
+    .hud-speed {
+      width: 54px; flex-shrink: 0; margin: 2px 2px 0 0; padding: 8px 4px;
+      background: #0f0f1a; border: 1px solid #2d2d44; border-radius: 14px; text-align: center;
+    }
+    .hud-speed .v { font-size: 20px; font-weight: 800; line-height: 1; letter-spacing: -.04em; }
+    .hud-speed .u { font-size: 9px; color: #94a3b8; font-weight: 700; letter-spacing: .04em; margin-top: 3px; }
+    body.nav.freehand .fab { border-color: #e94560; color: #e94560; }
     body.nav .road-sign { display: none !important; }
     .sheet input {
       width: 100%; margin-top: 8px; border: 1px solid #2d2d44; border-radius: 12px;
@@ -270,6 +277,10 @@
         </div>
         <div class="hud-then" id="hudThen" hidden></div>
         <div class="hud-meta" id="hudMeta">vers destination</div>
+      </div>
+      <div class="hud-speed" id="hudSpeed" hidden>
+        <div class="v" id="hudSpeedVal">0</div>
+        <div class="u">km/h</div>
       </div>
       <button type="button" class="ico" id="btnStopNav" title="Quitter le guidage" aria-label="Quitter le guidage">✕</button>
     </div>

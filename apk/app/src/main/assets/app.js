@@ -13,6 +13,9 @@ map.whenReady(() => {
   map.invalidateSize();
   setTimeout(() => map.invalidateSize(), 350);
 });
+map.on('dragstart', () => {
+  if (navigating) setFollowNav(false);
+});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   updateWhenIdle: true,
@@ -62,6 +65,10 @@ let selectedRouteId = null;
 let navigating = false;
 let navWatch = null;
 let lastRoadAt = 0;
+let lastSpeedKmh = 0;
+let lastNavAt = 0;
+let followNav = true;
+let poiLayer = null;
 
 const PLACE_KEY = 'hubera-maps-places';
 const MUSIC_KEY = 'hubera-maps-music-dock';
@@ -179,12 +186,57 @@ function syncClear() {
   btnClear.hidden = !qEl.value;
 }
 
+function clearPoi() {
+  if (poiLayer) {
+    map.removeLayer(poiLayer);
+    poiLayer = null;
+  }
+}
+
 function clearRoute() {
   for (const layer of altLayers) map.removeLayer(layer);
   altLayers = [];
   routeLayer = null;
   if (destMarker) map.removeLayer(destMarker);
   destMarker = null;
+  clearPoi();
+}
+
+function setFollowNav(on) {
+  followNav = !!on;
+  document.body.classList.toggle('freehand', navigating && !followNav);
+}
+
+function updateSpeed(coords, next) {
+  let mps = Number(coords && coords.speed);
+  if (!Number.isFinite(mps) || mps < 0) {
+    if (me && lastNavAt) {
+      const dt = (Date.now() - lastNavAt) / 1000;
+      if (dt > 0.35) mps = metersBetween(me, next) / dt;
+    } else {
+      mps = 0;
+    }
+  }
+  lastNavAt = Date.now();
+  if (Number.isFinite(mps) && mps >= 0) {
+    const kmh = Math.round(mps * 3.6);
+    if (kmh >= 0 && kmh < 220) lastSpeedKmh = kmh;
+  }
+}
+
+function applyNavFix(pos) {
+  const next = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+  updateSpeed(pos.coords, next);
+  setMe(next.lat, next.lon, false);
+  if (followNav && navigating) {
+    try {
+      map.panTo([next.lat, next.lon], { animate: true, duration: 0.32 });
+    } catch {
+      /* carte pas prête */
+    }
+  }
+  appendTrace(next.lat, next.lon);
+  paintHud(currentChoice());
 }
 
 function metersBetween(a, b) {
@@ -796,6 +848,10 @@ function paintHud(choice) {
     const eta = choice ? `${etaMin} min · ${remainKm < 1 ? fmtDist(remainKm) : `${remainKm.toFixed(1)} km`}` : '';
     metaEl.textContent = eta ? `vers ${short} · ${eta}` : `vers ${short}`;
   }
+  const speedEl = document.getElementById('hudSpeed');
+  const speedVal = document.getElementById('hudSpeedVal');
+  if (speedEl) speedEl.hidden = !navigating;
+  if (speedVal) speedVal.textContent = String(lastSpeedKmh);
 }
 
 function showFuelBar(title) {
@@ -836,8 +892,12 @@ function startNavWatch(onPos) {
       if (!appVisible || paused) return;
       const next = { lat: pos.coords.latitude, lon: pos.coords.longitude };
       const now = Date.now();
-      if (now - lastFixAt < 2200 && me && metersBetween(me, next) < 8) return;
-      onPos(next);
+      if (now - lastFixAt < 2200 && me && metersBetween(me, next) < 8) {
+        updateSpeed(pos.coords, next);
+        paintHud(currentChoice());
+        return;
+      }
+      onPos(pos);
     },
     () => {},
     geoOpts({ accurate: true, freshMs: 2500, timeout: 15000 }),
@@ -908,10 +968,14 @@ document.addEventListener('visibilitychange', () => {
 
 function stopNavigation() {
   navigating = false;
+  lastSpeedKmh = 0;
+  setFollowNav(true);
   document.body.classList.remove('nav');
   searchForm.hidden = false;
   navBar.hidden = true;
   chipsEl.hidden = false;
+  const speedEl = document.getElementById('hudSpeed');
+  if (speedEl) speedEl.hidden = true;
   stopNavWatch();
   navWatchFn = null;
   startIdleGeo();
@@ -925,16 +989,13 @@ function startNavigation() {
   const r = currentChoice();
   if (!r) return;
   paused = false;
+  setFollowNav(true);
   stopIdleGeo();
   enterNavUi();
   if (isCarMode()) {
     fuelControl('start', { dest: destShort() });
   }
-  startNavWatch((next) => {
-    setMe(next.lat, next.lon, false);
-    appendTrace(next.lat, next.lon);
-    paintHud(currentChoice());
-  });
+  startNavWatch(applyNavFix);
 }
 
 async function refreshRoad(lat, lon) {
@@ -1117,11 +1178,73 @@ function showHits(items) {
     .join('');
 }
 
+async function showNearby(kind) {
+  if (!me) {
+    toast('Position indisponible — autorisez le GPS.');
+    return;
+  }
+  const amenity = kind === 'parking' ? 'parking' : 'fuel';
+  const title = amenity === 'fuel' ? 'Stations' : 'Parkings';
+  toast(`Recherche ${title.toLowerCase()} autour de vous…`);
+  const around = amenity === 'fuel' ? 6000 : 2500;
+  const query = `[out:json][timeout:15];node["amenity"="${amenity}"](around:${around},${me.lat},${me.lon});out 40;`;
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+      body: 'data=' + encodeURIComponent(query),
+    });
+    if (!res.ok) throw new Error('overpass');
+    const data = await res.json();
+    const items = (data.elements || [])
+      .filter((n) => Number.isFinite(n.lat) && Number.isFinite(n.lon))
+      .map((n) => {
+        const tags = n.tags || {};
+        const name = tags.name || tags.brand || tags.operator || title;
+        const extra = tags.brand && tags.brand !== name ? tags.brand : tags.operator || '';
+        const km = haversineKm(me, { lat: n.lat, lon: n.lon });
+        return {
+          lat: n.lat,
+          lon: n.lon,
+          label: name,
+          hint: `${km < 1 ? fmtDist(km) : `${km.toFixed(1)} km`}${extra && extra !== name ? ` · ${extra}` : ''}`,
+          km,
+        };
+      })
+      .sort((a, b) => a.km - b.km)
+      .slice(0, 20);
+    if (!items.length) {
+      toast(`Aucune ${title.toLowerCase()} à proximité.`);
+      return;
+    }
+    clearPoi();
+    poiLayer = L.layerGroup();
+    for (const it of items) {
+      L.circleMarker([it.lat, it.lon], {
+        radius: 7,
+        color: '#fff',
+        weight: 2,
+        fillColor: amenity === 'fuel' ? '#34d399' : '#60a5fa',
+        fillOpacity: 0.95,
+      }).addTo(poiLayer);
+    }
+    poiLayer.addTo(map);
+    const bounds = L.latLngBounds(items.map((it) => [it.lat, it.lon]));
+    bounds.extend([me.lat, me.lon]);
+    map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15 });
+    showHits(items.map((it) => ({ lat: it.lat, lon: it.lon, label: it.label, hint: it.hint })));
+  } catch {
+    toast('Recherche POI indisponible pour le moment.');
+  }
+}
+
 function renderChips() {
   const p = loadPlaces();
   const bits = [
     `<button type="button" class="chip" data-chip="home">${p.home ? `Maison` : `+ Maison`}${p.home ? ` <span class="sub">· ${esc(p.home.label.split(',')[0])}</span>` : ''}</button>`,
     `<button type="button" class="chip" data-chip="work">${p.work ? `Travail` : `+ Travail`}${p.work ? ` <span class="sub">· ${esc(p.work.label.split(',')[0])}</span>` : ''}</button>`,
+    `<button type="button" class="chip" data-chip="fuel">Stations</button>`,
+    `<button type="button" class="chip" data-chip="parking">Parkings</button>`,
   ];
   for (const r of p.recents.slice(0, 3)) {
     bits.push(
@@ -1309,6 +1432,10 @@ chipsEl.addEventListener('click', (e) => {
     void routeTo(Number(chip.dataset.lat), Number(chip.dataset.lon), chip.dataset.label);
     return;
   }
+  if (kind === 'fuel' || kind === 'parking') {
+    void showNearby(kind);
+    return;
+  }
   const p = loadPlaces();
   const place = p[kind];
   if (place) {
@@ -1318,7 +1445,10 @@ chipsEl.addEventListener('click', (e) => {
   startAssign(kind);
 });
 
-document.getElementById('btnHere').addEventListener('click', goHere);
+document.getElementById('btnHere').addEventListener('click', () => {
+  setFollowNav(true);
+  goHere();
+});
 
 document.getElementById('btnMenu').addEventListener('click', openDrawer);
 document.getElementById('btnMenuNav').addEventListener('click', openDrawer);
@@ -1428,11 +1558,9 @@ function applyFuelFromQuery() {
     if (metaEl) metaEl.textContent = `trajet Fuel ${tripId}`;
     if (distEl) distEl.textContent = 'GPS';
     navigating = true;
+    setFollowNav(true);
     stopIdleGeo();
-    startNavWatch((next) => {
-      setMe(next.lat, next.lon, false);
-      appendTrace(next.lat, next.lon);
-    });
+    startNavWatch(applyNavFix);
   }
 }
 
@@ -1489,11 +1617,8 @@ window.__mapsFuelEvent = function (raw) {
         if (metaEl) metaEl.textContent = `trajet ${id}`;
         if (distEl) distEl.textContent = 'GPS';
         stopIdleGeo();
-        startNavWatch((next) => {
-          setMe(next.lat, next.lon, false);
-          appendTrace(next.lat, next.lon);
-          paintHud(currentChoice());
-        });
+        setFollowNav(true);
+        startNavWatch(applyNavFix);
       }
     }
     const msg = q.get('msg');

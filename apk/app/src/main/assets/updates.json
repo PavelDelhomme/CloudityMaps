@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.12",
-  "versionCode": 14,
+  "version": "0.1.13",
+  "versionCode": 15,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Guidage type Google Maps. Pause / Arrêter / Plein Fuel sans quitter Maps.",
-  "published_at": "2026-09-25T15:30:00+00:00",
-  "sha256": "6dcfdbcf93c9ec4e9549852da521a719cddf2356d22609fba0f7ca762c59dde6"
+  "notes": "Vitesse au guidage, recentrage, stations et parkings. Fuel sans quitter Maps.",
+  "published_at": "2026-09-25T17:05:00+00:00",
+  "sha256": "d2b8cb8108a0976bf4638168a858f202ba385be76990ab739647ffc47a7e89fc"
 }
