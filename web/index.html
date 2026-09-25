@@ -54,6 +54,18 @@
     .hud-speed .v { font-size: 20px; font-weight: 800; line-height: 1; letter-spacing: -.04em; }
     .hud-speed .u { font-size: 9px; color: #94a3b8; font-weight: 700; letter-spacing: .04em; margin-top: 3px; }
     body.nav.freehand .fab { border-color: #e94560; color: #e94560; }
+    .me-puck { background: none !important; border: 0 !important; }
+    .puck-inner { width: 28px; height: 28px; position: relative; }
+    .puck-c {
+      position: absolute; left: 6px; top: 6px; width: 16px; height: 16px; border-radius: 50%;
+      background: #e94560; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45);
+    }
+    .puck-n {
+      position: absolute; left: 11px; top: -2px; width: 0; height: 0;
+      border-left: 4px solid transparent; border-right: 4px solid transparent;
+      border-bottom: 10px solid #e94560;
+    }
+    body.night .search-bar, body.night .hud { background: #12121c; }
     body.nav .road-sign { display: none !important; }
     .sheet input {
       width: 100%; margin-top: 8px; border: 1px solid #2d2d44; border-radius: 12px;

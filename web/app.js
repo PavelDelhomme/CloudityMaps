@@ -16,14 +16,32 @@ map.whenReady(() => {
 map.on('dragstart', () => {
   if (navigating) setFollowNav(false);
 });
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  updateWhenIdle: true,
-  updateWhenZooming: false,
-  keepBuffer: 1,
-  detectRetina: false,
-  attribution: '&copy; OpenStreetMap',
-}).addTo(map);
+let baseTiles = null;
+let nightOn = null;
+function wantNight() {
+  const h = new Date().getHours();
+  return h >= 21 || h < 6;
+}
+function applyTiles() {
+  const night = wantNight();
+  if (baseTiles && nightOn === night) return;
+  nightOn = night;
+  if (baseTiles) map.removeLayer(baseTiles);
+  const url = night
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  baseTiles = L.tileLayer(url, {
+    maxZoom: 19,
+    updateWhenIdle: true,
+    updateWhenZooming: false,
+    keepBuffer: 1,
+    detectRetina: false,
+    attribution: night ? '&copy; OSM · CARTO' : '&copy; OpenStreetMap',
+  }).addTo(map);
+  document.body.classList.toggle('night', night);
+}
+applyTiles();
+window.setInterval(applyTiles, 10 * 60 * 1000);
 
 const hitsEl = document.getElementById('hits');
 const qEl = document.getElementById('q');
@@ -67,6 +85,9 @@ let navWatch = null;
 let lastRoadAt = 0;
 let lastSpeedKmh = 0;
 let lastNavAt = 0;
+let lastHeadingDeg = 0;
+let lastSpoken = '';
+let lastSpokenAt = 0;
 let followNav = true;
 let poiLayer = null;
 
@@ -222,6 +243,11 @@ function updateSpeed(coords, next) {
     const kmh = Math.round(mps * 3.6);
     if (kmh >= 0 && kmh < 220) lastSpeedKmh = kmh;
   }
+  const hd = Number(coords && coords.heading);
+  if (Number.isFinite(hd) && hd >= 0) lastHeadingDeg = hd;
+  else if (me && next && metersBetween(me, next) > 6) {
+    lastHeadingDeg = bearingDeg(me, next);
+  }
 }
 
 function applyNavFix(pos) {
@@ -296,28 +322,88 @@ function restoreMe() {
   }
 }
 
+function bearingDeg(a, b) {
+  if (!a || !b) return 0;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLon = toRad(b.lon - a.lon);
+  const y = Math.sin(dLon) * Math.cos(toRad(b.lat));
+  const x =
+    Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
+    Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function remainAlongKm(here, geometry) {
+  const coords = geometry?.coordinates;
+  if (!here || !Array.isArray(coords) || coords.length < 2) return null;
+  const pts = coords.map((c) => ({ lon: c[0], lat: c[1] }));
+  let nearest = 0;
+  let best = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const d = haversineKm(here, pts[i]);
+    if (d < best) {
+      best = d;
+      nearest = i;
+    }
+  }
+  let sum = 0;
+  for (let i = nearest; i < pts.length - 1; i++) sum += haversineKm(pts[i], pts[i + 1]);
+  return Math.max(0.04, sum);
+}
+
+function speakNav(text, distKm) {
+  if (!navigating || !text || !('speechSynthesis' in window)) return;
+  if (distKm > 0.16) return;
+  const now = Date.now();
+  if (text === lastSpoken && now - lastSpokenAt < 22000) return;
+  lastSpoken = text;
+  lastSpokenAt = now;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'fr-FR';
+    u.rate = 1.04;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  } catch {
+    /* WebView sans TTS */
+  }
+}
+
+function puckIcon(deg) {
+  const d = Number.isFinite(deg) ? deg : 0;
+  return L.divIcon({
+    className: 'me-puck',
+    html:
+      `<div class="puck-inner" style="transform:rotate(${d}deg)">` +
+      `<div class="puck-n"></div><div class="puck-c"></div></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
 function setMe(lat, lon, fly, fromCache) {
   const next = { lat, lon };
   const moved = metersBetween(me, next);
   me = next;
   if (!fromCache) persistMe(lat, lon);
   const here = L.latLng(lat, lon);
-  if (meMarker && moved < 3 && !fly) {
-    if (moved >= 40) void refreshRoad(lat, lon);
-    return;
-  }
-  if (!meHalo) {
+  if (meHalo) meHalo.setLatLng(here);
+  else {
     meHalo = L.circleMarker(here, {
       radius: 22, color: '#e94560', weight: 2, fillColor: '#e94560', fillOpacity: 0.16,
       pane: 'mePane', interactive: false,
     }).addTo(map);
-  } else meHalo.setLatLng(here);
+  }
   if (!meMarker) {
-    meMarker = L.circleMarker(here, {
-      radius: 10, color: '#fff', weight: 3, fillColor: '#e94560', fillOpacity: 1,
-      pane: 'mePane',
-    }).addTo(map);
-  } else meMarker.setLatLng(here);
+    meMarker = L.marker(here, { icon: puckIcon(lastHeadingDeg), pane: 'mePane', keyboard: false }).addTo(map);
+  } else {
+    meMarker.setLatLng(here);
+    meMarker.setIcon(puckIcon(lastHeadingDeg));
+  }
+  if (meMarker && moved < 3 && !fly) {
+    if (moved >= 40) void refreshRoad(lat, lon);
+    return;
+  }
   if (fly) {
     map.invalidateSize();
     const z = Math.max(16, map.getZoom() || 0);
@@ -814,10 +900,13 @@ function paintHud(choice) {
   const then = found.then;
   const p = stepPoint(step);
   const toManeuver = here && p ? haversineKm(here, p) : (step?.distance || 0) / 1000;
+  const along = remainAlongKm(here, choice?.geometry);
   const remainKm = choice
-    ? here && lastDest
-      ? Math.max(0.1, haversineKm(here, lastDest))
-      : choice.km
+    ? along != null
+      ? along
+      : here && lastDest
+        ? Math.max(0.1, haversineKm(here, lastDest))
+        : choice.km
     : 0;
   const etaMin = choice
     ? Math.max(1, Math.round((choice.min * remainKm) / Math.max(choice.km, 0.1)))
@@ -852,6 +941,10 @@ function paintHud(choice) {
   const speedVal = document.getElementById('hudSpeedVal');
   if (speedEl) speedEl.hidden = !navigating;
   if (speedVal) speedVal.textContent = String(lastSpeedKmh);
+  if (step && navigating) speakNav(fmtStep(step), toManeuver);
+  if (navigating && remainKm < 0.05) {
+    speakNav('Vous êtes arrivé', 0);
+  }
 }
 
 function showFuelBar(title) {
@@ -969,6 +1062,8 @@ document.addEventListener('visibilitychange', () => {
 function stopNavigation() {
   navigating = false;
   lastSpeedKmh = 0;
+  lastSpoken = '';
+  try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
   setFollowNav(true);
   document.body.classList.remove('nav');
   searchForm.hidden = false;
