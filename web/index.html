@@ -39,14 +39,14 @@
     .sheet { left: 12px; right: 12px; bottom: 72px; border-radius: 16px; padding: 14px; width: auto; }
     .sheet strong { display: block; }
     .sheet span { color: #5f6368; font-size: 13px; }
-    .fuel { padding: 12px 16px 16px; border-radius: 16px 16px 0 0; }
+    .fuel { padding: 12px 16px 16px; border-radius: 16px 16px 0 0; z-index: 1001; }
     .fuel .title { color: #188038; font-weight: 700; margin-bottom: 10px; }
     .fuel .row { display: flex; gap: 8px; }
     .fuel button { flex: 1; border: 0; border-radius: 999px; padding: 10px; font-weight: 700; cursor: pointer; }
     .pause { background: #e8f0fe; color: #1a73e8; }
     .stop { background: #fce8e6; color: #c5221f; }
     .fill { background: #e6f4ea; color: #137333; }
-    .tabs { display: flex; justify-content: space-around; padding: 12px 8px calc(12px + env(safe-area-inset-bottom)); font-size: 13px; color: #5f6368; }
+    .hits[hidden], .sheet[hidden], .fuel[hidden], .tabs[hidden] { display: none !important; }
     .tabs .on { color: #1a73e8; font-weight: 700; }
   </style>
 </head>
