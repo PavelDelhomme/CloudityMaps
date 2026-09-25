@@ -1,5 +1,10 @@
 # Hubera Maps — versions
 
+## 0.1.15 (25 sept. 2026)
+- Mise à jour **in-app** (téléchargement + FileProvider). Plus de redirect `/install` dans Chrome.
+- Dock Music : titre / artiste réels, ou « Aucun titre — ouvre Music ».
+- Carte centrée sur la dernière position GPS (< 18 h) dès l’ouverture.
+
 ## 0.1.14 (25 sept. 2026)
 - Distance restante **le long de l’itinéraire** (plus le vol d’oiseau).
 - Flèche de cap sur le point GPS.

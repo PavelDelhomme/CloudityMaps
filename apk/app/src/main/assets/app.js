@@ -1,4 +1,16 @@
 /* Hubera Maps — OSM + Photon + OSRM. Chrome type Google Maps + Fuel + Music. */
+const LAST_ME_KEY = 'hubera-maps-last-me';
+function readLastMe() {
+  try {
+    const p = JSON.parse(localStorage.getItem(LAST_ME_KEY) || 'null');
+    if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return null;
+    if (Date.now() - (p.at || 0) > 36e5 * 18) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
+const bootMe = readLastMe();
 const map = L.map('map', {
   zoomControl: false,
   preferCanvas: true,
@@ -6,7 +18,7 @@ const map = L.map('map', {
   markerZoomAnimation: false,
   zoomAnimation: true,
   zoomAnimationThreshold: 4,
-}).setView([46.6, 2.4], 6);
+}).setView(bootMe ? [bootMe.lat, bootMe.lon] : [46.6, 2.4], bootMe ? 16 : 6);
 map.createPane('mePane');
 map.getPane('mePane').style.zIndex = 650;
 map.whenReady(() => {
@@ -105,7 +117,6 @@ let travelMode = localStorage.getItem(MODE_KEY) || 'car';
 let routeGen = 0;
 let routeAbort = null;
 const routeCache = new Map();
-const LAST_ME_KEY = 'hubera-maps-last-me';
 const HUBERA_OWNER = { email: 'paul@delhomme.ovh', name: 'Paul' };
 let appVisible = !document.hidden;
 let idleGeoTimer = 0;
@@ -310,16 +321,11 @@ function persistMe(lat, lon) {
 }
 
 function restoreMe() {
-  try {
-    const p = JSON.parse(localStorage.getItem(LAST_ME_KEY) || 'null');
-    if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return false;
-    if (Date.now() - (p.at || 0) > 36e5 * 18) return false;
-    lastFixAt = p.at || 0;
-    setMe(p.lat, p.lon, false, true);
-    return true;
-  } catch {
-    return false;
-  }
+  const p = readLastMe();
+  if (!p) return false;
+  lastFixAt = p.at || 0;
+  setMe(p.lat, p.lon, false, true);
+  return true;
 }
 
 function bearingDeg(a, b) {
@@ -1769,8 +1775,8 @@ function applyMusicState(s) {
   const title = document.getElementById('musicTitle');
   const artist = document.getElementById('musicArtist');
   const play = document.getElementById('musicPlay');
-  if (title) title.textContent = s.title || 'Hubera Music';
-  if (artist) artist.textContent = s.artist || (s.playing ? 'En cours' : 'Lecture depuis Maps');
+  if (title) title.textContent = s.title || 'Aucun titre — ouvre Music';
+  if (artist) artist.textContent = s.artist || '';
   if (play) play.textContent = s.playing ? '❚❚' : '▶';
 }
 
@@ -1811,5 +1817,5 @@ if (nativeMusic) {
     } catch {
       /* ignore */
     }
-  }, 8000);
+  }, 1500);
 }

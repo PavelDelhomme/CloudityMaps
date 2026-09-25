@@ -28,6 +28,7 @@ class MusicBridge(
     private var connecting = false
     @Volatile
     private var cachedState: String = defaultState().toString()
+    private var connectTries = 0
 
     fun connect() {
         if (controller != null || connecting) return
@@ -41,7 +42,7 @@ class MusicBridge(
             future.addListener(
                 {
                     connecting = false
-                    runCatching {
+                    val ok = runCatching {
                         val c = future.get()
                         controller = c
                         c.addListener(object : Player.Listener {
@@ -52,12 +53,20 @@ class MusicBridge(
                         })
                         refreshCache()
                         pushToWeb()
+                    }.isSuccess
+                    if (!ok && connectTries < 12) {
+                        connectTries += 1
+                        main.postDelayed({ connect() }, 1500)
                     }
                 },
                 { r -> main.post(r) },
             )
         } catch (_: Throwable) {
             connecting = false
+            if (connectTries < 12) {
+                connectTries += 1
+                main.postDelayed({ connect() }, 1500)
+            }
         }
     }
 
@@ -148,19 +157,20 @@ class MusicBridge(
         val artist = meta?.artist?.toString()?.trim().orEmpty()
         val playing = c?.isPlaying == true ||
             (c == null && (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager).isMusicActive)
+        val empty = title.isEmpty()
         return JSONObject()
             .put("connected", c != null)
             .put("playing", playing)
-            .put("title", if (title.isNotEmpty()) title else "Hubera Music")
-            .put("artist", artist)
+            .put("title", if (empty) "" else title)
+            .put("artist", if (empty) "Aucun titre — ouvre Music" else artist)
             .put("hasQueue", (c?.mediaItemCount ?: 0) > 0)
     }
 
     private fun defaultState(): JSONObject = JSONObject()
         .put("connected", false)
         .put("playing", false)
-        .put("title", "Hubera Music")
-        .put("artist", "Lecture depuis Maps")
+        .put("title", "")
+        .put("artist", "Aucun titre — ouvre Music")
         .put("hasQueue", false)
 
     private fun sendKey(code: Int) {
