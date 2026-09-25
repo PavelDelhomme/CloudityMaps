@@ -1,10 +1,24 @@
 # Hubera Maps
 
-Produit **cartes / navigation** Hubera (OSM, offline-friendly).  
+Produit **cartes / navigation** Hubera (OSM, design proche de Google Maps).  
 Repo GitHub historique : `PavelDelhomme/CloudityMaps` (pas de rename GitHub).
 
-- Stack / volume **séparés** de GasoilTracking, Music, Jobs.
-- Développé ici ; lien Hubera : `products/maps`.
+- **Cahier** (à lire avant de coder) : [`docs/HUBERA-MAPS-CAHIER.md`](docs/HUBERA-MAPS-CAHIER.md)
+- **Mobile d’abord** (Android + iPhone, Expo dans `mobile/`) — web ensuite
+- Handshake **Hubera Fuel** : suivi libre Fuel → ouvre Maps ; Pause / Terminer / Plein dans Maps → Fuel
+- Stack / volume **séparés** de Fuel, Music, Jobs. Ne pas `down -v`.
+- Lien Hubera : `products/maps`.
+
+## Mobile (Android + iPhone)
+
+```bash
+cd mobile
+npm install
+npx expo start
+```
+
+Package : `ovh.delhomme.maps` · schémas `hubera-maps://` et `cloudity-maps://`.  
+Fuel : `gasoiltracking://trip/control?action=pause|resume|stop`.
 
 ## MVP web
 

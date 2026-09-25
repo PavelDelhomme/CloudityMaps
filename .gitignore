@@ -3,3 +3,7 @@ node_modules/
 dist/
 .env
 *.log
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+

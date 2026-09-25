@@ -1,19 +1,38 @@
-# Deep links Cloudity Maps
+# Deep links Hubera Maps
 
-## Schéma applicatif (cible Android / iOS)
+Schéma **principal** : `hubera-maps://`  
+Alias historique : `cloudity-maps://` (même paths).  
+Web : `https://maps.hubera.cloud/…`
+
+Fuel (`gasoiltracking://`) reste le propriétaire des trajets. Maps n’invente pas un second historique.
+
+## Maps — entrée
 
 ```
-cloudity-maps://navigate?lat={lat}&lon={lon}&label={urlencoded}
-cloudity-maps://route?fromLat=&fromLon=&toLat=&toLon=
+hubera-maps://track?tripId={id}&vehicleId={id}&mode=free
+hubera-maps://navigate?tripId={id}&toLat=&toLon=&label=&mode=nav
+hubera-maps://show?tripId={id}
+hubera-maps://search?q=
+hubera-maps://place?lat=&lon=&label=
+hubera-maps://route?fromLat=&fromLon=&toLat=&toLon=
 ```
 
-## Fallback « Ouvrir dans… » (hors Maps)
+Web équivalent : `https://maps.hubera.cloud/?lat=&lon=` ou `?q=` / `?track=1&tripId=`.
 
-| App | Exemple |
-|-----|---------|
-| Google Maps | `https://www.google.com/maps/dir/?api=1&destination=lat,lon` |
-| Waze | `https://waze.com/ul?ll=lat,lon&navigate=yes` |
-| OsmAnd | `https://osmand.net/map?pin=lat,lon` |
-| Organic Maps | `https://omaps.app/map?v=1&ll=lat%2Clon&n=1` |
+## Fuel — contrôle depuis Maps
 
-Les apps satellites (Gasoil, etc.) gèrent ces fallbacks **dans leur repo** ; Maps n’impose rien.
+```
+gasoiltracking://trip/control?action=pause&tripId=
+gasoiltracking://trip/control?action=resume&tripId=
+gasoiltracking://trip/control?action=stop&tripId=
+gasoiltracking://fillup/add?lat=&lon=
+gasoiltracking://trip/{id}
+```
+
+## Fallback si Hubera Maps n’est pas installée
+
+Fuel **reste sur son onglet Maps** (suivi GPS déjà démarré).  
+Ne plus ouvrir Google Maps / Apple Plans en premier pour un **suivi libre**.  
+Navigation A→B : Hubera Maps d’abord, Google / Apple seulement si Maps absente.
+
+Les apps satellites gèrent ces fallbacks **dans leur repo**.

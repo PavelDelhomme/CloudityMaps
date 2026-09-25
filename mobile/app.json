@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "Hubera Maps",
+    "slug": "hubera-maps",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "hubera-maps",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ovh.delhomme.maps",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Hubera Maps utilise votre position pour afficher la carte, les itinéraires et le suivi Fuel.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Hubera Maps peut tracer un trajet Fuel en arrière-plan pendant la navigation.",
+        "LSApplicationQueriesSchemes": [
+          "gasoiltracking",
+          "gasoiltracking-preprod",
+          "cloudity-maps"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#1a73e8"
+      },
+      "package": "ovh.delhomme.maps",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [{ "scheme": "cloudity-maps" }]
+        }
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Hubera Maps trace votre position pour la navigation et le suivi Hubera Fuel.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "./plugins/withFuelQueries.js"
+    ],
+    "extra": {
+      "fuelScheme": "gasoiltracking",
+      "fuelApi": "https://fuel.hubera.cloud"
+    }
+  }
+}
