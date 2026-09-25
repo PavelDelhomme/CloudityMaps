@@ -6,7 +6,10 @@
 
 services:
   web:
-    build: .
+    build:
+      context: .
+      args:
+        MAPS_BUILD: "0.1.10"
     image: hubera-maps:local
     container_name: hubera-maps
     restart: unless-stopped
