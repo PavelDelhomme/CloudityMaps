@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.15",
-  "versionCode": 17,
+  "version": "0.1.17",
+  "versionCode": 19,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "MAJ in-app (FileProvider). Dock Music réel. Carte sur ta dernière position.",
-  "published_at": "2026-09-25T18:20:00+00:00",
-  "sha256": "6084fe5a1d4d5411e55c95fc8f71bf374b71f69fca24bbb334878d895f9cf9d7"
+  "notes": "MAJ in-app : après sources inconnues, Maps relance l’install toute seule. Jamais Chrome /install.",
+  "published_at": "2026-09-25T20:00:00+00:00",
+  "sha256": "19973f8e0453b99d7bed615e251c47bc1cc2ba8aaa147919735bf09882b0e0eb"
 }

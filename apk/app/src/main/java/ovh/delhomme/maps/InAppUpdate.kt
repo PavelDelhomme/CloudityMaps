@@ -18,7 +18,7 @@ import java.security.MessageDigest
 
 /**
  * MAJ APK dans Maps : dialogue natif, téléchargement, FileProvider.
- * Jamais de redirect Chrome /install.
+ * Jamais de redirect Chrome /install. Après sources inconnues, relance auto.
  */
 class InAppUpdate(private val activity: Activity) {
     private val main = Handler(Looper.getMainLooper())
@@ -40,6 +40,23 @@ class InAppUpdate(private val activity: Activity) {
             val sha = feed.optString("sha256")
             main.post { showDialog(remote, notes, apkUrl, sha) }
         }.start()
+    }
+
+    /** Après Settings « sources inconnues » : installer l’APK déjà téléchargée, sans Chrome. */
+    fun retryPending() {
+        if (!prefs.getBoolean(PENDING_AFTER_PERM, false)) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            return
+        }
+        prefs.edit().putBoolean(PENDING_AFTER_PERM, false).apply()
+        val dest = File(File(activity.cacheDir, "apk"), "hubera-maps.apk")
+        if (dest.isFile && dest.length() > 10_000L) {
+            main.post { installApk(dest) }
+        } else {
+            check()
+        }
     }
 
     private fun snoozed(): Boolean {
@@ -102,6 +119,7 @@ class InAppUpdate(private val activity: Activity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !activity.packageManager.canRequestPackageInstalls()
         ) {
+            prefs.edit().putBoolean(PENDING_AFTER_PERM, true).apply()
             runCatching {
                 activity.startActivity(
                     Intent(
@@ -112,7 +130,7 @@ class InAppUpdate(private val activity: Activity) {
             }
             Toast.makeText(
                 activity,
-                "Autorisez l’installation, puis rouvrez Maps.",
+                "Autorisez l’installation — Maps relance tout seul.",
                 Toast.LENGTH_LONG,
             ).show()
             return
@@ -122,15 +140,24 @@ class InAppUpdate(private val activity: Activity) {
             "${activity.packageName}.fileprovider",
             file,
         )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
+        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            putExtra(Intent.EXTRA_RETURN_RESULT, false)
         }
-        runCatching { activity.startActivity(intent) }
-            .onFailure {
-                Toast.makeText(activity, "Installation impossible.", Toast.LENGTH_LONG).show()
+        val ok = runCatching { activity.startActivity(intent) }.isSuccess
+        if (!ok) {
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            runCatching { activity.startActivity(view) }
+                .onFailure {
+                    Toast.makeText(activity, "Installation impossible.", Toast.LENGTH_LONG).show()
+                }
+        }
     }
 
     private fun fetchFeed(): JSONObject? {
@@ -184,6 +211,7 @@ class InAppUpdate(private val activity: Activity) {
         const val APK_URL = "https://maps.hubera.cloud/apk/hubera-maps.apk"
         private const val PREFS = "hubera_maps_update"
         private const val SNOOZE_UNTIL = "snooze_until"
+        private const val PENDING_AFTER_PERM = "pending_after_perm"
         private const val SNOOZE_MS = 24L * 60 * 60 * 1000
     }
 }

@@ -1,5 +1,13 @@
 # Hubera Maps — versions
 
+## 0.1.17 (25 sept. 2026)
+- Après « sources inconnues », Maps **relance l’install toute seule** (APK déjà téléchargée).
+- Toujours FileProvider, jamais Chrome `/install`.
+
+## 0.1.16 (25 sept. 2026)
+- MAJ **uniquement in-app** : WebView ne peut plus ouvrir Chrome `/install`.
+- FileProvider + `ACTION_INSTALL_PACKAGE`. Overlay Nothing + BV + Samsung.
+
 ## 0.1.15 (25 sept. 2026)
 - Mise à jour **in-app** (téléchargement + FileProvider). Plus de redirect `/install` dans Chrome.
 - Dock Music : titre / artiste réels, ou « Aucun titre — ouvre Music ».

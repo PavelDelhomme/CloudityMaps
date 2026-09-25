@@ -66,13 +66,26 @@ class MainActivity : AppCompatActivity() {
                     startActivity(Intent(Intent.ACTION_VIEW, u))
                     return true
                 }
-                val host = u.host ?: ""
+                val host = (u.host ?: "").lowercase()
+                val path = u.path ?: ""
+                // Jamais Chrome pour MAJ Maps : tout passe par InAppUpdate.
+                val mapsOta =
+                    host.endsWith("maps.hubera.cloud") &&
+                        (path.startsWith("/install") || path.startsWith("/apk") || path.startsWith("/updates"))
+                val huberaOta =
+                    host == "hubera.cloud" && path.startsWith("/updates/maps")
+                if (mapsOta || huberaOta) {
+                    InAppUpdate(this@MainActivity).check()
+                    return true
+                }
                 val tiles =
                     host.endsWith("openstreetmap.org") ||
                         host.endsWith("openstreetmap.de") ||
                         host.endsWith("komoot.io") ||
                         host.endsWith("project-osrm.org") ||
-                        host.endsWith("transitous.org")
+                        host.endsWith("transitous.org") ||
+                        host.endsWith("cartocdn.com") ||
+                        host.endsWith("basemaps.cartocdn.com")
                 if ((u.scheme == "https" || u.scheme == "http") && !tiles) {
                     startActivity(Intent(Intent.ACTION_VIEW, u))
                     return true
@@ -99,6 +112,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        InAppUpdate(this).retryPending()
         if (this::web.isInitialized) {
             web.resumeTimers()
             web.onResume()
