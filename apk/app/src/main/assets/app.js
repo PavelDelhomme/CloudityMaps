@@ -96,6 +96,30 @@ function fuelTripQuery() {
   return Number.isFinite(n) && n > 0 ? `tripId=${n}` : '';
 }
 
+function fuelControl(action, extra) {
+  extra = extra || {};
+  const n = Number(fuelTrip);
+  const tripId = Number.isFinite(n) && n > 0 ? String(n) : '';
+  const payload = JSON.stringify({
+    action,
+    tripId,
+    dest: extra.dest || '',
+    liters: extra.liters || '',
+    total: extra.total || '',
+    station: extra.station || '',
+  });
+  try {
+    if (window.HuberaFuel && typeof window.HuberaFuel.control === 'function') {
+      window.HuberaFuel.control(action, payload);
+      return true;
+    }
+  } catch {
+    /* WebView hors APK */
+  }
+  toast('Commande Fuel enregistrée dans Maps.');
+  return false;
+}
+
 function loadPlaces() {
   try {
     const raw = JSON.parse(localStorage.getItem(PLACE_KEY) || '{}');
@@ -305,20 +329,70 @@ async function searchPhoton(q) {
   return out;
 }
 
+function ordinalFr(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x) || x < 1) return '';
+  return x === 1 ? '1re' : `${Math.round(x)}e`;
+}
+
+function maneuverIcon(type, modifier) {
+  const t = (type || '').toLowerCase();
+  const m = (modifier || '').toLowerCase();
+  if (t === 'arrive') return '🏁';
+  if (t.includes('roundabout') || t.includes('rotary')) return '⟳';
+  if (m.includes('uturn')) return '↩';
+  if (t === 'on ramp' || t === 'merge') return '↗';
+  if (t === 'off ramp') return '↘';
+  if (m.includes('left')) return '↰';
+  if (m.includes('right')) return '↱';
+  if (m.includes('straight') || t === 'continue' || t === 'new name' || t === 'depart') return '⬆';
+  return '⬆';
+}
+
+function fmtDist(km) {
+  if (!Number.isFinite(km) || km < 0) return '—';
+  if (km < 0.035) return 'Maintenant';
+  if (km < 1) {
+    const m = Math.round(km * 1000);
+    const rounded = m < 80 ? Math.round(m / 10) * 10 : Math.round(m / 50) * 50;
+    return `${Math.max(10, rounded)} m`;
+  }
+  return `${km.toFixed(1)} km`;
+}
+
+function fmtDistM(meters) {
+  return fmtDist((meters || 0) / 1000);
+}
+
 function fmtStep(step) {
-  if (!step) return 'Continuez';
+  if (!step) return 'Continuez tout droit';
   const t = (step.maneuver?.type || '').toLowerCase();
   const mod = (step.maneuver?.modifier || '').toLowerCase();
   const name = (step.name || '').trim();
-  const road = name ? ` sur ${name}` : '';
-  if (t === 'depart') return `Départ${road}`;
-  if (t === 'arrive') return `Arrivée${road}`;
+  const exit = step.maneuver?.exit;
+  const road = name ? ` · ${name}` : '';
+  const until = name ? ` jusqu’à ${name}` : '';
+  if (t === 'depart') return name ? `Départ sur ${name}` : 'Départ';
+  if (t === 'arrive') return name ? `Arrivée · ${name}` : 'Vous êtes arrivé';
+  if (t === 'roundabout' || t === 'rotary' || t === 'exit roundabout' || t === 'exit rotary') {
+    const ord = ordinalFr(exit);
+    return ord
+      ? `Au rond-point, prenez la ${ord} sortie${road}`
+      : `Au rond-point${road}`;
+  }
+  if (t === 'turn' && mod.includes('uturn')) return `Faites demi-tour${road}`;
   if (t === 'turn' && mod.includes('left')) return `Tournez à gauche${road}`;
   if (t === 'turn' && mod.includes('right')) return `Tournez à droite${road}`;
-  if (t === 'roundabout' || t === 'rotary') return `Rond-point${road}`;
-  if (t === 'on ramp') return `Bretelle${road}`;
-  if (t === 'off ramp') return `Sortie${road}`;
-  if (name) return `Continuez sur ${name}`;
+  if (t === 'turn' && mod.includes('straight')) return `Continuez tout droit${until}`;
+  if (t === 'end of road' && mod.includes('left')) return `En bout de voie, à gauche${road}`;
+  if (t === 'end of road' && mod.includes('right')) return `En bout de voie, à droite${road}`;
+  if (t === 'fork' && mod.includes('left')) return `Bifurcation à gauche${road}`;
+  if (t === 'fork' && mod.includes('right')) return `Bifurcation à droite${road}`;
+  if (t === 'on ramp') return `Prenez la bretelle${road}`;
+  if (t === 'off ramp') return `Prenez la sortie${road}`;
+  if (t === 'merge') return `Fusionnez${road}`;
+  if (t === 'continue' || t === 'new name') return `Continuez tout droit${until}`;
+  if (name) return `Continuez tout droit jusqu’à ${name}`;
   return 'Continuez tout droit';
 }
 
@@ -326,14 +400,36 @@ function destShort() {
   return (lastDest?.label || 'destination').split(',')[0];
 }
 
-function nextManeuver(steps) {
+function stepPoint(step) {
+  const loc = step?.maneuver?.location;
+  if (Array.isArray(loc) && loc.length >= 2) return { lon: loc[0], lat: loc[1] };
+  return null;
+}
+
+function upcomingManeuver(here, steps) {
   const list = steps || [];
-  return (
-    list.find((s) => {
-      const t = (s.maneuver?.type || '').toLowerCase();
-      return t && t !== 'depart';
-    }) || list[0]
-  );
+  if (!list.length) return { now: null, then: null, idx: -1 };
+  let nearest = 0;
+  let best = Infinity;
+  if (here) {
+    for (let i = 0; i < list.length; i++) {
+      const p = stepPoint(list[i]);
+      if (!p) continue;
+      const d = haversineKm(here, p);
+      if (d < best) {
+        best = d;
+        nearest = i;
+      }
+    }
+  }
+  let i = best < 0.035 ? nearest + 1 : nearest;
+  while (i < list.length) {
+    const t = (list[i].maneuver?.type || '').toLowerCase();
+    if (t && t !== 'depart') break;
+    i += 1;
+  }
+  if (i >= list.length) i = list.length - 1;
+  return { now: list[i] || null, then: list[i + 1] || null, idx: i };
 }
 
 function haversineKm(a, b) {
@@ -658,12 +754,48 @@ function currentChoice() {
   return routeChoices.find((r) => r.id === selectedRouteId) || routeChoices[0];
 }
 
-function paintNavBar(choice) {
+function paintHud(choice) {
   const short = destShort();
-  document.getElementById('navNext').textContent = `vers ${short}`;
-  const step = nextManeuver(choice?.steps);
-  const eta = choice ? `${choice.min} min · ${choice.km} km` : '';
-  document.getElementById('navDest').textContent = step ? `${fmtStep(step)} · ${eta}` : eta;
+  const here = me;
+  const found = upcomingManeuver(here, choice?.steps);
+  const step = found.now;
+  const then = found.then;
+  const p = stepPoint(step);
+  const toManeuver = here && p ? haversineKm(here, p) : (step?.distance || 0) / 1000;
+  const remainKm = choice
+    ? here && lastDest
+      ? Math.max(0.1, haversineKm(here, lastDest))
+      : choice.km
+    : 0;
+  const etaMin = choice
+    ? Math.max(1, Math.round((choice.min * remainKm) / Math.max(choice.km, 0.1)))
+    : 0;
+  const titleEl = document.getElementById('hudTitle');
+  const distEl = document.getElementById('hudDist');
+  const iconEl = document.getElementById('hudIcon');
+  const subEl = document.getElementById('hudSub');
+  const thenEl = document.getElementById('hudThen');
+  const metaEl = document.getElementById('hudMeta');
+  if (distEl) distEl.textContent = step ? fmtDist(toManeuver) : '—';
+  if (iconEl) iconEl.textContent = maneuverIcon(step?.maneuver?.type, step?.maneuver?.modifier);
+  if (titleEl) titleEl.textContent = step ? fmtStep(step) : navigating ? 'Suivi libre' : 'Guidage';
+  if (subEl) {
+    const road = (step?.name || '').trim();
+    subEl.textContent = road && !fmtStep(step).includes(road) ? road : '';
+  }
+  if (thenEl) {
+    if (then && (then.maneuver?.type || '') !== 'arrive') {
+      thenEl.hidden = false;
+      thenEl.textContent = `Puis : ${fmtStep(then)}`;
+    } else {
+      thenEl.hidden = true;
+      thenEl.textContent = '';
+    }
+  }
+  if (metaEl) {
+    const eta = choice ? `${etaMin} min · ${remainKm < 1 ? fmtDist(remainKm) : `${remainKm.toFixed(1)} km`}` : '';
+    metaEl.textContent = eta ? `vers ${short} · ${eta}` : `vers ${short}`;
+  }
 }
 
 function showFuelBar(title) {
@@ -674,12 +806,13 @@ function showFuelBar(title) {
 
 function enterNavUi() {
   navigating = true;
+  document.body.classList.add('nav');
   searchForm.hidden = true;
   navBar.hidden = false;
   chipsEl.hidden = true;
   altsEl.hidden = true;
   sheetEl.hidden = true;
-  paintNavBar(currentChoice());
+  paintHud(currentChoice());
   if (isCarMode() || Number(fuelTrip) > 0) {
     showFuelBar(Number(fuelTrip) > 0 ? `Suivi Fuel · trajet ${fuelTrip}` : 'Suivi Fuel · guidage');
   } else {
@@ -775,6 +908,7 @@ document.addEventListener('visibilitychange', () => {
 
 function stopNavigation() {
   navigating = false;
+  document.body.classList.remove('nav');
   searchForm.hidden = false;
   navBar.hidden = true;
   chipsEl.hidden = false;
@@ -784,25 +918,22 @@ function stopNavigation() {
   const fromFuel = Number(fuelTrip) > 0;
   if (!fromFuel) {
     fuelEl.hidden = true;
-    fuelTrip = null;
   }
 }
 
 function startNavigation() {
   const r = currentChoice();
   if (!r) return;
-  if (isCarMode()) {
-    if (!fuelTrip) fuelTrip = `maps-${Date.now()}`;
-  } else if (String(fuelTrip || '').startsWith('maps-')) {
-    fuelTrip = null;
-  }
   paused = false;
   stopIdleGeo();
   enterNavUi();
+  if (isCarMode()) {
+    fuelControl('start', { dest: destShort() });
+  }
   startNavWatch((next) => {
     setMe(next.lat, next.lon, false);
     appendTrace(next.lat, next.lon);
-    paintNavBar(r);
+    paintHud(currentChoice());
   });
 }
 
@@ -1068,6 +1199,11 @@ window.__mapsBack = function () {
     closeDrawer();
     return true;
   }
+  const fillSheet = document.getElementById('fillSheet');
+  if (fillSheet && !fillSheet.hidden) {
+    fillSheet.hidden = true;
+    return true;
+  }
   if (!hitsEl.hidden) {
     showHits([]);
     pendingAssign = null;
@@ -1284,8 +1420,13 @@ function applyFuelFromQuery() {
     searchForm.hidden = true;
     navBar.hidden = false;
     chipsEl.hidden = true;
-    document.getElementById('navNext').textContent = 'Suivi libre';
-    document.getElementById('navDest').textContent = `trajet ${tripId}`;
+    document.body.classList.add('nav');
+    const titleEl = document.getElementById('hudTitle');
+    const metaEl = document.getElementById('hudMeta');
+    const distEl = document.getElementById('hudDist');
+    if (titleEl) titleEl.textContent = 'Suivi libre';
+    if (metaEl) metaEl.textContent = `trajet Fuel ${tripId}`;
+    if (distEl) distEl.textContent = 'GPS';
     navigating = true;
     stopIdleGeo();
     startNavWatch((next) => {
@@ -1295,13 +1436,80 @@ function applyFuelFromQuery() {
   }
 }
 
-function openFuel(action) {
-  const tripQ = fuelTripQuery();
-  if (action === 'fill') {
-    location.href = fuelUrl('fillup/add');
+function openFillSheet() {
+  const sheet = document.getElementById('fillSheet');
+  if (!sheet) return;
+  sheet.hidden = false;
+  const st = document.getElementById('fillStation');
+  if (st && !st.value) {
+    const name = document.getElementById('roadName')?.textContent;
+    if (name && name !== '…' && name !== '—') st.value = name;
+  }
+  document.getElementById('fillLiters')?.focus();
+}
+
+function closeFillSheet() {
+  const sheet = document.getElementById('fillSheet');
+  if (sheet) sheet.hidden = true;
+}
+
+function saveFillFromSheet() {
+  const liters = document.getElementById('fillLiters')?.value?.trim() || '';
+  const total = document.getElementById('fillTotal')?.value?.trim() || '';
+  const station = document.getElementById('fillStation')?.value?.trim() || '';
+  if (!liters && !total) {
+    toast('Indique les litres ou le montant.');
     return;
   }
-  location.href = fuelUrl(`trip/control?action=${action}${tripQ ? `&${tripQ}` : ''}`);
+  paused = true;
+  document.getElementById('btnPause').textContent = 'Reprendre';
+  stopNavWatch();
+  fuelControl('fill', { liters, total, station });
+  closeFillSheet();
+  toast('Plein envoyé à Fuel — tu restes dans Maps.');
+}
+
+window.__mapsFuelEvent = function (raw) {
+  try {
+    const q = new URLSearchParams(String(raw || '').replace(/^\?/, ''));
+    const id = q.get('tripId');
+    if (id && Number(id) > 0) {
+      fuelTrip = id;
+      showFuelBar(`Suivi Fuel · trajet ${id}`);
+      if (!navigating) {
+        document.body.classList.add('nav');
+        searchForm.hidden = true;
+        navBar.hidden = false;
+        chipsEl.hidden = true;
+        navigating = true;
+        const titleEl = document.getElementById('hudTitle');
+        const metaEl = document.getElementById('hudMeta');
+        const distEl = document.getElementById('hudDist');
+        if (titleEl) titleEl.textContent = 'Suivi Fuel';
+        if (metaEl) metaEl.textContent = `trajet ${id}`;
+        if (distEl) distEl.textContent = 'GPS';
+        stopIdleGeo();
+        startNavWatch((next) => {
+          setMe(next.lat, next.lon, false);
+          appendTrace(next.lat, next.lon);
+          paintHud(currentChoice());
+        });
+      }
+    }
+    const msg = q.get('msg');
+    if (msg) toast(msg);
+  } catch {
+    /* ignore */
+  }
+};
+
+function fuelStopTracking() {
+  fuelControl('stop');
+  fuelTrip = null;
+  paused = false;
+  stopNavigation();
+  renderAlts();
+  toast('Trajet Fuel arrêté — tu restes dans Maps.');
 }
 
 document.getElementById('btnPause').addEventListener('click', () => {
@@ -1309,10 +1517,13 @@ document.getElementById('btnPause').addEventListener('click', () => {
   document.getElementById('btnPause').textContent = paused ? 'Reprendre' : 'Pause';
   if (paused) stopNavWatch();
   else if (navigating && navWatchFn) startNavWatch(navWatchFn);
-  openFuel(paused ? 'pause' : 'resume');
+  fuelControl(paused ? 'pause' : 'resume');
+  toast(paused ? 'Pause — guidage et Fuel.' : 'Reprise.');
 });
-document.getElementById('btnStop').addEventListener('click', () => openFuel('stop'));
-document.getElementById('btnFill').addEventListener('click', () => openFuel('fill'));
+document.getElementById('btnStop').addEventListener('click', fuelStopTracking);
+document.getElementById('btnFill').addEventListener('click', openFillSheet);
+document.getElementById('fillCancel').addEventListener('click', closeFillSheet);
+document.getElementById('fillSave').addEventListener('click', saveFillFromSheet);
 
 bootLocate();
 startIdleGeo();

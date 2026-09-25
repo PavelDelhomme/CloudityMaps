@@ -34,6 +34,28 @@
     .nav-bar .nav-copy { flex: 1; min-width: 0; padding: 4px 6px; }
     .nav-bar .nav-next { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .nav-bar .nav-dest { color: #94a3b8; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hud {
+      display: flex; align-items: flex-start; gap: 4px;
+      background: #1a1a2e; border-radius: 20px; padding: 10px 6px 12px 4px;
+      box-shadow: 0 6px 22px rgba(0,0,0,.55); border: 1px solid #2d2d44; color: #f1f5f9;
+    }
+    .hud .hud-body { flex: 1; min-width: 0; padding: 0 6px; }
+    .hud-dist { font-size: 32px; font-weight: 800; letter-spacing: -.04em; line-height: 1; }
+    .hud-row { display: flex; gap: 10px; align-items: flex-start; margin-top: 6px; }
+    .hud-icon { font-size: 34px; line-height: 1; width: 40px; text-align: center; flex-shrink: 0; }
+    .hud-title { font-weight: 800; font-size: 17px; line-height: 1.25; }
+    .hud-sub { color: #94a3b8; font-size: 13px; margin-top: 2px; }
+    .hud-then { margin-top: 8px; padding-top: 8px; border-top: 1px solid #2d2d44; color: #cbd5e1; font-size: 13px; }
+    .hud-meta { color: #94a3b8; font-size: 12px; margin-top: 8px; font-weight: 650; }
+    body.nav .road-sign { display: none !important; }
+    .sheet input {
+      width: 100%; margin-top: 8px; border: 1px solid #2d2d44; border-radius: 12px;
+      background: #16213e; color: #f1f5f9; font-size: 16px; padding: 12px 14px;
+    }
+    .sheet .row { margin-top: 10px; }
+    .sheet button {
+      flex: 1; border: 0; border-radius: 999px; padding: 12px; font-weight: 700; cursor: pointer;
+    }
     .ico {
       width: 44px; height: 44px; border: 0; border-radius: 22px; background: transparent;
       color: #f1f5f9; cursor: pointer; display: grid; place-items: center; flex-shrink: 0;
@@ -140,7 +162,7 @@
       background: transparent; border: 0; border-bottom: 1px solid #2d2d44; color: #f1f5f9;
       padding: 14px 0; cursor: pointer; font-size: 15px;
     }
-    .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .alts[hidden], .search-bar[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden] { display: none !important; }
+    .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden] { display: none !important; }
     .chrome {
       padding: 0 0 calc(6px + env(safe-area-inset-bottom));
       border-top: 1px solid #2d2d44;
@@ -233,15 +255,23 @@
       <button type="button" class="ico clear" id="btnClear" hidden title="Effacer" aria-label="Effacer la recherche">×</button>
       <button type="button" class="avatar" id="btnUser" title="Compte" aria-label="Compte">P</button>
     </form>
-    <div class="nav-bar" id="navBar" hidden>
+    <div class="hud" id="navBar" hidden>
       <button type="button" class="ico" id="btnMenuNav" title="Menu" aria-label="Menu">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
-      <div class="nav-copy">
-        <div class="nav-next" id="navNext">Itinéraire</div>
-        <div class="nav-dest" id="navDest"></div>
+      <div class="hud-body">
+        <div class="hud-dist" id="hudDist">—</div>
+        <div class="hud-row">
+          <div class="hud-icon" id="hudIcon" aria-hidden="true">⬆</div>
+          <div>
+            <div class="hud-title" id="hudTitle">Guidage</div>
+            <div class="hud-sub" id="hudSub"></div>
+          </div>
+        </div>
+        <div class="hud-then" id="hudThen" hidden></div>
+        <div class="hud-meta" id="hudMeta">vers destination</div>
       </div>
-      <button type="button" class="ico" id="btnStopNav" title="Arrêter" aria-label="Arrêter le guidage">✕</button>
+      <button type="button" class="ico" id="btnStopNav" title="Quitter le guidage" aria-label="Quitter le guidage">✕</button>
     </div>
     <div class="chips" id="chips"></div>
     <div class="hits" id="hits" hidden></div>
@@ -249,7 +279,17 @@
   <button type="button" class="fab" id="btnHere" title="Ma position" aria-label="Ma position">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
   </button>
-  <div class="sheet" id="sheet" hidden></div>
+  <div class="sheet" id="fillSheet" hidden>
+    <strong>Plein Fuel</strong>
+    <span>Enregistré dans Hubera Fuel, sans quitter Maps.</span>
+    <input id="fillLiters" type="number" inputmode="decimal" placeholder="Litres" />
+    <input id="fillTotal" type="number" inputmode="decimal" placeholder="Montant €" />
+    <input id="fillStation" type="text" placeholder="Station (optionnel)" />
+    <div class="row">
+      <button type="button" class="ghost" id="fillCancel">Annuler</button>
+      <button type="button" class="primary" id="fillSave">Enregistrer</button>
+    </div>
+  </div>
   <div class="alts" id="alts" hidden></div>
   <div class="fuel" id="fuel" hidden>
     <div class="title" id="fuelTitle">Suivi Fuel</div>

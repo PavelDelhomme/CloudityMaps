@@ -27,6 +27,7 @@ import androidx.core.view.WindowCompat
 class MainActivity : AppCompatActivity() {
     private lateinit var web: WebView
     private lateinit var music: MusicBridge
+    private lateinit var fuel: FuelBridge
 
     private var updateChecked = false
 
@@ -62,6 +63,8 @@ class MainActivity : AppCompatActivity() {
         @Suppress("DEPRECATION")
         web.settings.allowUniversalAccessFromFileURLs = true
         web.addJavascriptInterface(music, "HuberaMusic")
+        fuel = FuelBridge(this)
+        web.addJavascriptInterface(fuel, "HuberaFuel")
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url
@@ -143,7 +146,15 @@ class MainActivity : AppCompatActivity() {
             } else {
                 null
             }
-        // Retour Fuel (hubera-maps:// sans query) : garder le guidage, ne pas recharger.
+        // Retour Fuel silencieux (hubera-maps://fuel?tripId=) : garder le guidage.
+        if (data?.host == "fuel" || (!q.isNullOrBlank() && q.contains("tripId=") && !q.contains("toLat") && !q.contains("lat="))) {
+            val safe = (q ?: "").replace("\\", "\\\\").replace("'", "\\'")
+            web.evaluateJavascript(
+                "window.__mapsFuelEvent&&window.__mapsFuelEvent('$safe')",
+                null,
+            )
+            return
+        }
         if (!q.isNullOrBlank()) {
             val auth = q.contains("email=") || data?.host == "auth"
             if (auth) {
