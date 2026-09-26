@@ -62,6 +62,8 @@ class MainActivity : AppCompatActivity() {
         web.addJavascriptInterface(fuel, "HuberaFuel")
         speed = SpeedLimitBridge { if (this::web.isInitialized) web else null }
         web.addJavascriptInterface(speed, "HuberaSpeed")
+        val routes = RouteBridge { if (this::web.isInitialized) web else null }
+        web.addJavascriptInterface(routes, "HuberaRoute")
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url

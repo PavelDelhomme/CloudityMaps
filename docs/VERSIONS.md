@@ -1,5 +1,10 @@
 # Hubera Maps — versions
 
+## 0.1.22 (26 sept. 2026)
+- Carte **OSM lisible** (CARTO affiche « API KEY REQUIRED », on n’y touche plus).
+- Itinéraires **OSRM natif** : le trait et les durées s’affichent vraiment.
+- Zone 30 + recherche Entrée = le lieu (0.1.21).
+
 ## 0.1.21 (26 sept. 2026)
 - Recherche : Entrée lance le **lieu tapé**, plus « Ma position ».
 - Nuit : **CARTO Dark** comme avant (OSM en secours, pas de filtre gris).

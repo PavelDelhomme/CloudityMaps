@@ -42,31 +42,16 @@ function applyTiles() {
   }
   nightOn = night;
   if (baseTiles) map.removeLayer(baseTiles);
-  // Jour = OSM. Nuit = CARTO Dark (sans clé, comme avant 0.1.18). Fallback OSM si 403.
-  const url = night
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const opts = {
+  // OSM public, couleurs normales. CARTO Dark affiche désormais « API KEY REQUIRED ».
+  baseTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    subdomains: night ? 'abcd' : 'abc',
+    subdomains: 'abc',
     updateWhenIdle: true,
     updateWhenZooming: false,
     keepBuffer: 1,
     detectRetina: false,
     attribution: '&copy; OpenStreetMap',
-  };
-  baseTiles = L.tileLayer(url, opts).addTo(map);
-  if (night) {
-    baseTiles.on('tileerror', () => {
-      if (baseTiles._huberaOsm) return;
-      baseTiles._huberaOsm = true;
-      map.removeLayer(baseTiles);
-      baseTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        ...opts,
-        subdomains: 'abc',
-      }).addTo(map);
-    });
-  }
+  }).addTo(map);
   document.body.classList.toggle('night', night);
 }
 applyTiles();
@@ -134,6 +119,9 @@ let travelMode = localStorage.getItem(MODE_KEY) || 'car';
 let routeGen = 0;
 let routeAbort = null;
 const routeCache = new Map();
+const osrmWait = new Map();
+let osrmReqId = 0;
+let ignoreSearchInput = false;
 const HUBERA_OWNER = { email: 'paul@delhomme.ovh', name: 'Paul' };
 let appVisible = !document.hidden;
 let idleGeoTimer = 0;
@@ -709,7 +697,58 @@ function osrmEndpoint() {
   return 'https://router.project-osrm.org/route/v1/driving/';
 }
 
+window.__huberaOsrmReady = function (id, ok) {
+  const fn = osrmWait.get(String(id));
+  if (!fn) return;
+  osrmWait.delete(String(id));
+  if (!ok) {
+    fn({ ok: false, data: null });
+    return;
+  }
+  try {
+    const raw = HuberaRoute.take(String(id));
+    fn({ ok: true, data: JSON.parse(raw) });
+  } catch {
+    fn({ ok: false, data: null });
+  }
+};
+
 async function osrmPath(points, alternatives, extra = '', signal) {
+  const from = points[0];
+  const to = points[points.length - 1];
+  if (typeof HuberaRoute !== 'undefined' && HuberaRoute.osrm && points.length === 2 && !extra) {
+    return new Promise((resolve, reject) => {
+      const id = String(++osrmReqId);
+      const timer = setTimeout(() => {
+        if (osrmWait.has(id)) {
+          osrmWait.delete(id);
+          resolve([]);
+        }
+      }, 14000);
+      osrmWait.set(id, (p) => {
+        clearTimeout(timer);
+        try {
+          resolve(p && p.ok ? parseOsrm(p.data) : []);
+        } catch {
+          resolve([]);
+        }
+      });
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          clearTimeout(timer);
+          osrmWait.delete(id);
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        });
+      }
+      try {
+        HuberaRoute.osrm(from.lon, from.lat, to.lon, to.lat, travelMode, id);
+      } catch {
+        clearTimeout(timer);
+        osrmWait.delete(id);
+        resolve([]);
+      }
+    });
+  }
   const path = points.map((p) => `${p.lon},${p.lat}`).join(';');
   const alt = alternatives <= 0 ? 'false' : String(Math.max(1, Math.min(3, alternatives)));
   const url =
@@ -1639,6 +1678,7 @@ window.__mapsBack = function () {
 };
 
 qEl.addEventListener('input', () => {
+  if (ignoreSearchInput) return;
   syncClear();
   clearTimeout(searchTimer);
   const q = qEl.value.trim();
@@ -1685,6 +1725,10 @@ hitsEl.addEventListener('click', (e) => {
   if (!btn) return;
   showHits([]);
   qEl.blur();
+  ignoreSearchInput = true;
+  window.setTimeout(() => {
+    ignoreSearchInput = false;
+  }, 800);
   if (btn.dataset.here === '1') {
     void (async () => {
       try {
