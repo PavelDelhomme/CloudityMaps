@@ -1,5 +1,8 @@
 # Hubera Maps — versions
 
+## 0.1.23 (26 sept. 2026)
+- Itinéraires : pont OSRM avec coordonnées en texte (le WebView cassait les Double).
+
 ## 0.1.22 (26 sept. 2026)
 - Carte **OSM lisible** (CARTO affiche « API KEY REQUIRED », on n’y touche plus).
 - Itinéraires **OSRM natif** : le trait et les durées s’affichent vraiment.

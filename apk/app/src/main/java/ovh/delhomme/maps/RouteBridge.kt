@@ -21,10 +21,14 @@ class RouteBridge(
     private val pending = ConcurrentHashMap<String, String>()
 
     @JavascriptInterface
-    fun osrm(fromLon: Double, fromLat: Double, toLon: Double, toLat: Double, mode: String, reqId: String) {
+    fun osrm(fromLon: String, fromLat: String, toLon: String, toLat: String, mode: String, reqId: String) {
         io.execute {
             val body = runCatching {
-                get(urlFor(fromLon, fromLat, toLon, toLat, mode))
+                val flo = fromLon.replace(',', '.').toDouble()
+                val fla = fromLat.replace(',', '.').toDouble()
+                val tlo = toLon.replace(',', '.').toDouble()
+                val tla = toLat.replace(',', '.').toDouble()
+                get(urlFor(flo, fla, tlo, tla, mode))
             }.getOrNull()
             if (body != null) pending[reqId] = body
             val ok = if (body != null) "true" else "false"

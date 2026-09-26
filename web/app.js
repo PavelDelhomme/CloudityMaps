@@ -741,7 +741,7 @@ async function osrmPath(points, alternatives, extra = '', signal) {
         });
       }
       try {
-        HuberaRoute.osrm(from.lon, from.lat, to.lon, to.lat, travelMode, id);
+        HuberaRoute.osrm(String(from.lon), String(from.lat), String(to.lon), String(to.lat), travelMode, id);
       } catch {
         clearTimeout(timer);
         osrmWait.delete(id);
@@ -1455,6 +1455,7 @@ async function routeTo(lat, lon, label) {
   clearRoute();
   destMarker = L.marker([lat, lon]).addTo(map).bindPopup(label);
   sheetEl.hidden = true;
+  toast(`Itinéraire vers ${label.split(',')[0]}…`);
   showAltsShell(label, `<p style="color:#94a3b8;margin:0">Calcul…</p>`);
   let choices = [];
   try {
