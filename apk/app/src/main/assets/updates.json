@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.19",
-  "versionCode": 21,
+  "version": "0.1.20",
+  "versionCode": 22,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Limite de vitesse m\u00eame sans tag OSM. OSM sans cl\u00e9. Dock Music live.",
-  "published_at": "2026-09-26T01:12:00+00:00",
-  "sha256": "0e78f7582ff039e1fad436680ab75b52c4f8b589844f96c349665bf886502557"
+  "notes": "Limite de vitesse native. OSM sans cl\u00e9. Dock Music live.",
+  "published_at": "2026-09-26T01:15:00+00:00",
+  "sha256": "a4f4af78d1f1f3ceb433cbef96e5522268bbe35a19f0266897537a38f5ae0031"
 }

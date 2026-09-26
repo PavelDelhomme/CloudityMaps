@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var web: WebView
     private lateinit var music: MusicBridge
     private lateinit var fuel: FuelBridge
+    private lateinit var speed: SpeedLimitBridge
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +60,8 @@ class MainActivity : AppCompatActivity() {
         web.addJavascriptInterface(music, "HuberaMusic")
         fuel = FuelBridge(this)
         web.addJavascriptInterface(fuel, "HuberaFuel")
+        speed = SpeedLimitBridge { if (this::web.isInitialized) web else null }
+        web.addJavascriptInterface(speed, "HuberaSpeed")
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url

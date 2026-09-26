@@ -1177,6 +1177,13 @@ function paintSpeedLimit(kmh) {
   roadNameEl.textContent = String(kmh);
 }
 
+window.__huberaSpeedLimit = function (kmh) {
+  const n = Number(kmh);
+  if (!Number.isFinite(n) || n < 5) return;
+  lastRoadPos = me || lastRoadPos;
+  paintSpeedLimit(Math.round(n));
+};
+
 async function refreshRoad(lat, lon) {
   const now = Date.now();
   const here = { lat, lon };
@@ -1184,6 +1191,14 @@ async function refreshRoad(lat, lon) {
   if (lastRoadPos && metersBetween(lastRoadPos, here) < 35 && now - lastRoadAt < 20000 && haveLimit) return;
   if (now - lastRoadAt < 8000) return;
   lastRoadAt = now;
+  if (typeof HuberaSpeed !== 'undefined' && HuberaSpeed.lookup) {
+    try {
+      HuberaSpeed.lookup(lat, lon);
+      return;
+    } catch {
+      /* fallback Overpass JS (web) */
+    }
+  }
   const query = `[out:json][timeout:10];way(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway];out center tags 24;`;
   const urls = [
     'https://overpass-api.de/api/interpreter',

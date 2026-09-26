@@ -1,5 +1,8 @@
 # Hubera Maps — versions
 
+## 0.1.20 (26 sept. 2026)
+- Limite de vitesse **native** (Overpass hors WebView) : le disque affiche 50 / 30 / 80 même sans tag, et même depuis l’APK `file://`.
+
 ## 0.1.19 (26 sept. 2026)
 - Limite de vitesse même sans tag OSM `maxspeed` (50 en agglomération, 20 aire piétonne, etc.).
 - Dock Music : bouton pause si le titre est lancé (y compris pendant le buffer).
