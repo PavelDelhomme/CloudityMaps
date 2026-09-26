@@ -187,7 +187,7 @@ class MusicBridge(
         val meta = c?.mediaMetadata
         val title = meta?.title?.toString()?.trim().orEmpty()
         val artist = meta?.artist?.toString()?.trim().orEmpty()
-        val playing = c?.isPlaying == true ||
+        val playing = (c != null && (c.isPlaying || c.playWhenReady)) ||
             (c == null && (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager).isMusicActive)
         val empty = title.isEmpty()
         return JSONObject()

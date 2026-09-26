@@ -410,7 +410,7 @@ function setMe(lat, lon, fly, fromCache) {
     meMarker.setIcon(puckIcon(lastHeadingDeg));
   }
   if (meMarker && moved < 3 && !fly) {
-    if (moved >= 40) void refreshRoad(lat, lon);
+    if (!lastRoadPos || (roadNameEl && roadNameEl.textContent === '—')) void refreshRoad(lat, lon);
     return;
   }
   if (fly) {
@@ -1106,6 +1106,7 @@ const FR_SPEED = {
   'FR:urban': 50,
   'FR:rural': 80,
   'FR:zone30': 30,
+  'FR:zone20': 20,
   'FR:motorway': 130,
   'FR:trunk': 110,
   'FR:living_street': 20,
@@ -1116,6 +1117,11 @@ function parseOsmMaxspeed(raw) {
   const s = String(raw).trim();
   if (!s || s === 'none' || s === 'signals') return null;
   if (FR_SPEED[s]) return FR_SPEED[s];
+  const frNum = s.match(/^FR:(\d{1,3})$/i);
+  if (frNum) {
+    const v = Number(frNum[1]);
+    if (v >= 5 && v <= 140) return Math.round(v);
+  }
   const fr = s.match(/^FR:(\w+)/i);
   if (fr) {
     const k = `FR:${fr[1].toLowerCase()}`;
@@ -1131,24 +1137,54 @@ function parseOsmMaxspeed(raw) {
   return null;
 }
 
+function impliedSpeedFromHighway(hw) {
+  if (!hw) return null;
+  if (hw === 'living_street') return 20;
+  if (hw === 'motorway' || hw === 'motorway_link') return 130;
+  if (hw === 'trunk' || hw === 'trunk_link') return 110;
+  if (
+    hw === 'residential' ||
+    hw === 'unclassified' ||
+    hw === 'tertiary' ||
+    hw === 'tertiary_link' ||
+    hw === 'secondary' ||
+    hw === 'secondary_link' ||
+    hw === 'primary' ||
+    hw === 'primary_link'
+  ) {
+    return 50;
+  }
+  return null;
+}
+
+function skipPedestrianHighway(hw) {
+  return !hw || /^(footway|cycleway|path|steps|pedestrian|bridleway|construction|proposed|elevator|corridor|platform|track)$/.test(hw);
+}
+
+function taggedSpeed(tags) {
+  if (!tags) return null;
+  for (const k of ['maxspeed', 'maxspeed:forward', 'maxspeed:backward', 'source:maxspeed', 'maxspeed:type', 'zone:maxspeed']) {
+    const v = parseOsmMaxspeed(tags[k]);
+    if (v != null) return v;
+  }
+  return null;
+}
+
 function paintSpeedLimit(kmh) {
   if (!roadNameEl) return;
   if (roadSignEl) roadSignEl.hidden = false;
-  if (kmh == null) {
-    roadNameEl.textContent = '—';
-    return;
-  }
+  if (kmh == null) return;
   roadNameEl.textContent = String(kmh);
 }
 
 async function refreshRoad(lat, lon) {
   const now = Date.now();
   const here = { lat, lon };
-  if (lastRoadPos && metersBetween(lastRoadPos, here) < 35 && now - lastRoadAt < 20000) return;
+  const haveLimit = roadNameEl && roadNameEl.textContent && roadNameEl.textContent !== '—';
+  if (lastRoadPos && metersBetween(lastRoadPos, here) < 35 && now - lastRoadAt < 20000 && haveLimit) return;
   if (now - lastRoadAt < 8000) return;
   lastRoadAt = now;
-  lastRoadPos = here;
-  const query = `[out:json][timeout:8];(way(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway][maxspeed];node(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway=speed_camera][maxspeed];);out tags 12;`;
+  const query = `[out:json][timeout:10];way(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway];out center tags 24;`;
   const urls = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
@@ -1164,12 +1200,24 @@ async function refreshRoad(lat, lon) {
       const data = await res.json();
       let best = null;
       for (const el of data.elements || []) {
-        const v = parseOsmMaxspeed(el.tags && el.tags.maxspeed);
-        if (v == null) continue;
-        if (best == null || v < best) best = v;
+        const tags = el.tags || {};
+        if (skipPedestrianHighway(tags.highway)) continue;
+        const c = el.center;
+        const dist = c && Number.isFinite(c.lat) ? metersBetween(here, { lat: c.lat, lon: c.lon }) : 999;
+        const tagged = taggedSpeed(tags);
+        const speed = tagged != null ? tagged : impliedSpeedFromHighway(tags.highway);
+        if (speed == null) continue;
+        if (
+          !best ||
+          dist < best.dist - 10 ||
+          (Math.abs(dist - best.dist) < 10 && tagged != null && !best.tagged)
+        ) {
+          best = { dist, speed, tagged: tagged != null };
+        }
       }
-      if (best != null) {
-        paintSpeedLimit(best);
+      if (best) {
+        lastRoadPos = here;
+        paintSpeedLimit(best.speed);
         return;
       }
     } catch {

@@ -1,5 +1,9 @@
 # Hubera Maps — versions
 
+## 0.1.19 (26 sept. 2026)
+- Limite de vitesse même sans tag OSM `maxspeed` (50 en agglomération, 20 aire piétonne, etc.).
+- Dock Music : bouton pause si le titre est lancé (y compris pendant le buffer).
+
 ## 0.1.18 (26 sept. 2026)
 - Tuiles **OSM public**, plus de CARTO (clé API inutile). Nuit = filtre CSS.
 - Panneau **limite de vitesse** OSM (à la place du nom de rue).
