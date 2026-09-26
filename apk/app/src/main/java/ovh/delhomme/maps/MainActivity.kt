@@ -81,11 +81,12 @@ class MainActivity : AppCompatActivity() {
                 val tiles =
                     host.endsWith("openstreetmap.org") ||
                         host.endsWith("openstreetmap.de") ||
+                        host.endsWith("openstreetmap.fr") ||
                         host.endsWith("komoot.io") ||
                         host.endsWith("project-osrm.org") ||
                         host.endsWith("transitous.org") ||
-                        host.endsWith("cartocdn.com") ||
-                        host.endsWith("basemaps.cartocdn.com")
+                        host.endsWith("overpass-api.de") ||
+                        host.endsWith("kumi.systems")
                 if ((u.scheme == "https" || u.scheme == "http") && !tiles) {
                     startActivity(Intent(Intent.ACTION_VIEW, u))
                     return true
@@ -94,8 +95,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                music.connect()
-                music.pushToWeb()
+                music.startWatch()
             }
         }
         web.webChromeClient = object : WebChromeClient() {
@@ -122,12 +122,12 @@ class MainActivity : AppCompatActivity() {
             )
         }
         if (this::music.isInitialized) {
-            music.connect()
-            music.pushToWeb()
+            music.startWatch()
         }
     }
 
     override fun onPause() {
+        if (this::music.isInitialized) music.stopWatch()
         if (this::web.isInitialized) {
             web.evaluateJavascript(
                 "window.__mapsEnergyPause&&window.__mapsEnergyPause()",

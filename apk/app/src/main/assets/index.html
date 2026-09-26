@@ -66,7 +66,9 @@
       border-bottom: 10px solid #e94560;
     }
     body.night .search-bar, body.night .hud { background: #12121c; }
-    body.nav .road-sign { display: none !important; }
+    body.night .leaflet-tile-pane {
+      filter: brightness(0.70) saturate(0.55) hue-rotate(210deg);
+    }
     .sheet input {
       width: 100%; margin-top: 8px; border: 1px solid #2d2d44; border-radius: 12px;
       background: #16213e; color: #f1f5f9; font-size: 16px; padding: 12px 14px;
@@ -99,12 +101,16 @@
     .road-sign {
       position: absolute; z-index: 1050; right: 12px;
       top: calc(118px + env(safe-area-inset-top));
-      min-width: 62px; max-width: 104px;
-      background: #1a1a2e; border: 2px solid #e8e4d4; border-radius: 7px;
-      padding: 4px 7px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,.4);
+      width: 58px; height: 58px; padding: 0;
+      border-radius: 50%; border: 5px solid #e11d2a; background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.45);
+      display: grid; place-items: center; text-align: center;
     }
-    .road-sign .kind { font-size: 8px; letter-spacing: .1em; color: #94a3b8; font-weight: 700; }
-    .road-sign .name { font-weight: 800; font-size: 12px; line-height: 1.15; color: #f8fafc; }
+    .road-sign .kind { display: none; }
+    .road-sign .name {
+      font-weight: 800; font-size: 22px; line-height: 1; color: #111;
+      letter-spacing: -.04em; font-variant-numeric: tabular-nums;
+    }
     .hits {
       margin-top: 8px; background: #1a1a2e; border-radius: 12px;
       box-shadow: 0 1px 3px rgba(0,0,0,.4); overflow: hidden; max-height: 36vh; overflow-y: auto;
@@ -261,9 +267,9 @@
 </head>
 <body>
   <div id="map"></div>
-  <div class="road-sign" id="roadSign" aria-live="polite">
-    <div class="kind">VOIE</div>
-    <div class="name" id="roadName">…</div>
+  <div class="road-sign" id="roadSign" aria-live="polite" title="Limitation de vitesse">
+    <div class="kind">LIMITE</div>
+    <div class="name" id="roadName">—</div>
   </div>
   <div class="top" id="topChrome">
     <form class="search-bar" id="searchForm">

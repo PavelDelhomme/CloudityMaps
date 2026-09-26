@@ -1,5 +1,10 @@
 # Hubera Maps — versions
 
+## 0.1.18 (26 sept. 2026)
+- Tuiles **OSM public**, plus de CARTO (clé API inutile). Nuit = filtre CSS.
+- Panneau **limite de vitesse** OSM (à la place du nom de rue).
+- Dock Music : titre en temps réel (poll 1 s + reconnexion session).
+
 ## 0.1.17 (25 sept. 2026)
 - Après « sources inconnues », Maps **relance l’install toute seule** (APK déjà téléchargée).
 - Toujours FileProvider, jamais Chrome `/install`.

@@ -16,8 +16,7 @@ import org.json.JSONObject
 
 /**
  * Commande Hubera Music depuis Maps (comme YouTube Music dans Google Maps).
- * Media3 session exportée par PlaybackService ; repli touches média système.
- * MediaController n'accepte que le thread principal — l'état est mis en cache pour JS.
+ * Media3 session ; poll 1 s pour le dock (titre en temps réel).
  */
 class MusicBridge(
     private val context: Context,
@@ -29,6 +28,18 @@ class MusicBridge(
     @Volatile
     private var cachedState: String = defaultState().toString()
     private var connectTries = 0
+    private var watching = false
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!watching) return
+            if (controller == null) connect()
+            else {
+                refreshCache()
+                pushToWeb()
+            }
+            main.postDelayed(this, 1000)
+        }
+    }
 
     fun connect() {
         if (controller != null || connecting) return
@@ -45,6 +56,7 @@ class MusicBridge(
                     val ok = runCatching {
                         val c = future.get()
                         controller = c
+                        connectTries = 0
                         c.addListener(object : Player.Listener {
                             override fun onEvents(player: Player, events: Player.Events) {
                                 refreshCache()
@@ -54,23 +66,43 @@ class MusicBridge(
                         refreshCache()
                         pushToWeb()
                     }.isSuccess
-                    if (!ok && connectTries < 12) {
-                        connectTries += 1
-                        main.postDelayed({ connect() }, 1500)
+                    if (!ok) {
+                        controller = null
+                        scheduleReconnect()
                     }
                 },
                 { r -> main.post(r) },
             )
         } catch (_: Throwable) {
             connecting = false
-            if (connectTries < 12) {
-                connectTries += 1
-                main.postDelayed({ connect() }, 1500)
-            }
+            scheduleReconnect()
         }
     }
 
+    fun startWatch() {
+        if (watching) return
+        watching = true
+        connect()
+        main.removeCallbacks(tick)
+        main.post(tick)
+    }
+
+    fun stopWatch() {
+        watching = false
+        main.removeCallbacks(tick)
+    }
+
+    private fun scheduleReconnect() {
+        if (connectTries > 40) connectTries = 0
+        connectTries += 1
+        main.postDelayed({
+            connecting = false
+            if (controller == null) connect()
+        }, 1500)
+    }
+
     fun release() {
+        stopWatch()
         controller?.release()
         controller = null
     }

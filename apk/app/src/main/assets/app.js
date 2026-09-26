@@ -36,19 +36,22 @@ function wantNight() {
 }
 function applyTiles() {
   const night = wantNight();
-  if (baseTiles && nightOn === night) return;
+  if (baseTiles && nightOn === night) {
+    document.body.classList.toggle('night', night);
+    return;
+  }
   nightOn = night;
   if (baseTiles) map.removeLayer(baseTiles);
-  const url = night
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  baseTiles = L.tileLayer(url, {
+  // OSM public, sans clé. CARTO Dark exige désormais une API key : on n’en veut pas.
+  // Nuit = mêmes tuiles OSM + filtre CSS (body.night).
+  baseTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
+    subdomains: 'abc',
     updateWhenIdle: true,
     updateWhenZooming: false,
     keepBuffer: 1,
     detectRetina: false,
-    attribution: night ? '&copy; OSM · CARTO' : '&copy; OpenStreetMap',
+    attribution: '&copy; OpenStreetMap',
   }).addTo(map);
   document.body.classList.toggle('night', night);
 }
@@ -1099,27 +1102,79 @@ function startNavigation() {
   startNavWatch(applyNavFix);
 }
 
+const FR_SPEED = {
+  'FR:urban': 50,
+  'FR:rural': 80,
+  'FR:zone30': 30,
+  'FR:motorway': 130,
+  'FR:trunk': 110,
+  'FR:living_street': 20,
+};
+
+function parseOsmMaxspeed(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s || s === 'none' || s === 'signals') return null;
+  if (FR_SPEED[s]) return FR_SPEED[s];
+  const fr = s.match(/^FR:(\w+)/i);
+  if (fr) {
+    const k = `FR:${fr[1].toLowerCase()}`;
+    if (FR_SPEED[k]) return FR_SPEED[k];
+  }
+  const km = s.match(/^(\d+(?:\.\d+)?)\s*(km\/h|kmh)?$/i);
+  if (km) {
+    const v = Number(km[1]);
+    if (v >= 5 && v <= 140) return Math.round(v);
+  }
+  const mph = s.match(/^(\d+)\s*mph$/i);
+  if (mph) return Math.round(Number(mph[1]) * 1.609);
+  return null;
+}
+
+function paintSpeedLimit(kmh) {
+  if (!roadNameEl) return;
+  if (roadSignEl) roadSignEl.hidden = false;
+  if (kmh == null) {
+    roadNameEl.textContent = '—';
+    return;
+  }
+  roadNameEl.textContent = String(kmh);
+}
+
 async function refreshRoad(lat, lon) {
   const now = Date.now();
   const here = { lat, lon };
-  if (lastRoadPos && metersBetween(lastRoadPos, here) < 45 && now - lastRoadAt < 25000) return;
-  if (now - lastRoadAt < 16000) return;
+  if (lastRoadPos && metersBetween(lastRoadPos, here) < 35 && now - lastRoadAt < 20000) return;
+  if (now - lastRoadAt < 8000) return;
   lastRoadAt = now;
   lastRoadPos = here;
-  try {
-    const url = `https://photon.komoot.io/reverse?lon=${lon}&lat=${lat}&lang=fr`;
-    const res = await fetch(url);
-    const data = await res.json();
-    const p = data.features?.[0]?.properties || {};
-    const name = p.name || p.street || p.osm_value || p.city || '';
-    roadNameEl.textContent = name || '—';
-    const kindEl = document.querySelector('#roadSign .kind');
-    if (kindEl) {
-      const n = String(name);
-      kindEl.textContent = /^d\s?\d/i.test(n) ? 'DÉPARTEMENTALE' : n.startsWith('N') ? 'NATIONALE' : 'VOIE';
+  const query = `[out:json][timeout:8];(way(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway][maxspeed];node(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway=speed_camera][maxspeed];);out tags 12;`;
+  const urls = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ];
+  for (const endpoint of urls) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+        body: `data=${encodeURIComponent(query)}`,
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      let best = null;
+      for (const el of data.elements || []) {
+        const v = parseOsmMaxspeed(el.tags && el.tags.maxspeed);
+        if (v == null) continue;
+        if (best == null || v < best) best = v;
+      }
+      if (best != null) {
+        paintSpeedLimit(best);
+        return;
+      }
+    } catch {
+      /* Overpass suivant */
     }
-  } catch {
-    /* hors ligne */
   }
 }
 
@@ -1817,5 +1872,5 @@ if (nativeMusic) {
     } catch {
       /* ignore */
     }
-  }, 1500);
+  }, 800);
 }
