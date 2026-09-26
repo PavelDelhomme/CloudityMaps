@@ -42,7 +42,8 @@ function applyTiles() {
   }
   nightOn = night;
   if (baseTiles) map.removeLayer(baseTiles);
-  // OSM public, couleurs normales. CARTO Dark affiche désormais « API KEY REQUIRED ».
+  // Comme avant : OSM public. Nuit = les mêmes tuiles, assombries en CSS
+  // (CARTO Dark exige une clé et affiche « API KEY REQUIRED »).
   baseTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     subdomains: 'abc',

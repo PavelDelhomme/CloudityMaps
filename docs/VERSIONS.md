@@ -1,5 +1,8 @@
 # Hubera Maps — versions
 
+## 0.1.28 (26 sept. 2026)
+- Nuit : **carte sombre** comme avant, sans clé CARTO (OSM inversé, pas de watermark).
+
 ## 0.1.27 (26 sept. 2026)
 - Itinéraires : calcul **dans le WebView** (TLS Chromium). Le natif SSL échouait sur le Blackview.
 

@@ -66,6 +66,9 @@
       border-bottom: 10px solid #e94560;
     }
     body.night .search-bar, body.night .hud { background: #12121c; }
+    body.night .leaflet-tile-pane {
+      filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.92) saturate(0.8);
+    }
     .sheet input {
       width: 100%; margin-top: 8px; border: 1px solid #2d2d44; border-radius: 12px;
       background: #16213e; color: #f1f5f9; font-size: 16px; padding: 12px 14px;

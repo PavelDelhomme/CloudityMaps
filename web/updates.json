@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.27",
-  "versionCode": 29,
+  "version": "0.1.28",
+  "versionCode": 30,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Itin\u00e9raires r\u00e9par\u00e9s. OSM. Zone 30. Recherche Entr\u00e9e = le lieu.",
-  "published_at": "2026-09-26T01:52:00+00:00",
-  "sha256": "b31388982dcf662f6fa0bc223d9e84b186e9a67c3802ba392cbb33c019d56f85"
+  "notes": "Nuit sombre sans cl\u00e9 CARTO. Itin\u00e9raires. Zone 30. OSM.",
+  "published_at": "2026-09-26T01:55:00+00:00",
+  "sha256": "1c9b7e45dac487459af1bf11b0df75011f2cc5386540a33ae5375b4c715012ef"
 }
