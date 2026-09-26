@@ -23,13 +23,17 @@ class RouteBridge(
     @JavascriptInterface
     fun osrm(fromLon: String, fromLat: String, toLon: String, toLat: String, mode: String, reqId: String) {
         io.execute {
+            android.util.Log.i("HuberaRoute", "osrm $reqId start $mode")
             val body = runCatching {
                 val flo = fromLon.replace(',', '.').toDouble()
                 val fla = fromLat.replace(',', '.').toDouble()
                 val tlo = toLon.replace(',', '.').toDouble()
                 val tla = toLat.replace(',', '.').toDouble()
-                get(urlFor(flo, fla, tlo, tla, mode))
+                fetchFirst(flo, fla, tlo, tla, mode)
+            }.onFailure {
+                android.util.Log.w("HuberaRoute", "osrm $reqId fail ${it.javaClass.simpleName} ${it.message}")
             }.getOrNull()
+            android.util.Log.i("HuberaRoute", "osrm $reqId bytes=${body?.length ?: -1}")
             if (body != null) pending[reqId] = body
             val ok = if (body != null) "true" else "false"
             main.post {
@@ -44,23 +48,35 @@ class RouteBridge(
     @JavascriptInterface
     fun take(reqId: String): String = pending.remove(reqId) ?: ""
 
-    private fun urlFor(
+    private fun bases(mode: String): List<String> {
+        val foot = "https://routing.openstreetmap.de/routed-foot/route/v1/driving/"
+        val bike = "https://routing.openstreetmap.de/routed-bike/route/v1/driving/"
+        val carOsm = "https://routing.openstreetmap.de/routed-car/route/v1/driving/"
+        val carDemo = "https://router.project-osrm.org/route/v1/driving/"
+        return when (mode) {
+            "walk" -> listOf(foot, carDemo)
+            "bike" -> listOf(bike, carDemo)
+            else -> listOf(carOsm, carDemo)
+        }
+    }
+
+    private fun fetchFirst(
         fromLon: Double,
         fromLat: Double,
         toLon: Double,
         toLat: Double,
         mode: String,
-    ): String {
-        val base = when (mode) {
-            "walk" -> "https://routing.openstreetmap.de/routed-foot/route/v1/driving/"
-            "bike" -> "https://routing.openstreetmap.de/routed-bike/route/v1/driving/"
-            else -> "https://router.project-osrm.org/route/v1/driving/"
-        }
+    ): String? {
         val la = String.format(java.util.Locale.US, "%.6f", fromLat)
         val lo = String.format(java.util.Locale.US, "%.6f", fromLon)
         val tb = String.format(java.util.Locale.US, "%.6f", toLat)
         val tn = String.format(java.util.Locale.US, "%.6f", toLon)
-        return "${base}${lo},${la};${tn},${tb}?overview=full&geometries=geojson&alternatives=true&steps=true"
+        val tail = "${lo},${la};${tn},${tb}?overview=full&geometries=geojson&alternatives=true&steps=true"
+        for (base in bases(mode)) {
+            val got = get(base + tail)
+            if (got != null) return got
+        }
+        return null
     }
 
     private fun get(url: String): String? {
@@ -68,13 +84,24 @@ class RouteBridge(
             requestMethod = "GET"
             connectTimeout = 12_000
             readTimeout = 12_000
+            instanceFollowRedirects = true
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.22 (https://maps.hubera.cloud)")
+            setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
+            )
         }
         return try {
-            if (conn.responseCode !in 200..299) return null
+            val code = conn.responseCode
+            android.util.Log.i("HuberaRoute", "GET $code ${url.take(80)}")
+            if (code !in 200..299) {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(180)
+                android.util.Log.w("HuberaRoute", "body $err")
+                return null
+            }
             conn.inputStream.bufferedReader().use { it.readText() }
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            android.util.Log.w("HuberaRoute", "ex ${t.javaClass.simpleName} ${t.message}")
             null
         } finally {
             conn.disconnect()

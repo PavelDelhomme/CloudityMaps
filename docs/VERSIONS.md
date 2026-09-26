@@ -1,5 +1,19 @@
 # Hubera Maps — versions
 
+## 0.1.27 (26 sept. 2026)
+- Itinéraires : calcul **dans le WebView** (TLS Chromium). Le natif SSL échouait sur le Blackview.
+
+## 0.1.26 (26 sept. 2026)
+- OSRM : repli `routing.openstreetmap.de` + UA Chrome (le demo OSRM renvoyait vide sur le téléphone).
+- Un seul panneau d’itinéraire sous la recherche.
+
+## 0.1.25 (26 sept. 2026)
+- Itinéraires : le panneau `#sheet` avait disparu du HTML, le calcul plantait (promesse null).
+
+## 0.1.24 (26 sept. 2026)
+- Panneau d’itinéraire **sous la recherche** (plus caché par Music).
+- Plus d’attente infinie sur des variantes OSRM.
+
 ## 0.1.23 (26 sept. 2026)
 - Itinéraires : pont OSRM avec coordonnées en texte (le WebView cassait les Double).
 

@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.23",
-  "versionCode": 25,
+  "version": "0.1.27",
+  "versionCode": 29,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Itin\u00e9raires OSRM natifs. OSM. Zone 30. Recherche OK.",
-  "published_at": "2026-09-26T01:42:00+00:00",
-  "sha256": "c0ef3885c9781e9f6fef09e6bc78bc85d81d14c51f625d4f154c35d2ca8416a2"
+  "notes": "Itin\u00e9raires r\u00e9par\u00e9s. OSM. Zone 30. Recherche Entr\u00e9e = le lieu.",
+  "published_at": "2026-09-26T01:52:00+00:00",
+  "sha256": "b31388982dcf662f6fa0bc223d9e84b186e9a67c3802ba392cbb33c019d56f85"
 }

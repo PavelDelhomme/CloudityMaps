@@ -69,6 +69,7 @@ const panelFuel = document.getElementById('panelFuel');
 const pageSaved = document.getElementById('pageSaved');
 const savedList = document.getElementById('savedList');
 const altsEl = document.getElementById('alts');
+const routeCardEl = document.getElementById('routeCard');
 const navBar = document.getElementById('navBar');
 const searchForm = document.getElementById('searchForm');
 const roadNameEl = document.getElementById('roadName');
@@ -714,6 +715,17 @@ window.__huberaOsrmReady = function (id, ok) {
 };
 
 async function osrmPath(points, alternatives, extra = '', signal) {
+  const path = points.map((p) => `${p.lon},${p.lat}`).join(';');
+  const alt = alternatives <= 0 ? 'false' : String(Math.max(1, Math.min(3, alternatives)));
+  const url =
+    `${osrmEndpoint()}${path}` +
+    `?overview=full&geometries=geojson&alternatives=${alt}&steps=true${extra}`;
+  try {
+    const res = await fetch(url, { headers: FETCH_HDR, signal });
+    if (res.ok) return parseOsrm(await res.json());
+  } catch (err) {
+    if (err && err.name === 'AbortError') throw err;
+  }
   const from = points[0];
   const to = points[points.length - 1];
   if (typeof HuberaRoute !== 'undefined' && HuberaRoute.osrm && points.length === 2 && !extra) {
@@ -749,14 +761,7 @@ async function osrmPath(points, alternatives, extra = '', signal) {
       }
     });
   }
-  const path = points.map((p) => `${p.lon},${p.lat}`).join(';');
-  const alt = alternatives <= 0 ? 'false' : String(Math.max(1, Math.min(3, alternatives)));
-  const url =
-    `${osrmEndpoint()}${path}` +
-    `?overview=full&geometries=geojson&alternatives=${alt}&steps=true${extra}`;
-  const res = await fetch(url, { headers: FETCH_HDR, signal });
-  if (!res.ok) return [];
-  return parseOsrm(await res.json());
+  return [];
 }
 
 async function settledRoutes(promises) {
@@ -932,9 +937,16 @@ function bindModeButtons(root) {
 }
 
 function showAltsShell(label, extraHtml) {
-  altsEl.hidden = false;
-  altsEl.innerHTML = modesRowHtml() + `<h3>${esc(label)}</h3>` + (extraHtml || '');
-  bindModeButtons(altsEl);
+  const html = modesRowHtml() + `<h3>${esc(label)}</h3>` + (extraHtml || '');
+  if (routeCardEl) {
+    routeCardEl.hidden = false;
+    routeCardEl.innerHTML = html;
+    bindModeButtons(routeCardEl);
+  }
+  if (altsEl) {
+    altsEl.hidden = true;
+    altsEl.innerHTML = '';
+  }
 }
 
 function setTravelMode(mode) {
@@ -948,8 +960,14 @@ function setTravelMode(mode) {
 
 function renderAlts() {
   if (!routeChoices.length) {
-    altsEl.hidden = true;
-    altsEl.innerHTML = '';
+    if (altsEl) {
+      altsEl.hidden = true;
+      altsEl.innerHTML = '';
+    }
+    if (routeCardEl) {
+      routeCardEl.hidden = true;
+      routeCardEl.innerHTML = '';
+    }
     return;
   }
   const dest = lastDest?.label || 'Destination';
