@@ -66,9 +66,6 @@
       border-bottom: 10px solid #e94560;
     }
     body.night .search-bar, body.night .hud { background: #12121c; }
-    body.night .leaflet-tile-pane {
-      filter: brightness(0.70) saturate(0.55) hue-rotate(210deg);
-    }
     .sheet input {
       width: 100%; margin-top: 8px; border: 1px solid #2d2d44; border-radius: 12px;
       background: #16213e; color: #f1f5f9; font-size: 16px; padding: 12px 14px;
@@ -113,7 +110,8 @@
     }
     .hits {
       margin-top: 8px; background: #1a1a2e; border-radius: 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.4); overflow: hidden; max-height: 36vh; overflow-y: auto;
+      box-shadow: 0 1px 3px rgba(0,0,0,.4); overflow: hidden; max-height: 42vh; overflow-y: auto;
+      position: relative; z-index: 1200;
     }
     .hit { display: block; width: 100%; text-align: left; padding: 12px 14px; border: 0; background: #1a1a2e; color: #f1f5f9; cursor: pointer; border-bottom: 1px solid #2d2d44; font-size: 15px; }
     .hit.here { background: #16213e; }

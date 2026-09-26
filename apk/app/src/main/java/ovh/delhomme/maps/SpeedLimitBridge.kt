@@ -49,7 +49,7 @@ class SpeedLimitBridge(
         val la = String.format(java.util.Locale.US, "%.5f", lat)
         val lo = String.format(java.util.Locale.US, "%.5f", lon)
         val query =
-            "[out:json][timeout:10];way(around:80,$la,$lo)[highway];out center tags 24;"
+            "[out:json][timeout:10];way(around:200,$la,$lo)[highway];out center tags 40;"
         val body = "data=" + java.net.URLEncoder.encode(query, Charsets.UTF_8.name())
         for (endpoint in ENDPOINTS) {
             val raw = post(endpoint, body) ?: continue
@@ -83,9 +83,8 @@ class SpeedLimitBridge(
     private fun parse(raw: String, lat: Double, lon: Double): Int? {
         val root = JSONObject(raw)
         val elements = root.optJSONArray("elements") ?: return null
-        var bestDist = Double.POSITIVE_INFINITY
-        var bestSpeed: Int? = null
-        var bestTagged = false
+        data class Cand(val dist: Double, val tagged: Int?, val implied: Int?, val urban: Boolean)
+        val cands = ArrayList<Cand>()
         for (i in 0 until elements.length()) {
             val el = elements.optJSONObject(i) ?: continue
             val tags = el.optJSONObject("tags") ?: continue
@@ -98,17 +97,20 @@ class SpeedLimitBridge(
                 999.0
             }
             val tagged = taggedSpeed(tags)
-            val speed = tagged ?: impliedHighway(hw) ?: continue
-            val better =
-                dist < bestDist - 10 ||
-                    (kotlin.math.abs(dist - bestDist) < 10 && tagged != null && !bestTagged)
-            if (better || bestSpeed == null) {
-                bestDist = dist
-                bestSpeed = speed
-                bestTagged = tagged != null
-            }
+            val implied = impliedHighway(hw)
+            if (tagged == null && implied == null) continue
+            val urban = hw == "residential" || hw == "living_street" || hw == "unclassified"
+            cands.add(Cand(dist, tagged, implied, urban))
         }
-        return bestSpeed
+        if (cands.isEmpty()) return null
+        cands.sortBy { it.dist }
+        val closest = cands[0]
+        closest.tagged?.let { return it }
+        val zone30 = cands
+            .filter { it.dist <= 220 && it.urban && it.tagged != null && it.tagged <= 30 }
+            .minOfOrNull { it.tagged!! }
+        if (zone30 != null && (closest.implied == null || closest.implied == 50)) return zone30
+        return closest.implied
     }
 
     companion object {

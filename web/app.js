@@ -42,17 +42,31 @@ function applyTiles() {
   }
   nightOn = night;
   if (baseTiles) map.removeLayer(baseTiles);
-  // OSM public, sans clé. CARTO Dark exige désormais une API key : on n’en veut pas.
-  // Nuit = mêmes tuiles OSM + filtre CSS (body.night).
-  baseTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  // Jour = OSM. Nuit = CARTO Dark (sans clé, comme avant 0.1.18). Fallback OSM si 403.
+  const url = night
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const opts = {
     maxZoom: 19,
-    subdomains: 'abc',
+    subdomains: night ? 'abcd' : 'abc',
     updateWhenIdle: true,
     updateWhenZooming: false,
     keepBuffer: 1,
     detectRetina: false,
     attribution: '&copy; OpenStreetMap',
-  }).addTo(map);
+  };
+  baseTiles = L.tileLayer(url, opts).addTo(map);
+  if (night) {
+    baseTiles.on('tileerror', () => {
+      if (baseTiles._huberaOsm) return;
+      baseTiles._huberaOsm = true;
+      map.removeLayer(baseTiles);
+      baseTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        ...opts,
+        subdomains: 'abc',
+      }).addTo(map);
+    });
+  }
   document.body.classList.toggle('night', night);
 }
 applyTiles();
@@ -457,12 +471,22 @@ function rememberRecent(place) {
 
 async function searchPhoton(q) {
   const bias = me ? `&lat=${me.lat}&lon=${me.lon}` : '';
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lang=fr&limit=8${bias}`;
-  const res = await fetch(url);
-  const data = await res.json();
+  try {
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lang=fr&limit=8${bias}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const out = featuresToHits(data.features || [], q);
+    if (out.length) return out;
+  } catch {
+    /* Nominatim */
+  }
+  return searchNominatim(q);
+}
+
+function featuresToHits(features, q) {
   const seen = new Set();
   const out = [];
-  for (const f of data.features || []) {
+  for (const f of features) {
     const [lon, lat] = f.geometry.coordinates;
     const props = f.properties || {};
     const label = [props.name, props.street, props.city || props.state, props.country]
@@ -472,6 +496,26 @@ async function searchPhoton(q) {
     if (seen.has(item.label)) continue;
     seen.add(item.label);
     out.push(item);
+  }
+  return out;
+}
+
+async function searchNominatim(q) {
+  const url =
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&accept-language=fr&q=${encodeURIComponent(q)}` +
+    (me ? `&lat=${me.lat}&lon=${me.lon}` : '');
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  const data = await res.json();
+  const seen = new Set();
+  const out = [];
+  for (const n of data || []) {
+    const lat = Number(n.lat);
+    const lon = Number(n.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const label = n.display_name || q;
+    if (seen.has(label)) continue;
+    seen.add(label);
+    out.push({ label, lat, lon });
   }
   return out;
 }
@@ -1199,7 +1243,7 @@ async function refreshRoad(lat, lon) {
       /* fallback Overpass JS (web) */
     }
   }
-  const query = `[out:json][timeout:10];way(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway];out center tags 24;`;
+  const query = `[out:json][timeout:10];way(around:200,${lat.toFixed(5)},${lon.toFixed(5)})[highway];out center tags 40;`;
   const urls = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
@@ -1213,26 +1257,32 @@ async function refreshRoad(lat, lon) {
       });
       if (!res.ok) continue;
       const data = await res.json();
-      let best = null;
+      const rows = [];
       for (const el of data.elements || []) {
         const tags = el.tags || {};
         if (skipPedestrianHighway(tags.highway)) continue;
         const c = el.center;
         const dist = c && Number.isFinite(c.lat) ? metersBetween(here, { lat: c.lat, lon: c.lon }) : 999;
         const tagged = taggedSpeed(tags);
-        const speed = tagged != null ? tagged : impliedSpeedFromHighway(tags.highway);
-        if (speed == null) continue;
-        if (
-          !best ||
-          dist < best.dist - 10 ||
-          (Math.abs(dist - best.dist) < 10 && tagged != null && !best.tagged)
-        ) {
-          best = { dist, speed, tagged: tagged != null };
-        }
+        const implied = impliedSpeedFromHighway(tags.highway);
+        if (tagged == null && implied == null) continue;
+        const urban = tags.highway === 'residential' || tags.highway === 'living_street' || tags.highway === 'unclassified';
+        rows.push({ dist, tagged, implied, urban });
       }
-      if (best) {
+      rows.sort((a, b) => a.dist - b.dist);
+      const closest = rows[0];
+      if (!closest) continue;
+      let speed = closest.tagged;
+      if (speed == null) {
+        const zone30 = rows
+          .filter((r) => r.dist <= 220 && r.urban && r.tagged != null && r.tagged <= 30)
+          .map((r) => r.tagged);
+        if (zone30.length && (closest.implied == null || closest.implied === 50)) speed = Math.min(...zone30);
+        else speed = closest.implied;
+      }
+      if (speed != null) {
         lastRoadPos = here;
-        paintSpeedLimit(best.speed);
+        paintSpeedLimit(speed);
         return;
       }
     } catch {
@@ -1291,23 +1341,34 @@ function startAssign(kind) {
 
 async function showSuggestHits(q) {
   const items = [];
-  const title = pendingAssign === 'home' ? 'Maison' : pendingAssign === 'work' ? 'Travail' : '';
-  items.push({
-    lat: me ? me.lat : 0,
-    lon: me ? me.lon : 0,
-    label: 'Ma position actuelle',
-    hint: title ? `Enregistrer ici comme ${title}` : 'Utiliser ma position',
-    here: true,
-  });
   const query = String(q || '').trim();
   if (query.length >= 2) {
+    chipsEl.hidden = true;
     try {
       const found = await searchPhoton(query);
       for (const h of found) items.push(h);
     } catch {
       /* hors ligne */
     }
+    if (!items.length) {
+      items.push({
+        lat: me ? me.lat : 0,
+        lon: me ? me.lon : 0,
+        label: 'Aucun lieu trouvé',
+        hint: 'Réessayez avec une adresse plus précise',
+        here: true,
+      });
+    }
   } else {
+    chipsEl.hidden = false;
+    const title = pendingAssign === 'home' ? 'Maison' : pendingAssign === 'work' ? 'Travail' : '';
+    items.push({
+      lat: me ? me.lat : 0,
+      lon: me ? me.lon : 0,
+      label: 'Ma position actuelle',
+      hint: title ? `Enregistrer ici comme ${title}` : 'Utiliser ma position',
+      here: true,
+    });
     const p = loadPlaces();
     for (const r of p.recents.slice(0, 4)) {
       items.push({ ...r, hint: 'Récent' });
@@ -1614,7 +1675,8 @@ btnClear.addEventListener('click', () => {
 
 document.getElementById('searchForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  const first = hitsEl.querySelector('.hit');
+  qEl.blur();
+  const first = hitsEl.querySelector('.hit:not(.here)') || hitsEl.querySelector('.hit');
   if (first) first.click();
 });
 
@@ -1622,6 +1684,7 @@ hitsEl.addEventListener('click', (e) => {
   const btn = e.target.closest('.hit');
   if (!btn) return;
   showHits([]);
+  qEl.blur();
   if (btn.dataset.here === '1') {
     void (async () => {
       try {

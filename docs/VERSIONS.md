@@ -1,5 +1,10 @@
 # Hubera Maps — versions
 
+## 0.1.21 (26 sept. 2026)
+- Recherche : Entrée lance le **lieu tapé**, plus « Ma position ».
+- Nuit : **CARTO Dark** comme avant (OSM en secours, pas de filtre gris).
+- Zone **30** détectée si les rues autour sont à 30, même sans tag sur ta rue.
+
 ## 0.1.20 (26 sept. 2026)
 - Limite de vitesse **native** (Overpass hors WebView) : le disque affiche 50 / 30 / 80 même sans tag, et même depuis l’APK `file://`.
 

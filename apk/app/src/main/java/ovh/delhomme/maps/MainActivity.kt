@@ -89,7 +89,9 @@ class MainActivity : AppCompatActivity() {
                         host.endsWith("project-osrm.org") ||
                         host.endsWith("transitous.org") ||
                         host.endsWith("overpass-api.de") ||
-                        host.endsWith("kumi.systems")
+                        host.endsWith("kumi.systems") ||
+                        host.endsWith("cartocdn.com") ||
+                        host.endsWith("nominatim.org")
                 if ((u.scheme == "https" || u.scheme == "http") && !tiles) {
                     startActivity(Intent(Intent.ACTION_VIEW, u))
                     return true

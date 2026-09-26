@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.20",
-  "versionCode": 22,
+  "version": "0.1.21",
+  "versionCode": 23,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Limite de vitesse native. OSM sans cl\u00e9. Dock Music live.",
-  "published_at": "2026-09-26T01:15:00+00:00",
-  "sha256": "a4f4af78d1f1f3ceb433cbef96e5522268bbe35a19f0266897537a38f5ae0031"
+  "notes": "Itin\u00e9raires : Entr\u00e9e = le lieu. CARTO nuit. Zone 30. Dock Music.",
+  "published_at": "2026-09-26T01:32:00+00:00",
+  "sha256": "5309f27378b2fed633dedff212159bf6bca36241cf06f85ebe3e6ac50b45fc8e"
 }
