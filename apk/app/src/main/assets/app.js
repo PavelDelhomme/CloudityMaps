@@ -106,6 +106,9 @@ let lastSpoken = '';
 let lastSpokenAt = 0;
 let followNav = true;
 let poiLayer = null;
+let worksLayer = null;
+let mapsStartedFuel = false;
+let lastWorksNearAt = 0;
 
 const PLACE_KEY = 'hubera-maps-places';
 const MUSIC_KEY = 'hubera-maps-music-dock';
@@ -162,7 +165,9 @@ function fuelControl(action, extra) {
   } catch {
     /* WebView hors APK */
   }
-  toast('Commande Fuel enregistrée dans Maps.');
+  if (action !== 'start' && action !== 'stop') {
+    toast('Commande Fuel enregistrée dans Maps.');
+  }
   return false;
 }
 
@@ -281,6 +286,7 @@ function applyNavFix(pos) {
   }
   appendTrace(next.lat, next.lon);
   paintHud(currentChoice());
+  if (navigating && isCarMode()) void refreshWorksNearMe(next);
 }
 
 function metersBetween(a, b) {
@@ -677,7 +683,7 @@ function classifyRoutes(raw) {
     add(r, 'alternate', n === 1 ? names.alt : `Autre ${n}`);
     if (out.length >= 4) break;
   }
-  const rank = { eco: 0, fastest: 1, alternate: 2 };
+  const rank = { eco: 0, fastest: 1, works: 1.5, alternate: 2 };
   return out.sort((a, b) => rank[a.kind] - rank[b.kind]);
 }
 
@@ -834,6 +840,190 @@ async function motisPlan(from, to, signal) {
   });
 }
 
+function overpassEndpoints() {
+  return [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ];
+}
+
+function unionRouteBbox(routes) {
+  let s = 90;
+  let w = 180;
+  let n = -90;
+  let e = -180;
+  for (const r of routes) {
+    for (const c of r.geometry?.coordinates || []) {
+      w = Math.min(w, c[0]);
+      e = Math.max(e, c[0]);
+      s = Math.min(s, c[1]);
+      n = Math.max(n, c[1]);
+    }
+  }
+  const pad = 0.012;
+  return [s - pad, w - pad, n + pad, e + pad];
+}
+
+function geomTouchesWork(geometry, work, maxM) {
+  const coords = geometry?.coordinates || [];
+  if (!coords.length || !work) return false;
+  const step = Math.max(1, Math.floor(coords.length / 90));
+  for (let i = 0; i < coords.length; i += step) {
+    if (metersBetween({ lat: coords[i][1], lon: coords[i][0] }, work) <= maxM) return true;
+  }
+  return false;
+}
+
+function offsetAroundWork(work, from, to) {
+  const dLat = to.lat - from.lat;
+  const dLon = to.lon - from.lon;
+  const len = Math.sqrt(dLat * dLat + dLon * dLon) || 1;
+  const off = 0.012;
+  return {
+    lat: work.lat + (-dLon / len) * off,
+    lon: work.lon + (dLat / len) * off,
+  };
+}
+
+function paintWorks(works) {
+  if (worksLayer) {
+    map.removeLayer(worksLayer);
+    worksLayer = null;
+  }
+  if (!works || !works.length) return;
+  worksLayer = L.layerGroup();
+  for (const w of works) {
+    L.circleMarker([w.lat, w.lon], {
+      radius: 7,
+      color: '#fff',
+      weight: 2,
+      fillColor: '#f59e0b',
+      fillOpacity: 0.95,
+    })
+      .bindTooltip(w.name || 'Travaux', { direction: 'top' })
+      .addTo(worksLayer);
+  }
+  worksLayer.addTo(map);
+}
+
+async function fetchOsmWorks(bbox, signal) {
+  const [s, w, n, e] = bbox;
+  const query =
+    `[out:json][timeout:12];(` +
+    `way["highway"="construction"](${s},${w},${n},${e});` +
+    `way["construction"]["highway"](${s},${w},${n},${e});` +
+    `way["highway"]["access"~"no|destination"]["construction"](${s},${w},${n},${e});` +
+    `node["highway"="construction"](${s},${w},${n},${e});` +
+    `way["highway"]["note"~"travaux|déviation|deviation|barrière",i](${s},${w},${n},${e});` +
+    `);out center tags 50;`;
+  for (const endpoint of overpassEndpoints()) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          Accept: 'application/json',
+        },
+        body: 'data=' + encodeURIComponent(query),
+        signal,
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const out = [];
+      for (const el of data.elements || []) {
+        const c = el.center || el;
+        const lat = Number(c.lat);
+        const lon = Number(c.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        const tags = el.tags || {};
+        const name =
+          tags.name ||
+          tags.ref ||
+          tags.construction ||
+          tags.note ||
+          'Travaux / fermeture';
+        out.push({ lat, lon, name: String(name).slice(0, 80) });
+      }
+      return out;
+    } catch (err) {
+      if (err && err.name === 'AbortError') throw err;
+    }
+  }
+  return [];
+}
+
+async function enrichRoutesWithWorks(from, to, routes, signal) {
+  if (!routes.length) return routes;
+  const works = await fetchOsmWorks(unionRouteBbox(routes), signal);
+  paintWorks(works);
+  if (!works.length) return routes.map((r) => ({ ...r, worksHit: 0 }));
+  const onRoute = works.filter((wk) =>
+    routes.some((r) => geomTouchesWork(r.geometry, wk, 110)),
+  );
+  const tagged = routes.map((r) => ({
+    ...r,
+    worksHit: works.filter((wk) => geomTouchesWork(r.geometry, wk, 110)).length,
+  }));
+  if (!onRoute.length) return tagged;
+  const via = offsetAroundWork(onRoute[0], from, to);
+  const detour = await osrmPath([from, via, to], 0, '', signal);
+  const d = detour[0];
+  if (!d) return tagged;
+  if (tagged.some((r) => Math.abs(r.km - d.km) < 0.35 && Math.abs(r.min - d.min) < 2)) {
+    return tagged;
+  }
+  return tagged.concat({
+    ...d,
+    id: `${d.km.toFixed(1)}:${d.min}:works`,
+    kind: 'works',
+    label: 'Évite travaux',
+    worksHit: 0,
+  });
+}
+
+async function refreshWorksNearMe(here) {
+  const now = Date.now();
+  if (now - lastWorksNearAt < 80000) return;
+  lastWorksNearAt = now;
+  if (!here || !lastDest) return;
+  const pad = 0.01;
+  let works = [];
+  try {
+    works = await fetchOsmWorks([here.lat - pad, here.lon - pad, here.lat + pad, here.lon + pad]);
+  } catch {
+    return;
+  }
+  paintWorks(works);
+  const choice = currentChoice();
+  const hit = works.find(
+    (wk) =>
+      metersBetween(here, wk) < 420 &&
+      choice &&
+      geomTouchesWork(choice.geometry, wk, 90),
+  );
+  if (!hit) return;
+  toast(`Travaux : ${hit.name} — recalcul de l’itinéraire…`);
+  try {
+    const via = offsetAroundWork(hit, here, lastDest);
+    const detour = await osrmPath([here, via, lastDest], 0);
+    const d = detour[0];
+    if (!d) return;
+    const live = {
+      ...d,
+      id: `live-works:${d.min}:${Date.now()}`,
+      kind: 'works',
+      label: 'Évite travaux',
+      worksHit: 0,
+    };
+    routeChoices = [live, ...routeChoices.filter((r) => r.kind !== 'works')];
+    selectedRouteId = live.id;
+    drawChoices(live.id);
+    paintHud(live);
+  } catch {
+    /* OSRM indisponible */
+  }
+}
+
 function corridorVias(from, to) {
   const bird = haversineKm(from, to);
   if (bird < 6) return [];
@@ -879,7 +1069,14 @@ async function collectRoutes(from, to, signal) {
       );
     }
   }
-  const routes = classifyRoutes(collected);
+  let routes = classifyRoutes(collected);
+  if (travelMode === 'car' && routes.length) {
+    try {
+      routes = await enrichRoutesWithWorks(from, to, routes, signal);
+    } catch {
+      /* Overpass indisponible — itinéraires OSRM inchangés */
+    }
+  }
   if (routes.length) routeCache.set(key, { at: Date.now(), routes });
   return routes;
 }
@@ -959,7 +1156,29 @@ function setTravelMode(mode) {
   if (lastDest && me) void routeTo(lastDest.lat, lastDest.lon, lastDest.label);
 }
 
+function bindRouteCard() {
+  if (!routeCardEl || routeCardEl.dataset.bound === '1') return;
+  routeCardEl.dataset.bound = '1';
+  routeCardEl.addEventListener('click', (e) => {
+    const mode = e.target.closest('.mode');
+    if (mode) {
+      setTravelMode(mode.dataset.mode);
+      return;
+    }
+    const alt = e.target.closest('.alt');
+    if (alt && alt.dataset.id) {
+      selectRoute(alt.dataset.id);
+      return;
+    }
+    if (e.target.closest('#btnStartNav') || e.target.closest('.go')) {
+      e.preventDefault();
+      startNavigation();
+    }
+  });
+}
+
 function renderAlts() {
+  bindRouteCard();
   if (!routeChoices.length) {
     if (altsEl) {
       altsEl.hidden = true;
@@ -972,6 +1191,10 @@ function renderAlts() {
     return;
   }
   const dest = lastDest?.label || 'Destination';
+  const worksN = routeChoices.reduce((m, r) => Math.max(m, Number(r.worksHit) || 0), 0);
+  const worksNote = worksN
+    ? `<p class="works-note">Travaux / déviations OSM : ${worksN} sur le trajet. Un itinéraire « Évite travaux » est proposé quand c’est possible.</p>`
+    : '';
   showAltsShell(
     dest,
     `<div class="picks">` +
@@ -984,13 +1207,8 @@ function renderAlts() {
             `<div class="d">${r.km} km</div></button>`,
         )
         .join('') +
-      `</div><button type="button" class="go" id="btnStartNav">Démarrer</button>`,
+      `</div>${worksNote}<button type="button" class="go" id="btnStartNav">Démarrer</button>`,
   );
-  altsEl.querySelectorAll('.alt').forEach((btn) => {
-    btn.onclick = () => selectRoute(btn.dataset.id);
-  });
-  const start = document.getElementById('btnStartNav');
-  if (start) start.onclick = startNavigation;
 }
 
 function selectRoute(id) {
@@ -1072,6 +1290,9 @@ function enterNavUi() {
   chipsEl.hidden = true;
   altsEl.hidden = true;
   sheetEl.hidden = true;
+  if (routeCardEl) {
+    routeCardEl.hidden = true;
+  }
   paintHud(currentChoice());
   if (isCarMode() || Number(fuelTrip) > 0) {
     showFuelBar(Number(fuelTrip) > 0 ? `Suivi Fuel · trajet ${fuelTrip}` : 'Suivi Fuel · guidage');
@@ -1185,6 +1406,10 @@ function stopNavigation() {
   stopNavWatch();
   navWatchFn = null;
   startIdleGeo();
+  if (mapsStartedFuel) {
+    fuelControl('stop');
+    mapsStartedFuel = false;
+  }
   const fromFuel = Number(fuelTrip) > 0;
   if (!fromFuel) {
     fuelEl.hidden = true;
@@ -1193,13 +1418,20 @@ function stopNavigation() {
 
 function startNavigation() {
   const r = currentChoice();
-  if (!r) return;
+  if (!r) {
+    toast('Choisis un itinéraire avant de démarrer.');
+    return;
+  }
   paused = false;
   setFollowNav(true);
   stopIdleGeo();
   enterNavUi();
   if (isCarMode()) {
-    fuelControl('start', { dest: destShort() });
+    mapsStartedFuel = true;
+    const ok = fuelControl('start', { dest: destShort() });
+    toast(ok ? 'Guidage + suivi Fuel' : 'Guidage démarré — Fuel non joignable');
+  } else {
+    toast('Guidage démarré');
   }
   startNavWatch(applyNavFix);
 }
@@ -1683,6 +1915,12 @@ window.__mapsBack = function () {
   }
   if (altsEl && !altsEl.hidden) {
     altsEl.hidden = true;
+    if (routeCardEl) routeCardEl.hidden = true;
+    clearRoute();
+    return true;
+  }
+  if (routeCardEl && !routeCardEl.hidden && routeChoices.length) {
+    routeCardEl.hidden = true;
     clearRoute();
     return true;
   }
