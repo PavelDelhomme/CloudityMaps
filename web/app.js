@@ -727,11 +727,18 @@ async function osrmPath(points, alternatives, extra = '', signal) {
   const url =
     `${osrmEndpoint()}${path}` +
     `?overview=full&geometries=geojson&alternatives=${alt}&steps=true${extra}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  if (signal) {
+    signal.addEventListener('abort', () => ctrl.abort(), { once: true });
+  }
   try {
-    const res = await fetch(url, { headers: FETCH_HDR, signal });
+    const res = await fetch(url, { headers: FETCH_HDR, signal: ctrl.signal });
     if (res.ok) return parseOsrm(await res.json());
   } catch (err) {
-    if (err && err.name === 'AbortError') throw err;
+    if (err && err.name === 'AbortError' && signal && signal.aborted) throw err;
+  } finally {
+    clearTimeout(timer);
   }
   const from = points[0];
   const to = points[points.length - 1];
@@ -917,6 +924,9 @@ async function fetchOsmWorks(bbox, signal) {
     `way["highway"]["note"~"travaux|déviation|deviation|barrière",i](${s},${w},${n},${e});` +
     `);out center tags 50;`;
   for (const endpoint of overpassEndpoints()) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 13000);
+    if (signal) signal.addEventListener('abort', () => ctrl.abort(), { once: true });
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -925,7 +935,7 @@ async function fetchOsmWorks(bbox, signal) {
           Accept: 'application/json',
         },
         body: 'data=' + encodeURIComponent(query),
-        signal,
+        signal: ctrl.signal,
       });
       if (!res.ok) continue;
       const data = await res.json();
@@ -946,7 +956,9 @@ async function fetchOsmWorks(bbox, signal) {
       }
       return out;
     } catch (err) {
-      if (err && err.name === 'AbortError') throw err;
+      if (err && err.name === 'AbortError' && signal && signal.aborted) throw err;
+    } finally {
+      clearTimeout(timer);
     }
   }
   return [];
@@ -1069,14 +1081,7 @@ async function collectRoutes(from, to, signal) {
       );
     }
   }
-  let routes = classifyRoutes(collected);
-  if (travelMode === 'car' && routes.length) {
-    try {
-      routes = await enrichRoutesWithWorks(from, to, routes, signal);
-    } catch {
-      /* Overpass indisponible — itinéraires OSRM inchangés */
-    }
-  }
+  const routes = classifyRoutes(collected);
   if (routes.length) routeCache.set(key, { at: Date.now(), routes });
   return routes;
 }
@@ -1728,6 +1733,22 @@ async function routeTo(lat, lon, label) {
   selectedRouteId = routeChoices[0].id;
   drawChoices(selectedRouteId);
   renderAlts();
+  if (travelMode === 'car' && routeChoices.length) {
+    void (async () => {
+      try {
+        const enriched = await enrichRoutesWithWorks(me, { lat, lon }, routeChoices, signal);
+        if (gen !== routeGen) return;
+        if (!enriched || !enriched.length) return;
+        const keep = selectedRouteId;
+        routeChoices = enriched;
+        if (!routeChoices.some((r) => r.id === keep)) selectedRouteId = routeChoices[0].id;
+        drawChoices(selectedRouteId);
+        if (!navigating) renderAlts();
+      } catch {
+        /* Overpass / OSRM travaux : on garde l’itinéraire déjà affiché */
+      }
+    })();
+  }
 }
 
 function showHits(items) {

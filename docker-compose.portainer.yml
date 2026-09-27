@@ -9,7 +9,7 @@ services:
     build:
       context: .
       args:
-        MAPS_BUILD: "0.1.29"
+        MAPS_BUILD: "0.1.30"
     image: hubera-maps:local
     container_name: hubera-maps
     restart: unless-stopped

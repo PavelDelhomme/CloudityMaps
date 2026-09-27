@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.29",
-  "versionCode": 31,
+  "version": "0.1.30",
+  "versionCode": 32,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "D\u00e9marrer le guidage. Suivi Fuel en voiture. Travaux/d\u00e9viations OSM en temps r\u00e9el.",
-  "published_at": "2026-09-27T18:03:39+00:00",
-  "sha256": "b2d08cb6e634b35d8b6990d18625f10ff0270c7d487bb4d02dfefc5121acc18e"
+  "notes": "D\u00e9marrer le guidage sans attendre les travaux. Fuel voiture. OSM construction en fond.",
+  "published_at": "2026-09-27T18:11:41+00:00",
+  "sha256": "286822a001b160465cb7f1e76aca0de564f2631fcb49c13217a9cb8d479aa1b8"
 }
