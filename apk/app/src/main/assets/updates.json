@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.30",
-  "versionCode": 32,
+  "version": "0.1.31",
+  "versionCode": 33,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "D\u00e9marrer le guidage sans attendre les travaux. Fuel voiture. OSM construction en fond.",
-  "published_at": "2026-09-27T18:11:41+00:00",
-  "sha256": "286822a001b160465cb7f1e76aca0de564f2631fcb49c13217a9cb8d479aa1b8"
+  "notes": "Lecteur Music dans Maps (titre + transport). Plus d\u2019ouverture forc\u00e9e de l\u2019app.",
+  "published_at": "2026-09-27T20:42:13+02:00",
+  "sha256": "97e6835e56594e191c6952ae6637e816f1d49131fc74bab9fa048e892d7e4546"
 }

@@ -2074,7 +2074,10 @@ drawer.addEventListener('click', (e) => {
   const go = item.dataset.go;
   if (go === 'maps' || go === 'trips' || go === 'saved') setTab(go);
   else if (go === 'fuel') location.href = fuelUrl('maps');
-  else if (go === 'music') musicCall('openApp');
+  else if (go === 'music') {
+    closeDrawer();
+    openMusicSheet();
+  }
   else if (go === 'account') {
     closeDrawer();
     toast('Hubera ID · paul@delhomme.ovh');
@@ -2273,15 +2276,44 @@ renderSaved();
 syncClear();
 
 const nativeMusic = typeof HuberaMusic !== 'undefined';
+const musicSheetEl = document.getElementById('musicSheet');
+let lastMusicState = { title: '', artist: '', playing: false };
+
+function musicEmptyTitle(s) {
+  return (s && s.title) ? s.title : 'Rien en cours';
+}
+function musicEmptyArtist(s) {
+  if (s && s.title) return s.artist || '';
+  return 'Lance un titre dans Music';
+}
 
 function applyMusicState(s) {
   if (!s || typeof s !== 'object') return;
+  lastMusicState = s;
+  const glyph = s.playing ? '❚❚' : '▶';
   const title = document.getElementById('musicTitle');
   const artist = document.getElementById('musicArtist');
   const play = document.getElementById('musicPlay');
-  if (title) title.textContent = s.title || 'Aucun titre — ouvre Music';
-  if (artist) artist.textContent = s.artist || '';
-  if (play) play.textContent = s.playing ? '❚❚' : '▶';
+  if (title) title.textContent = musicEmptyTitle(s);
+  if (artist) artist.textContent = s.title ? (s.artist || '') : '';
+  if (play) play.textContent = glyph;
+  const st = document.getElementById('musicSheetTitle');
+  const sa = document.getElementById('musicSheetArtist');
+  const sp = document.getElementById('musicSheetPlay');
+  if (st) st.textContent = musicEmptyTitle(s);
+  if (sa) sa.textContent = musicEmptyArtist(s);
+  if (sp) sp.textContent = glyph;
+}
+
+function openMusicSheet() {
+  if (!musicSheetEl) return;
+  setMusicDock(true);
+  musicSheetEl.hidden = false;
+  applyMusicState(lastMusicState);
+}
+
+function closeMusicSheet() {
+  if (musicSheetEl) musicSheetEl.hidden = true;
 }
 
 window.__huberaMusicState = function (payload) {
@@ -2304,9 +2336,17 @@ function musicCall(fn) {
 document.getElementById('musicPlay').addEventListener('click', () => musicCall('playPause'));
 document.getElementById('musicNext').addEventListener('click', () => musicCall('next'));
 document.getElementById('musicPrev').addEventListener('click', () => musicCall('prev'));
-document.getElementById('musicOpenMeta').addEventListener('click', () => musicCall('openApp'));
-document.getElementById('musicHide').addEventListener('click', () => setMusicDock(false));
+document.getElementById('musicOpenMeta').addEventListener('click', openMusicSheet);
+document.getElementById('musicHide').addEventListener('click', () => {
+  closeMusicSheet();
+  setMusicDock(false);
+});
 musicPeek.addEventListener('click', () => setMusicDock(true));
+document.getElementById('musicSheetClose').addEventListener('click', closeMusicSheet);
+document.getElementById('musicSheetPlay').addEventListener('click', () => musicCall('playPause'));
+document.getElementById('musicSheetNext').addEventListener('click', () => musicCall('next'));
+document.getElementById('musicSheetPrev').addEventListener('click', () => musicCall('prev'));
+document.getElementById('musicSheetOpenApp').addEventListener('click', () => musicCall('openApp'));
 
 if (nativeMusic) {
   try {
@@ -2315,7 +2355,9 @@ if (nativeMusic) {
     /* encore en connexion */
   }
   musicPollTimer = window.setInterval(() => {
-    if (document.hidden || document.body.classList.contains('music-off')) return;
+    if (document.hidden) return;
+    const sheetOpen = musicSheetEl && !musicSheetEl.hidden;
+    if (document.body.classList.contains('music-off') && !sheetOpen) return;
     try {
       applyMusicState(JSON.parse(HuberaMusic.stateJson()));
     } catch {

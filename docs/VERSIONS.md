@@ -1,5 +1,9 @@
 # Hubera Maps — versions
 
+## 0.1.31 (27 sept. 2026)
+- Clic sur le titre Music : **lecteur dans Maps** (titre + prev/play/next), trajet ou non. Plus d’ouverture forcée de l’app.
+- Dock : « Rien en cours » au lieu de « Aucun titre — ouvre Music ».
+
 ## 0.1.28 (26 sept. 2026)
 - Nuit : **carte sombre** comme avant, sans clé CARTO (OSM inversé, pas de watermark).
 

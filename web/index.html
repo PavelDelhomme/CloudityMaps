@@ -196,7 +196,7 @@
       background: transparent; border: 0; border-bottom: 1px solid #2d2d44; color: #f1f5f9;
       padding: 14px 0; cursor: pointer; font-size: 15px;
     }
-    .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden] { display: none !important; }
+    .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden], .music-sheet[hidden] { display: none !important; }
     .chrome {
       padding: 0 0 calc(6px + env(safe-area-inset-bottom));
       border-top: 1px solid #2d2d44;
@@ -230,6 +230,27 @@
       box-shadow: 0 2px 6px rgba(0,0,0,.4);
     }
     body:not(.music-off) .music-peek { display: none !important; }
+    .music-sheet {
+      z-index: 1500; padding: 16px 16px 18px;
+      bottom: calc(var(--chrome) + 8px);
+    }
+    .music-sheet .ms-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;
+    }
+    .music-sheet .ms-head strong { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #e94560; }
+    .music-sheet .ms-close {
+      width: 36px; height: 36px; border: 0; border-radius: 18px; background: transparent;
+      color: #94a3b8; font-size: 20px; cursor: pointer;
+    }
+    .music-sheet .ms-now { text-align: center; padding: 8px 4px 12px; }
+    .music-sheet .ms-title { font-size: 18px; font-weight: 800; line-height: 1.25; }
+    .music-sheet .ms-artist { color: #94a3b8; font-size: 14px; margin-top: 4px; }
+    .music-sheet .ms-transport { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 4px 0 12px; }
+    .music-sheet .ms-transport button {
+      width: 56px; height: 56px; border: 0; border-radius: 28px; background: #16213e;
+      color: #f1f5f9; font-size: 22px; cursor: pointer;
+    }
+    .music-sheet .ms-transport button.play { width: 68px; height: 68px; border-radius: 34px; background: #e94560; color: #fff; font-size: 24px; }
     .tabs {
       display: flex; justify-content: space-around; padding: 4px 4px 0; color: #94a3b8;
     }
@@ -319,6 +340,22 @@
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
   </button>
   <div class="sheet" id="sheet" hidden></div>
+  <div class="sheet music-sheet" id="musicSheet" hidden>
+    <div class="ms-head">
+      <strong>Hubera Music</strong>
+      <button type="button" class="ms-close" id="musicSheetClose" aria-label="Fermer le lecteur">✕</button>
+    </div>
+    <div class="ms-now">
+      <div class="ms-title" id="musicSheetTitle">Rien en cours</div>
+      <div class="ms-artist" id="musicSheetArtist">Lance un titre dans Music</div>
+    </div>
+    <div class="ms-transport">
+      <button type="button" id="musicSheetPrev" title="Précédent" aria-label="Précédent">⏮</button>
+      <button type="button" class="play" id="musicSheetPlay" title="Lecture / pause" aria-label="Lecture ou pause">▶</button>
+      <button type="button" id="musicSheetNext" title="Suivant" aria-label="Suivant">⏭</button>
+    </div>
+    <button type="button" class="ghost" id="musicSheetOpenApp" style="width:100%;border:0;border-radius:999px;padding:10px;font-weight:700;cursor:pointer">Ouvrir l’app Music</button>
+  </div>
   <div class="sheet" id="fillSheet" hidden>
     <strong>Plein Fuel</strong>
     <span>Enregistré dans Hubera Fuel, sans quitter Maps.</span>
@@ -363,7 +400,7 @@
   <div class="chrome" id="chrome">
     <div class="music" id="musicDock">
       <div class="meta" id="musicOpenMeta">
-        <div class="title" id="musicTitle">Aucun titre — ouvre Music</div>
+        <div class="title" id="musicTitle">Rien en cours</div>
         <div class="artist" id="musicArtist"></div>
       </div>
       <div class="ctrls">

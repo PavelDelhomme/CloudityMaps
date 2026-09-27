@@ -194,16 +194,18 @@ class MusicBridge(
             .put("connected", c != null)
             .put("playing", playing)
             .put("title", if (empty) "" else title)
-            .put("artist", if (empty) "Aucun titre — ouvre Music" else artist)
+            .put("artist", if (empty) "" else artist)
             .put("hasQueue", (c?.mediaItemCount ?: 0) > 0)
+            .put("buffering", c?.playbackState == Player.STATE_BUFFERING)
     }
 
     private fun defaultState(): JSONObject = JSONObject()
         .put("connected", false)
         .put("playing", false)
         .put("title", "")
-        .put("artist", "Aucun titre — ouvre Music")
+        .put("artist", "")
         .put("hasQueue", false)
+        .put("buffering", false)
 
     private fun sendKey(code: Int) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
