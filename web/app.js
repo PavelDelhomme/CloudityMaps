@@ -113,6 +113,8 @@ let lastWorksNearAt = 0;
 const PLACE_KEY = 'hubera-maps-places';
 const MUSIC_KEY = 'hubera-maps-music-dock';
 const MODE_KEY = 'hubera-maps-mode';
+const VOICE_KEY = 'hubera-maps-voice';
+const FUEL_TRIPS_KEY = 'hubera-maps-fuel-trips';
 const FETCH_HDR = { Accept: 'application/json' };
 const TRAVEL_MODES = [
   ['car', 'Voiture'],
@@ -165,10 +167,99 @@ function fuelControl(action, extra) {
   } catch {
     /* WebView hors APK */
   }
-  if (action !== 'start' && action !== 'stop') {
+  if (action !== 'start' && action !== 'stop' && action !== 'history') {
     toast('Commande Fuel enregistrée dans Maps.');
   }
   return false;
+}
+
+function decodeFuelTripPack(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return [];
+  const out = [];
+  for (const row of s.split('|')) {
+    if (!row) continue;
+    const [idRaw, kmRaw, start, origin, dest, flags] = row.split('~');
+    const id = Number(idRaw);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    const km = Number(kmRaw);
+    out.push({
+      id,
+      km: Number.isFinite(km) ? km : 0,
+      start: start || '',
+      origin: origin || '',
+      dest: dest || '',
+      active: String(flags || '').includes('a'),
+      paused: String(flags || '').includes('p'),
+    });
+  }
+  return out;
+}
+
+function loadCachedFuelTrips() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(FUEL_TRIPS_KEY) || '[]');
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCachedFuelTrips(rows) {
+  localStorage.setItem(FUEL_TRIPS_KEY, JSON.stringify((rows || []).slice(0, 20)));
+}
+
+function fmtFuelWhen(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('fr-FR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function renderFuelTripList(rows) {
+  const el = document.getElementById('fuelTripList');
+  if (!el) return;
+  const list = rows || loadCachedFuelTrips();
+  if (!list.length) {
+    el.innerHTML = '<p>Aucun trajet pour l’instant — lance un suivi libre.</p>';
+    return;
+  }
+  el.innerHTML = list
+    .map((t) => {
+      const from = t.origin || 'Départ';
+      const to = t.dest || (t.active ? 'en cours' : 'Arrivée');
+      const live = t.active ? ' live' : '';
+      const km = t.km > 0 ? `${t.km.toFixed(1)} km` : t.active ? 'GPS' : '';
+      const pause = t.paused ? ' · pause' : '';
+      return (
+        `<button type="button" class="fuel-trip${live}" data-id="${t.id}" data-dest="${esc(t.dest || '')}" data-origin="${esc(t.origin || '')}" data-active="${t.active ? '1' : '0'}">` +
+        `<div class="when">${esc(fmtFuelWhen(t.start))}${t.active ? ' · en cours' : ''}</div>` +
+        `<div class="path">${esc(from)} → ${esc(to)}</div>` +
+        `<div class="meta">${esc(km)}${pause}</div></button>`
+      );
+    })
+    .join('');
+}
+
+function applyFuelTripPack(raw) {
+  const rows = decodeFuelTripPack(raw);
+  if (!rows.length) return;
+  saveCachedFuelTrips(rows);
+  renderFuelTripList(rows);
+}
+
+let lastFuelHistoryAt = 0;
+
+function requestFuelHistory() {
+  renderFuelTripList();
+  if (Date.now() - lastFuelHistoryAt < 8000) return;
+  lastFuelHistoryAt = Date.now();
+  fuelControl('history');
 }
 
 function loadPlaces() {
@@ -371,12 +462,21 @@ function remainAlongKm(here, geometry) {
 }
 
 function speakNav(text, distKm) {
-  if (!navigating || !text || !('speechSynthesis' in window)) return;
+  if (!navigating || !text || !voiceEnabled()) return;
   if (distKm > 0.16) return;
   const now = Date.now();
   if (text === lastSpoken && now - lastSpokenAt < 22000) return;
   lastSpoken = text;
   lastSpokenAt = now;
+  try {
+    if (window.HuberaTts && typeof window.HuberaTts.speak === 'function') {
+      window.HuberaTts.speak(String(text));
+      return;
+    }
+  } catch {
+    /* pont TTS absent */
+  }
+  if (!('speechSynthesis' in window)) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'fr-FR';
@@ -386,6 +486,35 @@ function speakNav(text, distKm) {
   } catch {
     /* WebView sans TTS */
   }
+}
+
+function voiceEnabled() {
+  return localStorage.getItem(VOICE_KEY) !== '0';
+}
+
+function syncVoiceBtn() {
+  const b = document.getElementById('btnVoiceNav');
+  if (!b) return;
+  const on = voiceEnabled();
+  b.textContent = on ? '🔊' : '🔇';
+  b.title = on ? 'Couper les notifications sonores' : 'Activer les notifications sonores';
+  b.setAttribute('aria-label', b.title);
+  try {
+    if (window.HuberaTts && typeof window.HuberaTts.setMuted === 'function') {
+      window.HuberaTts.setMuted(!on);
+    }
+  } catch {
+    /* APK seulement */
+  }
+}
+
+function setVoiceEnabled(on) {
+  localStorage.setItem(VOICE_KEY, on ? '1' : '0');
+  if (!on) {
+    try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+    try { window.HuberaTts?.stop?.(); } catch { /* ignore */ }
+  }
+  syncVoiceBtn();
 }
 
 function puckIcon(deg) {
@@ -1287,6 +1416,41 @@ function showFuelBar(title) {
   document.getElementById('btnPause').textContent = paused ? 'Reprendre' : 'Pause';
 }
 
+function enterFreeHud(tripId) {
+  paused = false;
+  mapsStartedFuel = true;
+  if (tripId) fuelTrip = tripId;
+  if (!lastDest) {
+    lastDest = { lat: me?.lat || 0, lon: me?.lon || 0, label: 'Suivi libre' };
+  }
+  setFollowNav(true);
+  stopIdleGeo();
+  navigating = true;
+  document.body.classList.add('nav');
+  searchForm.hidden = true;
+  navBar.hidden = false;
+  chipsEl.hidden = true;
+  if (altsEl) altsEl.hidden = true;
+  if (routeCardEl) routeCardEl.hidden = true;
+  showFuelBar(tripId ? `Suivi Fuel · trajet ${tripId}` : 'Suivi Fuel · libre');
+  paintHud(currentChoice());
+  const speedEl = document.getElementById('hudSpeed');
+  if (speedEl) speedEl.hidden = false;
+  startNavWatch(applyNavFix);
+}
+
+function startFreeTracking() {
+  setTab('maps');
+  if (navigating && mapsStartedFuel) {
+    toast('Suivi déjà en cours');
+    return;
+  }
+  enterFreeHud(fuelTrip);
+  const ok = fuelControl('start');
+  if (!ok) toast('Fuel non joignable depuis ce navigateur');
+  speakNav('Suivi libre démarré', 0);
+}
+
 function enterNavUi() {
   navigating = true;
   document.body.classList.add('nav');
@@ -1401,6 +1565,7 @@ function stopNavigation() {
   lastSpeedKmh = 0;
   lastSpoken = '';
   try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+  try { window.HuberaTts?.stop?.(); } catch { /* ignore */ }
   setFollowNav(true);
   document.body.classList.remove('nav');
   searchForm.hidden = false;
@@ -1906,6 +2071,7 @@ function setTab(id) {
     renderAlts();
   }
   if (id === 'saved') renderSaved();
+  if (id === 'trips') requestFuelHistory();
   closeDrawer();
 }
 
@@ -2061,6 +2227,12 @@ document.getElementById('btnStopNav').addEventListener('click', () => {
   stopNavigation();
   renderAlts();
 });
+document.getElementById('btnVoiceNav').addEventListener('click', () => {
+  const on = !voiceEnabled();
+  setVoiceEnabled(on);
+  toast(on ? 'Notifications sonores activées' : 'Notifications sonores coupées');
+  if (on && navigating) speakNav('Guidage vocal activé', 0);
+});
 document.getElementById('btnUser').addEventListener('click', openDrawer);
 document.getElementById('drawerAvatar').addEventListener('click', openDrawer);
 document.getElementById('btnSavedBack').addEventListener('click', () => setTab('maps'));
@@ -2073,7 +2245,7 @@ drawer.addEventListener('click', (e) => {
   if (!item) return;
   const go = item.dataset.go;
   if (go === 'maps' || go === 'trips' || go === 'saved') setTab(go);
-  else if (go === 'fuel') location.href = fuelUrl('maps');
+  else if (go === 'fuel') setTab('trips');
   else if (go === 'music') {
     closeDrawer();
     openMusicSheet();
@@ -2113,7 +2285,29 @@ document.getElementById('btnFuelOpen').addEventListener('click', () => {
   location.href = fuelUrl('maps');
 });
 document.getElementById('btnFuelTrack').addEventListener('click', () => {
-  location.href = fuelUrl('trip?autoStart=1&mode=free');
+  startFreeTracking();
+});
+document.getElementById('fuelTripList').addEventListener('click', (e) => {
+  const row = e.target.closest('.fuel-trip');
+  if (!row) return;
+  const active = row.dataset.active === '1';
+  const dest = row.dataset.dest || '';
+  const origin = row.dataset.origin || '';
+  if (active) {
+    enterFreeHud(row.dataset.id);
+    setTab('maps');
+    return;
+  }
+  const q = dest || origin;
+  setTab('maps');
+  if (!q) {
+    toast('Pas d’adresse sur ce trajet');
+    return;
+  }
+  searchPhoton(q).then((hits) => {
+    if (hits[0]) void routeTo(hits[0].lat, hits[0].lon, hits[0].label);
+    else toast('Adresse introuvable');
+  });
 });
 
 function applyFuelFromQuery() {
@@ -2208,29 +2402,20 @@ function saveFillFromSheet() {
 window.__mapsFuelEvent = function (raw) {
   try {
     const q = new URLSearchParams(String(raw || '').replace(/^\?/, ''));
+    const pack = q.get('trips');
+    if (pack) applyFuelTripPack(pack);
+    const ok = q.get('ok') !== '0';
     const id = q.get('tripId');
     if (id && Number(id) > 0) {
       fuelTrip = id;
       showFuelBar(`Suivi Fuel · trajet ${id}`);
       if (!navigating) {
-        document.body.classList.add('nav');
-        searchForm.hidden = true;
-        navBar.hidden = false;
-        chipsEl.hidden = true;
-        navigating = true;
-        const titleEl = document.getElementById('hudTitle');
-        const metaEl = document.getElementById('hudMeta');
-        const distEl = document.getElementById('hudDist');
-        if (titleEl) titleEl.textContent = 'Suivi Fuel';
-        if (metaEl) metaEl.textContent = `trajet ${id}`;
-        if (distEl) distEl.textContent = 'GPS';
-        stopIdleGeo();
-        setFollowNav(true);
-        startNavWatch(applyNavFix);
+        enterFreeHud(id);
       }
     }
     const msg = q.get('msg');
-    if (msg) toast(msg);
+    if (msg && msg !== 'Historique Fuel') toast(msg);
+    if (!ok && !id) mapsStartedFuel = false;
   } catch {
     /* ignore */
   }
@@ -2262,6 +2447,7 @@ bootLocate();
 startIdleGeo();
 
 setMusicDock(musicDockOn());
+syncVoiceBtn();
 syncChromeHeight();
 if (window.ResizeObserver) {
   const chromeEl = document.getElementById('chrome');

@@ -7,10 +7,14 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * Commande Hubera Fuel depuis Maps sans rester sur l’UI Fuel :
- * deep link silencieux + Maps revient au premier plan.
+ * deep link silencieux. Maps ne reprend le premier plan qu’après
+ * que Fuel ait eu le temps de démarrer le GPS (FGS), sinon le suivi
+ * libre meurt (le vol à 320 ms tuait getCurrentLocation).
+ * Fuel ramène Maps via hubera-maps://fuel ; le délai est un filet.
  */
 class FuelBridge(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
@@ -19,8 +23,9 @@ class FuelBridge(private val context: Context) {
     fun control(action: String, payloadJson: String) {
         main.post {
             val extra = runCatching { JSONObject(payloadJson) }.getOrElse { JSONObject() }
+            val act = action.lowercase(Locale.ROOT)
             val b = Uri.parse("gasoiltracking://trip/control").buildUpon()
-                .appendQueryParameter("action", action)
+                .appendQueryParameter("action", act)
                 .appendQueryParameter("silent", "1")
             listOf("tripId", "dest", "liters", "total", "station").forEach { key ->
                 val v = extra.optString(key)
@@ -31,7 +36,8 @@ class FuelBridge(private val context: Context) {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
                 )
             }
             runCatching { context.startActivity(fuel) }
@@ -44,11 +50,19 @@ class FuelBridge(private val context: Context) {
                     )
                 }
                 runCatching { context.startActivity(back) }
-            }, 320)
+            }, bringBackMs(act))
         }
     }
 
     companion object {
         const val FUEL_PKG = "com.gasoiltracking.app"
+
+        /** start : GPS + FGS (~3–7 s). history : SQLite. le reste : instantané. */
+        fun bringBackMs(action: String): Long = when (action) {
+            "start" -> 8_000L
+            "history" -> 1_600L
+            "stop" -> 1_400L
+            else -> 500L
+        }
     }
 }

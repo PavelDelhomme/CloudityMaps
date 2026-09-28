@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.31",
-  "versionCode": 33,
+  "version": "0.1.32",
+  "versionCode": 34,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Lecteur Music dans Maps (titre + transport). Plus d\u2019ouverture forc\u00e9e de l\u2019app.",
-  "published_at": "2026-09-27T20:42:13+02:00",
-  "sha256": "97e6835e56594e191c6952ae6637e816f1d49131fc74bab9fa048e892d7e4546"
+  "notes": "Suivi libre Fuel dans Maps, historique des trajets, notifications vocales coupables.",
+  "published_at": "2026-09-28T14:22:41+02:00",
+  "sha256": "94f6ff2c400db81030aef1a58c4425403889f904d5714ad544ea7e6da6da043d"
 }

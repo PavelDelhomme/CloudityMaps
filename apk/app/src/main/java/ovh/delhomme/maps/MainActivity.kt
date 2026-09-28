@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var music: MusicBridge
     private lateinit var fuel: FuelBridge
     private lateinit var speed: SpeedLimitBridge
+    private lateinit var tts: TtsBridge
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,6 +61,8 @@ class MainActivity : AppCompatActivity() {
         web.addJavascriptInterface(music, "HuberaMusic")
         fuel = FuelBridge(this)
         web.addJavascriptInterface(fuel, "HuberaFuel")
+        tts = TtsBridge(this)
+        web.addJavascriptInterface(tts, "HuberaTts")
         speed = SpeedLimitBridge { if (this::web.isInitialized) web else null }
         web.addJavascriptInterface(speed, "HuberaSpeed")
         val routes = RouteBridge { if (this::web.isInitialized) web else null }
@@ -148,6 +151,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         if (this::music.isInitialized) music.release()
+        if (this::tts.isInitialized) tts.release()
         super.onDestroy()
     }
 
@@ -161,8 +165,14 @@ class MainActivity : AppCompatActivity() {
             } else {
                 null
             }
-        // Retour Fuel silencieux (hubera-maps://fuel?tripId=) : garder le guidage.
-        if (data?.host == "fuel" || (!q.isNullOrBlank() && q.contains("tripId=") && !q.contains("toLat") && !q.contains("lat="))) {
+        // Retour Fuel silencieux (hubera-maps://fuel?tripId=&trips=) : garder le guidage.
+        val fuelBack =
+            data?.host == "fuel" ||
+                (!q.isNullOrBlank() &&
+                    (q.contains("tripId=") || q.contains("trips=") || q.contains("ok=")) &&
+                    !q.contains("toLat") &&
+                    !q.contains("lat="))
+        if (fuelBack) {
             val safe = (q ?: "").replace("\\", "\\\\").replace("'", "\\'")
             web.evaluateJavascript(
                 "window.__mapsFuelEvent&&window.__mapsFuelEvent('$safe')",
