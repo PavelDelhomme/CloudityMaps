@@ -18,10 +18,17 @@ import java.util.Locale
  */
 class FuelBridge(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
+    private var bringBack: Runnable? = null
+
+    fun cancelBringBack() {
+        bringBack?.let { main.removeCallbacks(it) }
+        bringBack = null
+    }
 
     @JavascriptInterface
     fun control(action: String, payloadJson: String) {
         main.post {
+            cancelBringBack()
             val extra = runCatching { JSONObject(payloadJson) }.getOrElse { JSONObject() }
             val act = action.lowercase(Locale.ROOT)
             val b = Uri.parse("gasoiltracking://trip/control").buildUpon()
@@ -41,7 +48,8 @@ class FuelBridge(private val context: Context) {
                 )
             }
             runCatching { context.startActivity(fuel) }
-            main.postDelayed({
+            val task = Runnable {
+                bringBack = null
                 val back = Intent(context, MainActivity::class.java).apply {
                     addFlags(
                         Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
@@ -50,7 +58,9 @@ class FuelBridge(private val context: Context) {
                     )
                 }
                 runCatching { context.startActivity(back) }
-            }, bringBackMs(act))
+            }
+            bringBack = task
+            main.postDelayed(task, bringBackMs(act))
         }
     }
 

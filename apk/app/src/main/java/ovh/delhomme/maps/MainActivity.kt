@@ -173,6 +173,7 @@ class MainActivity : AppCompatActivity() {
                     !q.contains("toLat") &&
                     !q.contains("lat="))
         if (fuelBack) {
+            if (this::fuel.isInitialized) fuel.cancelBringBack()
             val safe = (q ?: "").replace("\\", "\\\\").replace("'", "\\'")
             web.evaluateJavascript(
                 "window.__mapsFuelEvent&&window.__mapsFuelEvent('$safe')",

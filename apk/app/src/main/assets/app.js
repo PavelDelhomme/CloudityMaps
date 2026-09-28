@@ -109,6 +109,11 @@ let poiLayer = null;
 let worksLayer = null;
 let mapsStartedFuel = false;
 let lastWorksNearAt = 0;
+let fuelHudStartedAt = 0;
+let fuelLiveKm = 0;
+let fuelPollTimer = 0;
+let fuelHudTick = 0;
+let hudCollapsed = false;
 
 const PLACE_KEY = 'hubera-maps-places';
 const MUSIC_KEY = 'hubera-maps-music-dock';
@@ -251,13 +256,108 @@ function applyFuelTripPack(raw) {
   if (!rows.length) return;
   saveCachedFuelTrips(rows);
   renderFuelTripList(rows);
+  const live = rows.find((t) => t.active);
+  if (live) {
+    if (live.km > 0) fuelLiveKm = live.km;
+    if (live.id) fuelTrip = live.id;
+    paintFuelStats();
+  }
+}
+
+function clearTrace() {
+  trace = [];
+  if (traceLayer) {
+    map.removeLayer(traceLayer);
+    traceLayer = null;
+  }
+}
+
+function traceKm() {
+  let d = 0;
+  for (let i = 1; i < trace.length; i++) {
+    d += haversineKm(
+      { lat: trace[i - 1][0], lon: trace[i - 1][1] },
+      { lat: trace[i][0], lon: trace[i][1] },
+    );
+  }
+  return d;
+}
+
+function fmtFuelMins(ms) {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return r ? `${h} h ${r} min` : `${h} h`;
+}
+
+function liveFuelKm() {
+  return Math.max(fuelLiveKm || 0, traceKm());
+}
+
+function paintFuelStats() {
+  const el = document.getElementById('fuelStats');
+  if (!el) return;
+  if (!mapsStartedFuel && !(Number(fuelTrip) > 0)) {
+    el.textContent = '';
+    return;
+  }
+  const km = liveFuelKm();
+  const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '';
+  const bits = [];
+  bits.push(km > 0.05 ? `${km.toFixed(1)} km` : 'GPS…');
+  if (dur) bits.push(dur);
+  if (lastSpeedKmh) bits.push(`${lastSpeedKmh} km/h`);
+  el.textContent = bits.join(' · ');
+}
+
+function startFuelHudTick() {
+  stopFuelHudTick();
+  fuelHudTick = window.setInterval(() => {
+    if (!mapsStartedFuel) {
+      stopFuelHudTick();
+      return;
+    }
+    paintFuelStats();
+    if (navigating && !hudCollapsed) paintHud(currentChoice());
+  }, 1000);
+}
+
+function stopFuelHudTick() {
+  if (fuelHudTick) {
+    clearInterval(fuelHudTick);
+    fuelHudTick = 0;
+  }
+}
+
+function startFuelPoll() {
+  stopFuelPoll();
+  startFuelHudTick();
+}
+
+function stopFuelPoll() {
+  if (fuelPollTimer) {
+    clearInterval(fuelPollTimer);
+    fuelPollTimer = 0;
+  }
+  stopFuelHudTick();
+}
+
+function stopFuelPoll() {
+  if (fuelPollTimer) {
+    clearInterval(fuelPollTimer);
+    fuelPollTimer = 0;
+  }
+  stopFuelHudTick();
 }
 
 let lastFuelHistoryAt = 0;
 
-function requestFuelHistory() {
+function requestFuelHistory(force) {
   renderFuelTripList();
-  if (Date.now() - lastFuelHistoryAt < 8000) return;
+  const cached = loadCachedFuelTrips();
+  if (!force && cached.length) return;
+  if (!force && Date.now() - lastFuelHistoryAt < 8000) return;
   lastFuelHistoryAt = Date.now();
   fuelControl('history');
 }
@@ -1380,6 +1480,26 @@ function paintHud(choice) {
   const subEl = document.getElementById('hudSub');
   const thenEl = document.getElementById('hudThen');
   const metaEl = document.getElementById('hudMeta');
+  const freeFuel = navigating && mapsStartedFuel && !choice;
+  if (freeFuel) {
+    const km = liveFuelKm();
+    const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '0 min';
+    if (distEl) distEl.textContent = km > 0.05 ? `${km.toFixed(1)} km` : 'GPS';
+    if (iconEl) iconEl.textContent = paused ? '⏸' : '⛽';
+    if (titleEl) titleEl.textContent = paused ? 'Fuel en pause' : 'Suivi Fuel';
+    if (subEl) subEl.textContent = Number(fuelTrip) > 0 ? `trajet ${fuelTrip}` : 'libre';
+    if (thenEl) {
+      thenEl.hidden = true;
+      thenEl.textContent = '';
+    }
+    if (metaEl) metaEl.textContent = `${dur} · ${lastSpeedKmh} km/h`;
+    const speedEl = document.getElementById('hudSpeed');
+    const speedVal = document.getElementById('hudSpeedVal');
+    if (speedEl) speedEl.hidden = false;
+    if (speedVal) speedVal.textContent = String(lastSpeedKmh);
+    paintFuelStats();
+    return;
+  }
   if (distEl) distEl.textContent = step ? fmtDist(toManeuver) : '—';
   if (iconEl) iconEl.textContent = maneuverIcon(step?.maneuver?.type, step?.maneuver?.modifier);
   if (titleEl) titleEl.textContent = step ? fmtStep(step) : navigating ? 'Suivi libre' : 'Guidage';
@@ -1414,11 +1534,14 @@ function showFuelBar(title) {
   fuelEl.hidden = false;
   if (title) fuelTitle.textContent = title;
   document.getElementById('btnPause').textContent = paused ? 'Reprendre' : 'Pause';
+  paintFuelStats();
 }
 
 function enterFreeHud(tripId) {
   paused = false;
+  hudCollapsed = false;
   mapsStartedFuel = true;
+  if (!fuelHudStartedAt) fuelHudStartedAt = Date.now();
   if (tripId) fuelTrip = tripId;
   if (!lastDest) {
     lastDest = { lat: me?.lat || 0, lon: me?.lon || 0, label: 'Suivi libre' };
@@ -1437,6 +1560,7 @@ function enterFreeHud(tripId) {
   const speedEl = document.getElementById('hudSpeed');
   if (speedEl) speedEl.hidden = false;
   startNavWatch(applyNavFix);
+  startFuelPoll();
 }
 
 function startFreeTracking() {
@@ -1445,6 +1569,9 @@ function startFreeTracking() {
     toast('Suivi déjà en cours');
     return;
   }
+  clearTrace();
+  fuelLiveKm = 0;
+  fuelHudStartedAt = Date.now();
   enterFreeHud(fuelTrip);
   const ok = fuelControl('start');
   if (!ok) toast('Fuel non joignable depuis ce navigateur');
@@ -1560,8 +1687,26 @@ document.addEventListener('visibilitychange', () => {
   else window.__mapsEnergyResume();
 });
 
-function stopNavigation() {
+function collapseNavHud() {
+  hudCollapsed = true;
+  document.body.classList.remove('nav');
+  searchForm.hidden = false;
+  navBar.hidden = true;
+  chipsEl.hidden = false;
+  const speedEl = document.getElementById('hudSpeed');
+  if (speedEl) speedEl.hidden = true;
+  if (mapsStartedFuel) {
+    showFuelBar();
+    toast('Guidage fermé — le suivi Fuel continue. Arrêter pour clôturer le trajet.');
+    return;
+  }
+  stopNavigation({ stopFuel: false });
+}
+
+function stopNavigation(opts) {
+  const stopFuel = !!(opts && opts.stopFuel);
   navigating = false;
+  hudCollapsed = false;
   lastSpeedKmh = 0;
   lastSpoken = '';
   try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
@@ -1576,11 +1721,12 @@ function stopNavigation() {
   stopNavWatch();
   navWatchFn = null;
   startIdleGeo();
-  if (mapsStartedFuel) {
+  if (stopFuel && mapsStartedFuel) {
     fuelControl('stop');
     mapsStartedFuel = false;
+    stopFuelPoll();
   }
-  const fromFuel = Number(fuelTrip) > 0;
+  const fromFuel = Number(fuelTrip) > 0 || mapsStartedFuel;
   if (!fromFuel) {
     fuelEl.hidden = true;
   }
@@ -2096,7 +2242,7 @@ window.__mapsBack = function () {
     return true;
   }
   if (navigating) {
-    stopNavigation();
+    collapseNavHud();
     renderAlts();
     return true;
   }
@@ -2224,7 +2370,7 @@ document.getElementById('btnHere').addEventListener('click', () => {
 document.getElementById('btnMenu').addEventListener('click', openDrawer);
 document.getElementById('btnMenuNav').addEventListener('click', openDrawer);
 document.getElementById('btnStopNav').addEventListener('click', () => {
-  stopNavigation();
+  collapseNavHud();
   renderAlts();
 });
 document.getElementById('btnVoiceNav').addEventListener('click', () => {
@@ -2283,6 +2429,9 @@ savedList.addEventListener('click', (e) => {
 
 document.getElementById('btnFuelOpen').addEventListener('click', () => {
   location.href = fuelUrl('maps');
+});
+document.getElementById('btnFuelRefresh').addEventListener('click', () => {
+  requestFuelHistory(true);
 });
 document.getElementById('btnFuelTrack').addEventListener('click', () => {
   startFreeTracking();
@@ -2405,16 +2554,28 @@ window.__mapsFuelEvent = function (raw) {
     const pack = q.get('trips');
     if (pack) applyFuelTripPack(pack);
     const ok = q.get('ok') !== '0';
+    const started = q.get('started');
     const id = q.get('tripId');
+    const kmQ = Number(q.get('km'));
+    if (Number.isFinite(kmQ) && kmQ > 0) fuelLiveKm = kmQ;
     if (id && Number(id) > 0) {
       fuelTrip = id;
       showFuelBar(`Suivi Fuel · trajet ${id}`);
-      if (!navigating) {
+      if (!navigating && !hudCollapsed) {
         enterFreeHud(id);
+      } else {
+        paintFuelStats();
+        if (navigating) paintHud(currentChoice());
       }
     }
     const msg = q.get('msg');
     if (msg && msg !== 'Historique Fuel') toast(msg);
+    if (!ok) {
+      mapsStartedFuel = false;
+      stopFuelPoll();
+    } else if (started === '0') {
+      toast('Fuel n’a pas pu démarrer le GPS — vérifie la localisation.');
+    }
     if (!ok && !id) mapsStartedFuel = false;
   } catch {
     /* ignore */
@@ -2422,12 +2583,22 @@ window.__mapsFuelEvent = function (raw) {
 };
 
 function fuelStopTracking() {
+  const km = liveFuelKm();
+  const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '';
   fuelControl('stop');
+  mapsStartedFuel = false;
+  stopFuelPoll();
   fuelTrip = null;
   paused = false;
-  stopNavigation();
+  stopNavigation({ stopFuel: false });
   renderAlts();
-  toast('Trajet Fuel arrêté — tu restes dans Maps.');
+  const recap = km > 0.05 ? `${km.toFixed(1)} km` : 'trajet';
+  toast(`Fuel arrêté · ${recap}${dur ? ' · ' + dur : ''} — tu restes dans Maps.`);
+  clearTrace();
+  fuelHudStartedAt = 0;
+  fuelLiveKm = 0;
+  paintFuelStats();
+  fuelEl.hidden = true;
 }
 
 document.getElementById('btnPause').addEventListener('click', () => {
