@@ -1,5 +1,13 @@
 /* Hubera Maps — OSM + Photon + OSRM. Chrome type Google Maps + Fuel + Music. */
 const LAST_ME_KEY = 'hubera-maps-last-me';
+const PLACE_KEY = 'hubera-maps-places';
+const CONTACT_GEO_KEY = 'hubera-maps-contact-geo';
+const MUSIC_KEY = 'hubera-maps-music-dock';
+const MODE_KEY = 'hubera-maps-mode';
+const VOICE_KEY = 'hubera-maps-voice';
+const NIGHT_KEY = 'hubera-maps-night';
+const FUEL_TRIPS_KEY = 'hubera-maps-fuel-trips';
+const FUEL_UX_KEY = 'hubera-maps-fuel-ux-dev';
 function readLastMe() {
   try {
     const p = JSON.parse(localStorage.getItem(LAST_ME_KEY) || 'null');
@@ -20,7 +28,7 @@ const map = L.map('map', {
   zoomAnimationThreshold: 4,
 }).setView(bootMe ? [bootMe.lat, bootMe.lon] : [46.6, 2.4], bootMe ? 16 : 6);
 map.createPane('mePane');
-map.getPane('mePane').style.zIndex = 650;
+map.getPane('mePane').style.zIndex = 900;
 map.whenReady(() => {
   map.invalidateSize();
   setTimeout(() => map.invalidateSize(), 350);
@@ -28,32 +36,66 @@ map.whenReady(() => {
 map.on('dragstart', () => {
   if (navigating) setFollowNav(false);
 });
+map.on('zoomend moveend', () => {
+  syncPinLabels();
+});
 let baseTiles = null;
 let nightOn = null;
+function nightPref() {
+  return localStorage.getItem(NIGHT_KEY) || 'auto';
+}
 function wantNight() {
+  const p = nightPref();
+  if (p === 'on') return true;
+  if (p === 'off') return false;
   const h = new Date().getHours();
   return h >= 21 || h < 6;
 }
-function applyTiles() {
-  const night = wantNight();
-  if (baseTiles && nightOn === night) {
-    document.body.classList.toggle('night', night);
-    return;
-  }
-  nightOn = night;
-  if (baseTiles) map.removeLayer(baseTiles);
-  // Comme avant : OSM public. Nuit = les mêmes tuiles, assombries en CSS
-  // (CARTO Dark exige une clé et affiche « API KEY REQUIRED »).
-  baseTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+const TILE_SOURCES = [
+  { url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png', opts: {} },
+  { url: 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', opts: { subdomains: 'abc' } },
+  { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', opts: {} },
+];
+let tileSourceIdx = 0;
+let tileErrorBurst = 0;
+function makeBaseTiles(idx) {
+  const spec = TILE_SOURCES[Math.max(0, Math.min(idx, TILE_SOURCES.length - 1))];
+  const opts = Object.assign({
     maxZoom: 19,
-    subdomains: 'abc',
     updateWhenIdle: true,
     updateWhenZooming: false,
     keepBuffer: 1,
     detectRetina: false,
     attribution: '&copy; OpenStreetMap',
-  }).addTo(map);
-  document.body.classList.toggle('night', night);
+  }, spec.opts || {});
+  const layer = L.tileLayer(spec.url, opts);
+  layer.on('tileerror', () => {
+    tileErrorBurst += 1;
+    if (tileErrorBurst < 10 || tileSourceIdx >= TILE_SOURCES.length - 1) return;
+    tileErrorBurst = 0;
+    tileSourceIdx += 1;
+    try {
+      map.removeLayer(layer);
+    } catch {
+      /* déjà retiré */
+    }
+    baseTiles = makeBaseTiles(tileSourceIdx).addTo(map);
+  });
+  return layer;
+}
+function applyTiles() {
+  try {
+    const night = wantNight();
+    document.body.classList.toggle('night', night);
+    if (baseTiles && nightOn === night) return;
+    nightOn = night;
+    if (baseTiles) map.removeLayer(baseTiles);
+    // tile.openstreetmap.org est bloqué (418 « Access blocked ») depuis
+    // l’app / le VPS. osm.de puis osm.fr. Nuit = filtre CSS, pas CARTO.
+    baseTiles = makeBaseTiles(tileSourceIdx).addTo(map);
+  } catch (err) {
+    console.error('maps tiles', err);
+  }
 }
 applyTiles();
 window.setInterval(applyTiles, 10 * 60 * 1000);
@@ -68,6 +110,9 @@ const drawer = document.getElementById('drawer');
 const scrim = document.getElementById('scrim');
 const panelFuel = document.getElementById('panelFuel');
 const pageSaved = document.getElementById('pageSaved');
+const pageSettings = document.getElementById('pageSettings');
+const pageOffline = document.getElementById('pageOffline');
+const pageFuelUx = document.getElementById('pageFuelUx');
 const savedList = document.getElementById('savedList');
 const altsEl = document.getElementById('alts');
 const routeCardEl = document.getElementById('routeCard');
@@ -106,6 +151,8 @@ let lastSpoken = '';
 let lastSpokenAt = 0;
 let followNav = true;
 let poiLayer = null;
+let contactLayer = null;
+let originMarker = null;
 let worksLayer = null;
 let mapsStartedFuel = false;
 let lastWorksNearAt = 0;
@@ -115,11 +162,6 @@ let fuelPollTimer = 0;
 let fuelHudTick = 0;
 let hudCollapsed = false;
 
-const PLACE_KEY = 'hubera-maps-places';
-const MUSIC_KEY = 'hubera-maps-music-dock';
-const MODE_KEY = 'hubera-maps-mode';
-const VOICE_KEY = 'hubera-maps-voice';
-const FUEL_TRIPS_KEY = 'hubera-maps-fuel-trips';
 const FETCH_HDR = { Accept: 'application/json' };
 const TRAVEL_MODES = [
   ['car', 'Voiture'],
@@ -226,29 +268,91 @@ function fmtFuelWhen(iso) {
   });
 }
 
-function renderFuelTripList(rows) {
-  const el = document.getElementById('fuelTripList');
-  if (!el) return;
-  const list = rows || loadCachedFuelTrips();
-  if (!list.length) {
-    el.innerHTML = '<p>Aucun trajet pour l’instant — lance un suivi libre.</p>';
-    return;
+function fuelNorm(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function fuelSamePath(a, b) {
+  const oa = fuelNorm(a.origin);
+  const ob = fuelNorm(b.origin);
+  const da = fuelNorm(a.dest);
+  const db = fuelNorm(b.dest);
+  const close = (x, y) => {
+    if (!x || !y) return false;
+    if (x === y || x.includes(y) || y.includes(x)) return true;
+    const tx = new Set(x.split(' ').filter((w) => w.length > 3));
+    const ty = y.split(' ').filter((w) => w.length > 3);
+    if (!tx.size || !ty.length) return false;
+    return ty.filter((w) => tx.has(w)).length >= Math.min(2, ty.length);
+  };
+  const destHit = close(da, db);
+  const originHit = close(oa, ob) || (!oa && !ob);
+  const reverse = close(oa, db) && close(da, ob);
+  if (destHit && (originHit || !oa || !ob)) return true;
+  return reverse;
+}
+
+function fuelSimilarNote(t, all) {
+  const peers = (all || []).filter((o) => o.id !== t.id && !o.active && fuelSamePath(t, o));
+  if (!peers.length) return '';
+  const kms = peers.map((p) => Number(p.km) || 0).filter((n) => n > 0.2);
+  const avg = kms.length ? kms.reduce((s, n) => s + n, 0) / kms.length : 0;
+  const cur = Number(t.km) || 0;
+  let delta = '';
+  if (avg > 0 && cur > 0) {
+    const d = cur - avg;
+    if (Math.abs(d) >= 0.3) delta = d > 0 ? ` · +${d.toFixed(1)} km vs habitude` : ` · ${d.toFixed(1)} km vs habitude`;
   }
-  el.innerHTML = list
-    .map((t) => {
-      const from = t.origin || 'Départ';
-      const to = t.dest || (t.active ? 'en cours' : 'Arrivée');
-      const live = t.active ? ' live' : '';
-      const km = t.km > 0 ? `${t.km.toFixed(1)} km` : t.active ? 'GPS' : '';
-      const pause = t.paused ? ' · pause' : '';
-      return (
-        `<button type="button" class="fuel-trip${live}" data-id="${t.id}" data-dest="${esc(t.dest || '')}" data-origin="${esc(t.origin || '')}" data-active="${t.active ? '1' : '0'}">` +
-        `<div class="when">${esc(fmtFuelWhen(t.start))}${t.active ? ' · en cours' : ''}</div>` +
-        `<div class="path">${esc(from)} → ${esc(to)}</div>` +
-        `<div class="meta">${esc(km)}${pause}</div></button>`
-      );
-    })
-    .join('');
+  return `${peers.length} trajet${peers.length > 1 ? 's' : ''} similaire${peers.length > 1 ? 's' : ''}${avg ? ` · moy. ${avg.toFixed(1)} km` : ''}${delta}`;
+}
+
+function renderFuelTripList(rows) {
+  const els = ['fuelTripList', 'fuelTripListPanel']
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+  if (!els.length) return;
+  let list = (rows || loadCachedFuelTrips()).slice();
+  const liveId = Number(fuelTrip);
+  if (mapsStartedFuel && Number.isFinite(liveId) && liveId > 0 && !list.some((t) => t.id === liveId && t.active)) {
+    list = [
+      {
+        id: liveId,
+        km: liveFuelKm(),
+        start: new Date().toISOString(),
+        origin: 'Départ',
+        dest: 'en cours',
+        active: true,
+        paused,
+      },
+      ...list.filter((t) => t.id !== liveId),
+    ];
+  }
+  const html = !list.length
+    ? '<p>Aucun trajet pour l’instant — lance un suivi libre.</p>'
+    : list
+        .map((t) => {
+          const from = t.origin || 'Départ';
+          const to = t.dest || (t.active ? 'en cours' : 'Arrivée');
+          const live = t.active ? ' live' : '';
+          const km = t.km > 0 ? `${t.km.toFixed(1)} km` : t.active ? 'GPS' : '';
+          const pause = t.paused ? ' · pause' : '';
+          const similar = fuelSimilarNote(t, list);
+          return (
+            `<button type="button" class="fuel-trip${live}" data-id="${t.id}" data-dest="${esc(t.dest || '')}" data-origin="${esc(t.origin || '')}" data-active="${t.active ? '1' : '0'}">` +
+            `<div class="when">${esc(fmtFuelWhen(t.start))}${t.active ? ' · en cours' : ''}</div>` +
+            `<div class="path">${esc(from)} → ${esc(to)}</div>` +
+            `<div class="meta">${esc(km)}${pause}${similar ? ` · ${esc(similar)}` : ''}</div></button>`
+          );
+        })
+        .join('');
+  els.forEach((el) => {
+    el.innerHTML = html;
+  });
 }
 
 function applyFuelTripPack(raw) {
@@ -300,15 +404,25 @@ function paintFuelStats() {
   if (!el) return;
   if (!mapsStartedFuel && !(Number(fuelTrip) > 0)) {
     el.textContent = '';
+    paintFuelPeek();
+    document.body.classList.remove('fuel-live');
     return;
   }
+  document.body.classList.add('fuel-live');
   const km = liveFuelKm();
   const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '';
   const bits = [];
   bits.push(km > 0.05 ? `${km.toFixed(1)} km` : 'GPS…');
   if (dur) bits.push(dur);
   if (lastSpeedKmh) bits.push(`${lastSpeedKmh} km/h`);
+  const rows = loadCachedFuelTrips();
+  const live = rows.find((t) => t.active) || rows[0];
+  if (live) {
+    const sim = fuelSimilarNote(live, rows);
+    if (sim) bits.push(sim);
+  }
   el.textContent = bits.join(' · ');
+  paintFuelPeek();
 }
 
 function startFuelHudTick() {
@@ -333,14 +447,6 @@ function stopFuelHudTick() {
 function startFuelPoll() {
   stopFuelPoll();
   startFuelHudTick();
-}
-
-function stopFuelPoll() {
-  if (fuelPollTimer) {
-    clearInterval(fuelPollTimer);
-    fuelPollTimer = 0;
-  }
-  stopFuelHudTick();
 }
 
 function stopFuelPoll() {
@@ -378,6 +484,7 @@ function loadPlaces() {
 
 function savePlaces(p) {
   localStorage.setItem(PLACE_KEY, JSON.stringify(p));
+  paintPlacePins();
 }
 
 function esc(s) {
@@ -414,7 +521,7 @@ function syncChromeHeight() {
   const el = document.getElementById('chrome');
   if (!el) return;
   const h = Math.ceil(el.getBoundingClientRect().height);
-  if (h > 40) document.body.style.setProperty('--chrome', `${h + 12}px`);
+  if (h > 40) document.body.style.setProperty('--chrome', `${h}px`);
 }
 
 function syncClear() {
@@ -493,19 +600,34 @@ function geoOpts({ accurate, freshMs, timeout }) {
   };
 }
 
+let huberaContacts = [];
+
 function loadId() {
-  return HUBERA_OWNER;
+  let email = HUBERA_OWNER.email;
+  let name = HUBERA_OWNER.name;
+  try {
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.email) {
+      const e = String(HuberaSuite.email() || '').trim();
+      if (e) email = e;
+    }
+  } catch {
+    /* native absent */
+  }
+  const local = email.split('@')[0] || 'Paul';
+  name = local.charAt(0).toUpperCase() + local.slice(1);
+  return { email, name };
 }
 
 function paintId() {
-  const id = HUBERA_OWNER;
+  const id = loadId();
   const mail = document.getElementById('drawerMail');
   const who = document.querySelector('.drawer .who');
   const avatars = [document.getElementById('btnUser'), document.getElementById('drawerAvatar')];
   if (who) who.textContent = id.name;
   if (mail) mail.textContent = id.email;
+  const letter = (id.name || 'P').charAt(0).toUpperCase();
   avatars.forEach((a) => {
-    if (a) a.textContent = 'P';
+    if (a) a.textContent = letter;
   });
 }
 
@@ -513,7 +635,292 @@ function applyHuberaIdFromParams() {
   return true;
 }
 
-window.__mapsApplyAuth = function () {};
+function formatContactAddr(a) {
+  if (!a || typeof a !== 'object') return '';
+  return [a.street, a.postal_code, a.city, a.region, a.country]
+    .map((x) => String(x || '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+function contactShortName(c) {
+  const p = (c && c.profile) || {};
+  const g = String(p.given_name || '').trim();
+  const f = String(p.family_name || '').trim();
+  if (g || f) return [g, f].filter(Boolean).join(' ');
+  return String((c && c.name) || 'Contact').trim();
+}
+
+function contactPlaces() {
+  const out = [];
+  for (const c of huberaContacts) {
+    const addrs = (c && c.profile && Array.isArray(c.profile.addresses) && c.profile.addresses) || [];
+    if (!addrs.length && Number.isFinite(c.lat) && Number.isFinite(c.lon)) {
+      out.push({
+        name: c.name || 'Contact',
+        shortName: c.short || contactShortName(c),
+        email: c.email || '',
+        query: c.query || '',
+        label: c.label || c.name || 'Contact',
+        lat: c.lat,
+        lon: c.lon,
+        hint: 'Contacts',
+      });
+      continue;
+    }
+    for (const a of addrs) {
+      const query = formatContactAddr(a);
+      if (!query) continue;
+      const shortName = contactShortName(c);
+      out.push({
+        name: c.name || shortName,
+        shortName,
+        email: c.email || '',
+        query,
+        label: `${shortName} · ${query}`,
+        lat: Number(a.lat),
+        lon: Number(a.lon),
+        hint: a.label || 'Contacts',
+      });
+    }
+  }
+  return out;
+}
+
+function loadContactGeo() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CONTACT_GEO_KEY) || '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveContactGeo(geo) {
+  try {
+    localStorage.setItem(CONTACT_GEO_KEY, JSON.stringify(geo));
+  } catch {
+    /* quota */
+  }
+}
+
+const PLACE_SVGS = {
+  home: '<svg viewBox="0 0 24 24" width="24" height="24" fill="#fff" aria-hidden="true"><path d="M12 3.4 3.2 10.8a1 1 0 0 0-.3.7V20a1.3 1.3 0 0 0 1.3 1.3h5.4v-6.4h4.8v6.4h5.4A1.3 1.3 0 0 0 21.1 20v-8.5a1 1 0 0 0-.3-.7L12 3.4z"/></svg>',
+  work: '<svg viewBox="0 0 24 24" width="22" height="22" fill="#fff" aria-hidden="true"><path d="M9 7V5.6A2.6 2.6 0 0 1 11.6 3h.8A2.6 2.6 0 0 1 15 5.6V7h3.4A1.6 1.6 0 0 1 20 8.6V12H4V8.6A1.6 1.6 0 0 1 5.6 7H9zm1.5 0h3V5.7c0-.4-.3-.7-.7-.7h-1.6c-.4 0-.7.3-.7.7V7zM4 13.5h16V19a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 19v-5.5z"/></svg>',
+  person: '<svg viewBox="0 0 24 24" width="18" height="18" fill="#fff" aria-hidden="true"><circle cx="12" cy="8" r="3.7"/><path d="M5.1 19.4c.5-3.5 3.3-5.5 6.9-5.5s6.4 2 6.9 5.5c.04.4-.3.8-.8.8H5.9c-.5 0-.84-.4-.8-.8z"/></svg>',
+};
+
+function pinNamesVisible() {
+  try {
+    const b = map.getBounds();
+    const midLat = (b.getNorth() + b.getSouth()) / 2;
+    const widthKm = haversineKm(
+      { lat: midLat, lon: b.getWest() },
+      { lat: midLat, lon: b.getEast() },
+    );
+    return widthKm <= 250 || map.getZoom() >= 14;
+  } catch {
+    return map.getZoom() >= 9;
+  }
+}
+
+function syncPinLabels() {
+  document.body.classList.toggle('pins-named', pinNamesVisible());
+}
+
+function placeNear(lat, lon, place, meters) {
+  if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lon)) return false;
+  return haversineKm({ lat, lon }, { lat: place.lat, lon: place.lon }) * 1000 < (meters || 80);
+}
+
+function nudgeAwayFromMe(lat, lon) {
+  if (!me || !Number.isFinite(me.lat) || !Number.isFinite(me.lon)) return [lat, lon];
+  if (haversineKm(me, { lat, lon }) * 1000 > 40) return [lat, lon];
+  return [lat + 0.00022, lon];
+}
+
+function placePinIcon(kind, name) {
+  const size = kind === 'person' ? 30 : 44;
+  return L.divIcon({
+    className: 'place-pin',
+    html: `<div class="place-badge kind-${kind}">${PLACE_SVGS[kind] || PLACE_SVGS.person}</div><div class="place-lab">${esc(name)}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function contactPinIcon(name) {
+  return placePinIcon('person', name);
+}
+
+function abIcon(letter) {
+  return L.divIcon({
+    className: 'place-pin',
+    html: `<div class="place-badge kind-person" style="background:#e94560;width:22px;height:22px;font-size:11px;font-weight:800;color:#fff">${letter}</div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
+
+function paintPlacePins() {
+  if (contactLayer) {
+    map.removeLayer(contactLayer);
+    contactLayer = null;
+  }
+  contactLayer = L.layerGroup().addTo(map);
+  const places = loadPlaces();
+  const geo = loadContactGeo();
+  const clustered = new Map();
+  for (const c of contactPlaces()) {
+    let lat = Number.isFinite(c.lat) ? c.lat : null;
+    let lon = Number.isFinite(c.lon) ? c.lon : null;
+    if (lat == null || lon == null) {
+      const g = geo[c.query];
+      if (g && Number.isFinite(g.lat) && Number.isFinite(g.lon)) {
+        lat = g.lat;
+        lon = g.lon;
+      }
+    }
+    if (lat == null || lon == null) continue;
+    if (placeNear(lat, lon, places.home) || placeNear(lat, lon, places.work)) continue;
+    const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    const prev = clustered.get(key);
+    if (prev) {
+      if (!prev.names.includes(c.shortName)) prev.names.push(c.shortName);
+      continue;
+    }
+    clustered.set(key, { lat, lon, names: [c.shortName], label: c.label });
+  }
+  clustered.forEach((item) => {
+    const name = item.names.join(' · ');
+    L.marker([item.lat, item.lon], { icon: placePinIcon('person', name), zIndexOffset: 350, keyboard: false })
+      .addTo(contactLayer)
+      .on('click', () => void routeTo(item.lat, item.lon, item.label));
+  });
+  if (places.home && Number.isFinite(places.home.lat) && Number.isFinite(places.home.lon)) {
+    const [hLat, hLon] = nudgeAwayFromMe(places.home.lat, places.home.lon);
+    L.marker([hLat, hLon], {
+      icon: placePinIcon('home', 'Maison'),
+      zIndexOffset: 420,
+      keyboard: false,
+    })
+      .addTo(contactLayer)
+      .on('click', () => void routeTo(places.home.lat, places.home.lon, places.home.label || 'Maison'));
+  }
+  if (places.work && Number.isFinite(places.work.lat) && Number.isFinite(places.work.lon)) {
+    const [wLat, wLon] = nudgeAwayFromMe(places.work.lat, places.work.lon);
+    L.marker([wLat, wLon], {
+      icon: placePinIcon('work', 'Travail'),
+      zIndexOffset: 410,
+      keyboard: false,
+    })
+      .addTo(contactLayer)
+      .on('click', () => void routeTo(places.work.lat, places.work.lon, places.work.label || 'Travail'));
+  }
+  syncPinLabels();
+}
+
+function paintContactPins() {
+  paintPlacePins();
+}
+
+async function geocodeMissingContacts() {
+  const geo = loadContactGeo();
+  let changed = false;
+  for (const c of contactPlaces()) {
+    if (Number.isFinite(c.lat) && Number.isFinite(c.lon)) continue;
+    if (!c.query || geo[c.query]) continue;
+    try {
+      const hits = await searchPhoton(c.query);
+      if (hits[0]) {
+        geo[c.query] = { lat: hits[0].lat, lon: hits[0].lon };
+        changed = true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (changed) saveContactGeo(geo);
+  paintContactPins();
+}
+
+function mergeSeedContacts(seed) {
+  if (!Array.isArray(seed) || !seed.length) return;
+  const geo = loadContactGeo();
+  for (const s of seed) {
+    if (!s || !s.query || !Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
+    geo[s.query] = { lat: s.lat, lon: s.lon };
+    const exists = huberaContacts.some(
+      (c) => (c.name || '') === (s.name || '') || (c.short || '') === (s.short || ''),
+    );
+    if (!exists) {
+      huberaContacts.push({
+        name: s.name,
+        short: s.short,
+        email: '',
+        profile: {
+          given_name: (s.short || '').split(' ')[0] || '',
+          family_name: (s.short || '').split(' ').slice(1).join(' '),
+          addresses: [{ street: s.query, lat: s.lat, lon: s.lon }],
+        },
+        lat: s.lat,
+        lon: s.lon,
+        query: s.query,
+        label: s.label,
+      });
+    }
+  }
+  saveContactGeo(geo);
+}
+
+function applyHuberaContacts(list) {
+  if (Array.isArray(list) && list.length) huberaContacts = list;
+  paintContactPins();
+  renderSaved();
+  renderChips();
+  void geocodeMissingContacts();
+}
+
+window.__mapsContactsReady = function () {
+  let raw = '[]';
+  try {
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.takeContacts) {
+      raw = HuberaSuite.takeContacts() || '[]';
+    }
+  } catch {
+    raw = '[]';
+  }
+  try {
+    applyHuberaContacts(JSON.parse(raw));
+  } catch {
+    applyHuberaContacts([]);
+  }
+};
+
+window.__mapsApplyAuth = function (q) {
+  try {
+    const p = new URLSearchParams(q || '');
+    const token = p.get('token') || p.get('access') || p.get('access_token') || '';
+    const email = p.get('email') || '';
+    if (token && typeof HuberaSuite !== 'undefined' && HuberaSuite.setToken) {
+      HuberaSuite.setToken(token);
+    }
+    if (email) {
+      try {
+        localStorage.setItem('hubera-maps-email', email);
+      } catch {
+        /* ignore */
+      }
+    }
+    paintId();
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.refreshContacts) {
+      HuberaSuite.refreshContacts();
+    }
+    toast(email ? `Connecté · ${email}` : 'Compte Hubera ID à jour');
+  } catch {
+    /* ignore */
+  }
+};
 
 function persistMe(lat, lon) {
   lastFixAt = Date.now();
@@ -622,10 +1029,11 @@ function puckIcon(deg) {
   return L.divIcon({
     className: 'me-puck',
     html:
+      `<div class="puck-wrap"><div class="puck-halo"></div>` +
       `<div class="puck-inner" style="transform:rotate(${d}deg)">` +
-      `<div class="puck-n"></div><div class="puck-c"></div></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+      `<div class="puck-n"></div><div class="puck-c"></div></div></div>`,
+    iconSize: [56, 56],
+    iconAnchor: [28, 28],
   });
 }
 
@@ -638,12 +1046,12 @@ function setMe(lat, lon, fly, fromCache) {
   if (meHalo) meHalo.setLatLng(here);
   else {
     meHalo = L.circleMarker(here, {
-      radius: 22, color: '#e94560', weight: 2, fillColor: '#e94560', fillOpacity: 0.16,
+      radius: 28, color: '#1a73e8', weight: 0, fillColor: '#1a73e8', fillOpacity: 0.22,
       pane: 'mePane', interactive: false,
     }).addTo(map);
   }
   if (!meMarker) {
-    meMarker = L.marker(here, { icon: puckIcon(lastHeadingDeg), pane: 'mePane', keyboard: false }).addTo(map);
+    meMarker = L.marker(here, { icon: puckIcon(lastHeadingDeg), pane: 'mePane', keyboard: false, zIndexOffset: 2500 }).addTo(map);
   } else {
     meMarker.setLatLng(here);
     meMarker.setIcon(puckIcon(lastHeadingDeg));
@@ -1335,7 +1743,35 @@ function drawChoices(selectedId) {
     const b = layer.getBounds();
     bounds = bounds ? bounds.extend(b) : b;
   }
-  if (bounds) map.fitBounds(bounds, { padding: [80, 56, 220, 56] });
+  if (me) {
+    if (!originMarker) originMarker = L.marker([me.lat, me.lon], { icon: abIcon('A'), zIndexOffset: 700 }).addTo(map);
+    else originMarker.setLatLng([me.lat, me.lon]);
+    if (bounds) bounds.extend([me.lat, me.lon]);
+  }
+  if (lastDest && Number.isFinite(lastDest.lat)) {
+    if (bounds) bounds.extend([lastDest.lat, lastDest.lon]);
+  }
+  fitRouteBounds(bounds);
+}
+
+function routeFitPadding() {
+  const top = document.getElementById('topChrome');
+  const topH = top ? Math.ceil(top.getBoundingClientRect().height) : 120;
+  const bottom = parseInt(getComputedStyle(document.body).getPropertyValue('--chrome'), 10) || 168;
+  return [Math.max(88, topH + 8), 28, Math.max(88, bottom + 12), 28];
+}
+
+function fitRouteBounds(bounds) {
+  if (!bounds) return;
+  const run = () => {
+    try {
+      map.fitBounds(bounds, { padding: routeFitPadding(), maxZoom: 15, animate: false });
+    } catch {
+      /* ignore */
+    }
+  };
+  run();
+  window.setTimeout(run, 80);
 }
 
 function modeLabel() {
@@ -1369,7 +1805,13 @@ function bindModeButtons(root) {
 }
 
 function showAltsShell(label, extraHtml) {
-  const html = modesRowHtml() + `<h3>${esc(label)}</h3>` + (extraHtml || '');
+  const html =
+    `<div class="route-head">` +
+    `<h3>${esc(label)}</h3>` +
+    `<button type="button" class="route-close" id="btnDismissRoute" aria-label="Masquer l’itinéraire">✕</button>` +
+    `</div>` +
+    modesRowHtml() +
+    (extraHtml || '');
   if (routeCardEl) {
     routeCardEl.hidden = false;
     routeCardEl.innerHTML = html;
@@ -1378,6 +1820,38 @@ function showAltsShell(label, extraHtml) {
   if (altsEl) {
     altsEl.hidden = true;
     altsEl.innerHTML = '';
+  }
+  if (chipsEl) chipsEl.hidden = true;
+  document.body.classList.add('routing');
+  bindRouteCard();
+}
+
+function dismissRoutePreview() {
+  routeGen += 1;
+  if (routeAbort) {
+    try {
+      routeAbort.abort();
+    } catch {
+      /* ignore */
+    }
+  }
+  routeChoices = [];
+  selectedRouteId = null;
+  lastDest = null;
+  if (routeCardEl) {
+    routeCardEl.hidden = true;
+    routeCardEl.innerHTML = '';
+  }
+  if (altsEl) {
+    altsEl.hidden = true;
+    altsEl.innerHTML = '';
+  }
+  clearRoute();
+  if (chipsEl) chipsEl.hidden = false;
+  document.body.classList.remove('routing');
+  if (originMarker) {
+    map.removeLayer(originMarker);
+    originMarker = null;
   }
 }
 
@@ -1393,7 +1867,20 @@ function setTravelMode(mode) {
 function bindRouteCard() {
   if (!routeCardEl || routeCardEl.dataset.bound === '1') return;
   routeCardEl.dataset.bound = '1';
+  const onDismiss = (e) => {
+    if (!e.target.closest('.route-close') && !e.target.closest('#btnDismissRoute')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dismissRoutePreview();
+  };
+  routeCardEl.addEventListener('click', onDismiss, true);
+  routeCardEl.addEventListener('pointerup', onDismiss, true);
   routeCardEl.addEventListener('click', (e) => {
+    if (e.target.closest('.route-close') || e.target.closest('#btnDismissRoute')) {
+      e.preventDefault();
+      dismissRoutePreview();
+      return;
+    }
     const mode = e.target.closest('.mode');
     if (mode) {
       setTravelMode(mode.dataset.mode);
@@ -1979,6 +2466,15 @@ async function showSuggestHits(q) {
     for (const r of p.recents.slice(0, 4)) {
       items.push({ ...r, hint: 'Récent' });
     }
+    for (const c of contactPlaces().slice(0, 6)) {
+      items.push({
+        lat: 0,
+        lon: 0,
+        label: c.label,
+        hint: 'Contacts',
+        query: c.query,
+      });
+    }
   }
   showHits(items);
 }
@@ -2007,20 +2503,38 @@ async function routeTo(lat, lon, label) {
     qEl.placeholder = 'Rechercher ici';
   }
   if (!me) {
-    sheetEl.hidden = false;
-    destMarker = L.marker([lat, lon]).addTo(map).bindPopup(label);
+    destMarker = L.marker([lat, lon], { icon: abIcon('B'), zIndexOffset: 720 }).addTo(map).bindPopup(label);
     map.setView([lat, lon], 14);
-    sheetEl.innerHTML =
-      `<strong>${esc(label)}</strong><span>Activez « ma position » puis relancez.</span>` +
-      `<button type="button" class="go" id="btnGo">Ma position</button>`;
-    document.getElementById('btnGo').onclick = () => {
-      document.getElementById('btnHere').click();
-      setTimeout(() => void routeTo(lat, lon, label), 700);
-    };
+    sheetEl.hidden = true;
+    showAltsShell(
+      label,
+      `<p style="color:#94a3b8;margin:0 0 8px">Activez « ma position » puis relancez.</p>` +
+        `<button type="button" id="btnGo" style="margin-top:8px;width:100%;border:0;border-radius:999px;padding:10px;background:#e94560;color:#fff;font-weight:700;cursor:pointer;font-size:15px">Ma position</button>` +
+        `<button type="button" class="go" id="btnDismissRoute" style="margin-top:8px;background:#16213e;color:#f1f5f9">Fermer</button>`,
+    );
+    const go = document.getElementById('btnGo');
+    if (go) {
+      go.onclick = () => {
+        document.getElementById('btnHere').click();
+        setTimeout(() => void routeTo(lat, lon, label), 700);
+      };
+    }
+    return;
+  }
+  if (haversineKm(me, { lat, lon }) < 0.12) {
+    clearRoute();
+    destMarker = L.marker([lat, lon], { icon: abIcon('B'), zIndexOffset: 720 }).addTo(map).bindPopup(label);
+    map.setView([lat, lon], 16);
+    sheetEl.hidden = true;
+    showAltsShell(
+      label,
+      `<p style="color:#94a3b8;margin:0 0 10px">Tu es déjà ici — pas besoin de guidage.</p>` +
+        `<button type="button" class="go" id="btnDismissRoute">Fermer</button>`,
+    );
     return;
   }
   clearRoute();
-  destMarker = L.marker([lat, lon]).addTo(map).bindPopup(label);
+  destMarker = L.marker([lat, lon], { icon: abIcon('B'), zIndexOffset: 720 }).addTo(map).bindPopup(label);
   sheetEl.hidden = true;
   toast(`Itinéraire vers ${label.split(',')[0]}…`);
   showAltsShell(label, `<p style="color:#94a3b8;margin:0">Calcul…</p>`);
@@ -2074,7 +2588,7 @@ function showHits(items) {
       const hint = h.hint ? `<div class="hit-h">${esc(h.hint)}</div>` : '';
       return (
         `<button type="button" class="hit${h.here ? ' here' : ''}" data-here="${h.here ? '1' : ''}" ` +
-        `data-lat="${h.lat}" data-lon="${h.lon}" data-label="${esc(h.label)}">` +
+        `data-lat="${h.lat}" data-lon="${h.lon}" data-label="${esc(h.label)}"${h.query ? ` data-query="${esc(h.query)}"` : ''}>` +
         `<div class="hit-t">${esc(h.label)}</div>${hint}</button>`
       );
     })
@@ -2163,15 +2677,14 @@ function renderSaved() {
   const add = (key, title, place) => {
     if (!place) {
       rows.push(
-        `<button type="button" class="place-row" data-assign="${key}">Ajouter ${esc(title)} — chercher un lieu</button>`,
+        `<div class="place-line"><button type="button" class="place-edit" data-assign="${key}" aria-label="Ajouter ${esc(title)}">✎</button>` +
+          `<button type="button" class="place-row" data-assign="${key}">Ajouter ${esc(title)}</button></div>`,
       );
       return;
     }
     rows.push(
-      `<button type="button" class="place-row" data-lat="${place.lat}" data-lon="${place.lon}" data-label="${esc(place.label)}"><strong>${esc(title)}</strong> · ${esc(place.label)}</button>`,
-    );
-    rows.push(
-      `<button type="button" class="place-row" data-assign="${key}">Changer ${esc(title)} (recherche)</button>`,
+      `<div class="place-line"><button type="button" class="place-edit" data-assign="${key}" aria-label="Modifier ${esc(title)}">✎</button>` +
+        `<button type="button" class="place-row" data-lat="${place.lat}" data-lon="${place.lon}" data-label="${esc(place.label)}"><strong>${esc(title)}</strong> · ${esc(place.label)}</button></div>`,
     );
   };
   add('home', 'Maison', p.home);
@@ -2188,6 +2701,358 @@ function renderSaved() {
   savedList.innerHTML = rows.join('') || '<p>Aucun lieu pour l’instant.</p>';
 }
 
+function fmtBytes(n) {
+  const x = Number(n) || 0;
+  if (x < 1024) return `${x} o`;
+  if (x < 1048576) return `${(x / 1024).toFixed(0)} Ko`;
+  return `${(x / 1048576).toFixed(1)} Mo`;
+}
+
+function appVersionLabel() {
+  try {
+    if (typeof HuberaUpdate !== 'undefined' && HuberaUpdate.version) {
+      const v = HuberaUpdate.version();
+      const c = HuberaUpdate.versionCode ? HuberaUpdate.versionCode() : '';
+      return c ? `${v} (${c})` : v;
+    }
+  } catch {
+    /* web */
+  }
+  return '0.1.46';
+}
+
+const FUEL_UX_OPTS = [
+  { id: 'mix', title: 'Mix 2+7+10 (recommandé)', hint: 'Feuille + HUD conduite + Fuel silencieux' },
+  { id: 'actuel', title: 'Actuel', hint: 'Onglet Trajets Fuel comme aujourd’hui' },
+  { id: '1', title: '1 — 4 onglets', hint: 'Maps · Fuel · Enregistrés · Moi' },
+  { id: '2', title: '2 — Feuille sous la carte', hint: 'Carnet dans une feuille, pas d’onglet Fuel' },
+  { id: '3', title: '3 — Cinq onglets métier', hint: 'Maps Trajets Pleins Garage Budget' },
+  { id: '4', title: '4 — Conduite / Carnet', hint: 'Deux modes' },
+  { id: '5', title: '5 — Calques carte', hint: 'Trajets et pleins comme objets carte' },
+  { id: '6', title: '6 — FAB pompe', hint: 'Carte propre, bouton pompe' },
+  { id: '7', title: '7 — HUD conduite', hint: 'Jauge tiny, gros HUD en roulant' },
+  { id: '8', title: '8 — Écran partagé', hint: 'Carte + tableau en même temps' },
+  { id: '9', title: '9 — Fuel tel quel', hint: 'Onglet = accueil Fuel' },
+  { id: '10', title: '10 — Moteur invisible', hint: 'Même UI que le mix, sans ouvrir Fuel' },
+];
+
+function fuelUxId() {
+  const v = localStorage.getItem(FUEL_UX_KEY);
+  return v || 'mix';
+}
+
+function setFuelUx(id) {
+  localStorage.setItem(FUEL_UX_KEY, id);
+  applyFuelUx();
+}
+
+function usesFuelSheet() {
+  const id = fuelUxId();
+  return id === 'mix' || id === '2' || id === '10';
+}
+
+function applyFuelUx() {
+  const id = fuelUxId();
+  document.body.className = document.body.className
+    .split(/\s+/)
+    .filter((c) => c && !c.startsWith('fux-'))
+    .join(' ');
+  document.body.classList.add(`fux-${id}`);
+  const lab = document.getElementById('devFuelLabel');
+  const opt = FUEL_UX_OPTS.find((o) => o.id === id);
+  if (lab) lab.textContent = `DEV · ${opt ? opt.title : id}`;
+  const tabs = document.getElementById('tabs');
+  if (tabs) {
+    if (id === '3') {
+      tabs.innerHTML =
+        `<button type="button" class="tab on" data-tab="maps"><span class="ic">🗺️</span>Maps</button>` +
+        `<button type="button" class="tab" data-tab="trips"><span class="ic">⛽</span>Trajets</button>` +
+        `<button type="button" class="tab" data-tab="fills"><span class="ic">P</span>Pleins</button>` +
+        `<button type="button" class="tab" data-tab="saved"><span class="ic">★</span>Garage</button>` +
+        `<button type="button" class="tab" data-tab="budget"><span class="ic">€</span>Budget</button>`;
+    } else if (id === '1' || id === '9' || id === 'actuel' || id === '4' || id === '5') {
+      tabs.innerHTML =
+        `<button type="button" class="tab on" data-tab="maps"><span class="ic">🗺️</span>Maps</button>` +
+        `<button type="button" class="tab" data-tab="trips"><span class="ic">⛽</span>Fuel</button>` +
+        `<button type="button" class="tab" data-tab="saved"><span class="ic">★</span>Enreg.</button>`;
+    } else {
+      tabs.innerHTML =
+        `<button type="button" class="tab on" data-tab="maps"><span class="ic">🗺️</span>Maps</button>` +
+        `<button type="button" class="tab" data-tab="trips"><span class="ic">⛽</span>Fuel</button>` +
+        `<button type="button" class="tab" data-tab="saved"><span class="ic">★</span>Enreg.</button>`;
+    }
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === 'maps'));
+  }
+  const av = document.getElementById('btnUser');
+  if (av) {
+    if (id === '7' || id === 'mix') {
+      av.classList.add('gauge');
+      av.textContent = '62%';
+    } else {
+      av.classList.remove('gauge');
+      paintId();
+    }
+  }
+  closeFuelSheet();
+  paintFuelPeek();
+  paintFuelSheetBody();
+  const split = document.getElementById('fuelSplitBody');
+  if (split) {
+    const rows = loadCachedFuelTrips();
+    const km = rows.reduce((s, t) => s + (t.km || 0), 0);
+    split.innerHTML = `<div class="item">${km.toFixed(1)} km cumulés · ${rows.length} trajets</div>`;
+  }
+  syncChromeHeight();
+}
+
+function paintFuelPeek() {
+  const kmEl = document.getElementById('fuelPeekKm');
+  const sub = document.getElementById('fuelPeekSub');
+  const title = document.getElementById('fuelPeekTitle');
+  const rows = loadCachedFuelTrips();
+  const todayKm = rows.filter((t) => (t.start || '').slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((s, t) => s + (t.km || 0), 0);
+  if (kmEl) kmEl.textContent = todayKm > 0 ? `${todayKm.toFixed(1)} km` : '';
+  if (title) title.textContent = mapsStartedFuel ? 'Suivi Fuel' : 'Fuel';
+  if (sub) {
+    sub.textContent = mapsStartedFuel
+      ? `${liveFuelKm().toFixed(1)} km · Pause / Plein / Arrêter`
+      : 'trajets, pleins, garage — GPS Fuel en fond';
+  }
+}
+
+function paintFuelSheetBody() {
+  const body = document.getElementById('fuelSheetBody');
+  if (!body) return;
+  const sub = document.querySelector('#fuelSub button.on');
+  const which = (sub && sub.dataset.fsub) || 'trips';
+  if (which === 'trips') {
+    body.innerHTML =
+      `<div class="row" style="margin-bottom:10px">` +
+      `<button type="button" class="act primary" id="sheetTrack">Suivi libre</button>` +
+      `<button type="button" class="act ghost" id="sheetRefresh">Actualiser</button></div>` +
+      `<div id="fuelTripList"></div>`;
+    const st = document.getElementById('sheetTrack');
+    const rf = document.getElementById('sheetRefresh');
+    if (st) st.onclick = () => { closeFuelSheet(); startFreeTracking(); };
+    if (rf) rf.onclick = () => requestFuelHistory(true);
+    renderFuelTripList();
+    return;
+  }
+  if (which === 'fills') {
+    body.innerHTML =
+      `<p class="page-hint">Les pleins s’enregistrent dans Fuel (moteur invisible). Maps saisit litres / montant ici.</p>` +
+      `<button type="button" class="primary" id="sheetFill" style="width:100%">Nouveau plein</button>`;
+    const b = document.getElementById('sheetFill');
+    if (b) b.onclick = () => {
+      closeFuelSheet();
+      const fillSheet = document.getElementById('fillSheet');
+      if (fillSheet) fillSheet.hidden = false;
+    };
+    return;
+  }
+  if (which === 'garage') {
+    body.innerHTML =
+      `<p class="page-hint">Véhicules, jauge et CT restent dans la base Fuel. Maps les affichera ici sans ouvrir l’app.</p>` +
+      `<div class="item">Véhicule actif — données Fuel en arrière-plan</div>`;
+    return;
+  }
+  body.innerHTML =
+    `<p class="page-hint">Budget et trajets réguliers : même base Fuel, écran Maps.</p>` +
+    `<div class="item">Septembre — enveloppe (aperçu)</div>`;
+}
+
+function openFuelSheet() {
+  const el = document.getElementById('fuelSheet');
+  if (!el) return;
+  el.classList.add('open');
+  document.body.classList.add('fuel-sheet-open');
+  paintFuelSheetBody();
+  requestFuelHistory(true);
+}
+
+function closeFuelSheet() {
+  const el = document.getElementById('fuelSheet');
+  if (el) el.classList.remove('open');
+  document.body.classList.remove('fuel-sheet-open');
+}
+
+function renderFuelUxPage() {
+  const body = document.getElementById('fuelUxBody');
+  if (!body) return;
+  const cur = fuelUxId();
+  body.innerHTML =
+    `<p class="page-hint">Choisis une piste Fuel dans Maps. Mix 2+7+10 = feuille + HUD + GPS Fuel silencieux. Ce que tu gardes devient l’écran du quotidien.</p>` +
+    FUEL_UX_OPTS.map(
+      (o) =>
+        `<button type="button" class="ux-card${cur === o.id ? ' on' : ''}" data-ux="${o.id}"><b>${esc(o.title)}</b><span>${esc(o.hint)}</span></button>`,
+    ).join('');
+}
+
+function showFuelRecap() {
+  const km = liveFuelKm();
+  const rows = loadCachedFuelTrips();
+  const similar = rows[0] ? fuelSimilarNote({ origin: rows[0].origin, dest: rows[0].dest, id: -1, km }, rows) : '';
+  toast(`Trajet terminé · ${km.toFixed(1)} km${similar ? ' · ' + similar : ''}`);
+}
+
+function renderSettings() {
+  const body = document.getElementById('settingsBody');
+  if (!body) return;
+  const night = nightPref();
+  const voice = voiceEnabled();
+  const dock = musicDockOn();
+  const mode = travelMode;
+  const id = loadId();
+  body.innerHTML =
+    `<p class="page-hint">Compte ${esc(id.email)} · Maps ${esc(appVersionLabel())}</p>` +
+    `<div class="set-row"><div><div class="lab">Notifications sonores</div><div class="hint">Annonces de guidage</div></div>` +
+    `<div class="seg"><button type="button" class="choice${voice ? ' on' : ''}" data-set="voice" data-val="1">On</button>` +
+    `<button type="button" class="choice${voice ? '' : ' on'}" data-set="voice" data-val="0">Off</button></div></div>` +
+    `<div class="set-row"><div><div class="lab">Carte nuit</div><div class="hint">Auto = 21h–6h</div></div>` +
+    `<div class="seg">` +
+    ['auto', 'on', 'off']
+      .map(
+        (v) =>
+          `<button type="button" class="choice${night === v ? ' on' : ''}" data-set="night" data-val="${v}">${
+            v === 'auto' ? 'Auto' : v === 'on' ? 'Nuit' : 'Jour'
+          }</button>`,
+      )
+      .join('') +
+    `</div></div>` +
+    `<div class="set-row"><div><div class="lab">Mode de déplacement</div><div class="hint">Par défaut pour les itinéraires</div></div>` +
+    `<div class="seg">` +
+    TRAVEL_MODES.map(
+      ([idm, lab]) =>
+        `<button type="button" class="choice${mode === idm ? ' on' : ''}" data-set="mode" data-val="${idm}">${lab}</button>`,
+    ).join('') +
+    `</div></div>` +
+    `<div class="set-row"><div><div class="lab">Barre Music</div><div class="hint">Dock en bas de l’écran</div></div>` +
+    `<div class="seg"><button type="button" class="choice${dock ? ' on' : ''}" data-set="dock" data-val="1">On</button>` +
+    `<button type="button" class="choice${dock ? '' : ' on'}" data-set="dock" data-val="0">Off</button></div></div>` +
+    `<div class="set-row"><div><div class="lab">Mise à jour</div><div class="hint">Installer depuis Maps, sans Chrome</div></div>` +
+    `<div class="seg"><button type="button" class="choice" data-set="update">Vérifier</button></div></div>` +
+    `<div class="set-row"><div><div class="lab">Comparer Fuel</div><div class="hint">Mix 2+7+10 (défaut) et les autres pistes</div></div>` +
+    `<div class="seg"><button type="button" class="choice" data-set="fuelux">Ouvrir</button></div></div>` +
+    `<div class="set-row"><div><div class="lab">Cartes hors ligne</div><div class="hint">Télécharger une zone (Maison, ici…)</div></div>` +
+    `<div class="seg"><button type="button" class="choice" data-set="goto-offline">Ouvrir</button></div></div>`;
+}
+
+function applySetting(set, val) {
+  if (set === 'voice') {
+    setVoiceEnabled(val === '1');
+    toast(val === '1' ? 'Notifications sonores activées' : 'Notifications sonores coupées');
+  } else if (set === 'night') {
+    localStorage.setItem(NIGHT_KEY, val);
+    nightOn = null;
+    applyTiles();
+  } else if (set === 'mode') {
+    setTravelMode(val);
+  } else if (set === 'dock') {
+    setMusicDock(val === '1');
+  } else if (set === 'update') {
+    try {
+      if (typeof HuberaUpdate !== 'undefined' && HuberaUpdate.check) HuberaUpdate.check();
+      else toast('MAJ disponible dans l’app Android');
+    } catch {
+      toast('MAJ indisponible');
+    }
+  } else if (set === 'goto-offline') {
+    setTab('offline');
+    return;
+  } else if (set === 'fuelux') {
+    setTab('fuelux');
+    return;
+  }
+  renderSettings();
+}
+
+function offlineStatus() {
+  try {
+    if (typeof HuberaOffline !== 'undefined' && HuberaOffline.status) {
+      return JSON.parse(HuberaOffline.status() || '{}');
+    }
+  } catch {
+    /* web */
+  }
+  return { tiles: 0, bytes: 0, packs: [], downloading: false };
+}
+
+function renderOffline() {
+  const body = document.getElementById('offlineBody');
+  if (!body) return;
+  const native = typeof HuberaOffline !== 'undefined' && HuberaOffline.download;
+  const st = offlineStatus();
+  const packs = Array.isArray(st.packs) ? st.packs : [];
+  const p = loadPlaces();
+  const pct = st.total ? Math.round((100 * (st.done || 0)) / st.total) : 0;
+  const progress = st.downloading
+    ? `<div class="bar"><i style="width:${pct}%"></i></div><p class="page-hint">${esc(st.name || 'Téléchargement')} · ${st.done || 0}/${st.total || 0} tuiles</p>`
+    : '';
+  const packHtml = packs.length
+    ? packs
+        .map(
+          (x) =>
+            `<div class="pack"><strong>${esc(x.name || 'Zone')}</strong><div class="meta">${x.tiles || 0} tuiles</div></div>`,
+        )
+        .join('')
+    : '<p class="page-hint">Aucune zone enregistrée pour l’instant.</p>';
+  const actions = native
+    ? `<div class="page-actions" style="padding:0 0 8px">` +
+      (me
+        ? `<button type="button" class="primary" data-off="here">Autour de moi</button>`
+        : '') +
+      (p.home
+        ? `<button type="button" class="ghost" data-off="home">Maison</button>`
+        : '') +
+      (p.work
+        ? `<button type="button" class="ghost" data-off="work">Travail</button>`
+        : '') +
+      (st.downloading
+        ? `<button type="button" class="ghost" data-off="cancel">Annuler</button>`
+        : '') +
+      (st.tiles
+        ? `<button type="button" class="ghost" data-off="clear">Tout effacer</button>`
+        : '') +
+      `</div>`
+    : `<p class="page-hint">Le téléchargement hors ligne fonctionne dans l’app Android Hubera Maps (pas dans le navigateur).</p>`;
+  body.innerHTML =
+    `<p class="page-hint">Cache ${fmtBytes(st.bytes)} · ${st.tiles || 0} tuiles (zooms 12–16, ~5 km). OSM public, usage raisonnable.</p>` +
+    progress +
+    actions +
+    packHtml;
+}
+
+function startOfflinePack(kind) {
+  if (typeof HuberaOffline === 'undefined' || !HuberaOffline.download) {
+    toast('Hors ligne : installe l’app Maps');
+    return;
+  }
+  const p = loadPlaces();
+  let lat = me?.lat;
+  let lon = me?.lon;
+  let name = 'Autour de moi';
+  if (kind === 'home' && p.home) {
+    lat = p.home.lat;
+    lon = p.home.lon;
+    name = 'Maison';
+  } else if (kind === 'work' && p.work) {
+    lat = p.work.lat;
+    lon = p.work.lon;
+    name = 'Travail';
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    toast('Position inconnue — active le GPS ou enregistre Maison.');
+    return;
+  }
+  toast(`Téléchargement « ${name} »…`);
+  HuberaOffline.download(String(lat), String(lon), name);
+  renderOffline();
+}
+
+window.__mapsOfflineEvent = function () {
+  if (activeTab === 'offline') renderOffline();
+};
+
 function openDrawer() {
   drawer.classList.add('open');
   drawer.setAttribute('aria-hidden', 'false');
@@ -2201,12 +3066,27 @@ function closeDrawer() {
 }
 
 function setTab(id) {
+  if ((id === 'trips' || id === 'fills' || id === 'budget') && usesFuelSheet()) {
+    setTab('maps');
+    if (id === 'fills') {
+      document.querySelectorAll('#fuelSub button').forEach((b) => b.classList.toggle('on', b.dataset.fsub === 'fills'));
+    }
+    if (id === 'budget') {
+      document.querySelectorAll('#fuelSub button').forEach((b) => b.classList.toggle('on', b.dataset.fsub === 'budget'));
+    }
+    openFuelSheet();
+    return;
+  }
   activeTab = id;
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === id));
   panelFuel.hidden = id !== 'trips';
   pageSaved.hidden = id !== 'saved';
-  topChrome.style.visibility = id === 'saved' ? 'hidden' : '';
-  roadSignEl.hidden = id === 'saved';
+  if (pageSettings) pageSettings.hidden = id !== 'settings';
+  if (pageOffline) pageOffline.hidden = id !== 'offline';
+  if (pageFuelUx) pageFuelUx.hidden = id !== 'fuelux';
+  const overlay = id === 'saved' || id === 'settings' || id === 'offline' || id === 'fuelux';
+  topChrome.style.visibility = overlay ? 'hidden' : '';
+  roadSignEl.hidden = overlay;
   btnHere.hidden = id !== 'maps';
   if (id !== 'maps') {
     sheetEl.hidden = true;
@@ -2217,7 +3097,13 @@ function setTab(id) {
     renderAlts();
   }
   if (id === 'saved') renderSaved();
-  if (id === 'trips') requestFuelHistory();
+  if (id === 'trips') {
+    syncChromeHeight();
+    requestFuelHistory();
+  }
+  if (id === 'settings') renderSettings();
+  if (id === 'offline') renderOffline();
+  if (id === 'fuelux') renderFuelUxPage();
   closeDrawer();
 }
 
@@ -2231,13 +3117,18 @@ window.__mapsBack = function () {
     fillSheet.hidden = true;
     return true;
   }
+  const fuelSheet = document.getElementById('fuelSheet');
+  if (fuelSheet && fuelSheet.classList.contains('open')) {
+    closeFuelSheet();
+    return true;
+  }
   if (!hitsEl.hidden) {
     showHits([]);
     pendingAssign = null;
     qEl.placeholder = 'Rechercher ici';
     return true;
   }
-  if (activeTab === 'saved') {
+  if (activeTab === 'trips' || activeTab === 'saved' || activeTab === 'settings' || activeTab === 'offline' || activeTab === 'fuelux') {
     setTab('maps');
     return true;
   }
@@ -2252,9 +3143,8 @@ window.__mapsBack = function () {
     clearRoute();
     return true;
   }
-  if (routeCardEl && !routeCardEl.hidden && routeChoices.length) {
-    routeCardEl.hidden = true;
-    clearRoute();
+  if (routeCardEl && !routeCardEl.hidden) {
+    dismissRoutePreview();
     return true;
   }
   if (activeTab !== 'maps') {
@@ -2338,6 +3228,13 @@ hitsEl.addEventListener('click', (e) => {
   qEl.value = btn.dataset.label;
   syncClear();
   setTab('maps');
+  if (btn.dataset.query) {
+    searchPhoton(btn.dataset.query).then((hits) => {
+      if (hits[0]) void routeTo(hits[0].lat, hits[0].lon, btn.dataset.label);
+      else toast('Adresse Contacts introuvable');
+    });
+    return;
+  }
   void routeTo(Number(btn.dataset.lat), Number(btn.dataset.lon), btn.dataset.label);
 });
 
@@ -2380,8 +3277,50 @@ document.getElementById('btnVoiceNav').addEventListener('click', () => {
   if (on && navigating) speakNav('Guidage vocal activé', 0);
 });
 document.getElementById('btnUser').addEventListener('click', openDrawer);
+const btnSettingsGear = document.getElementById('btnSettingsGear');
+if (btnSettingsGear) btnSettingsGear.addEventListener('click', () => setTab('settings'));
 document.getElementById('drawerAvatar').addEventListener('click', openDrawer);
 document.getElementById('btnSavedBack').addEventListener('click', () => setTab('maps'));
+const btnSettingsBack = document.getElementById('btnSettingsBack');
+if (btnSettingsBack) btnSettingsBack.addEventListener('click', () => setTab('maps'));
+const btnOfflineBack = document.getElementById('btnOfflineBack');
+if (btnOfflineBack) btnOfflineBack.addEventListener('click', () => setTab('maps'));
+const settingsBody = document.getElementById('settingsBody');
+if (settingsBody) {
+  settingsBody.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-set]');
+    if (!btn) return;
+    applySetting(btn.dataset.set, btn.dataset.val);
+  });
+}
+const offlineBody = document.getElementById('offlineBody');
+if (offlineBody) {
+  offlineBody.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-off]');
+    if (!btn) return;
+    const kind = btn.dataset.off;
+    if (kind === 'cancel') {
+      try {
+        HuberaOffline.cancel();
+      } catch {
+        /* ignore */
+      }
+      renderOffline();
+      return;
+    }
+    if (kind === 'clear') {
+      try {
+        HuberaOffline.clear();
+      } catch {
+        /* ignore */
+      }
+      toast('Cache hors ligne effacé');
+      renderOffline();
+      return;
+    }
+    startOfflinePack(kind);
+  });
+}
 document.getElementById('btnDefineHome').addEventListener('click', () => startAssign('home'));
 document.getElementById('btnDefineWork').addEventListener('click', () => startAssign('work'));
 scrim.addEventListener('click', closeDrawer);
@@ -2398,16 +3337,19 @@ drawer.addEventListener('click', (e) => {
   }
   else if (go === 'account') {
     closeDrawer();
-    toast('Hubera ID · paul@delhomme.ovh');
+    const id = loadId();
+    toast(`Hubera ID · ${id.email}`);
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.refreshContacts) {
+      HuberaSuite.refreshContacts();
+    }
   }
-  else if (go === 'settings' || go === 'offline') {
+  else if (go === 'contacts') {
     closeDrawer();
-    sheetEl.hidden = false;
-    sheetEl.innerHTML =
-      `<strong>${go === 'settings' ? 'Paramètres' : 'Cartes hors ligne'}</strong>` +
-      `<span>À brancher ensuite (compte, cache tuiles).</span>`;
-    setTab('maps');
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.openContacts) HuberaSuite.openContacts();
+    else location.href = 'https://contacts.hubera.cloud';
   }
+  else if (go === 'settings') setTab('settings');
+  else if (go === 'offline') setTab('offline');
 });
 
 document.getElementById('tabs').addEventListener('click', (e) => {
@@ -2417,16 +3359,39 @@ document.getElementById('tabs').addEventListener('click', (e) => {
 });
 
 savedList.addEventListener('click', (e) => {
+  const edit = e.target.closest('.place-edit');
+  if (edit && edit.dataset.assign) {
+    startAssign(edit.dataset.assign);
+    return;
+  }
   const row = e.target.closest('.place-row');
   if (!row) return;
+  if (row.dataset.openContacts === '1') {
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.openContacts) HuberaSuite.openContacts();
+    else location.href = 'https://contacts.hubera.cloud';
+    return;
+  }
   if (row.dataset.assign) {
     startAssign(row.dataset.assign);
+    return;
+  }
+  if (row.dataset.query) {
+    const q = row.dataset.query;
+    const label = row.dataset.label || q;
+    setTab('maps');
+    searchPhoton(q).then((hits) => {
+      if (hits[0]) void routeTo(hits[0].lat, hits[0].lon, label);
+      else toast('Adresse Contacts introuvable sur la carte');
+    });
     return;
   }
   setTab('maps');
   void routeTo(Number(row.dataset.lat), Number(row.dataset.lon), row.dataset.label);
 });
 
+document.getElementById('btnFuelClose').addEventListener('click', () => {
+  setTab('maps');
+});
 document.getElementById('btnFuelOpen').addEventListener('click', () => {
   location.href = fuelUrl('maps');
 });
@@ -2436,9 +3401,58 @@ document.getElementById('btnFuelRefresh').addEventListener('click', () => {
 document.getElementById('btnFuelTrack').addEventListener('click', () => {
   startFreeTracking();
 });
-document.getElementById('fuelTripList').addEventListener('click', (e) => {
-  const row = e.target.closest('.fuel-trip');
+const btnFuelUx = document.getElementById('btnFuelUx');
+if (btnFuelUx) btnFuelUx.addEventListener('click', () => setTab('fuelux'));
+const btnFuelUxBack = document.getElementById('btnFuelUxBack');
+if (btnFuelUxBack) btnFuelUxBack.addEventListener('click', () => setTab('maps'));
+const fuelUxBody = document.getElementById('fuelUxBody');
+if (fuelUxBody) {
+  fuelUxBody.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-ux]');
+    if (!card) return;
+    setFuelUx(card.dataset.ux);
+    setTab('maps');
+    toast(`Fuel UI · ${card.querySelector('b') ? card.querySelector('b').textContent : card.dataset.ux}`);
+  });
+}
+const fuelPeek = document.getElementById('fuelPeek');
+if (fuelPeek) fuelPeek.addEventListener('click', () => openFuelSheet());
+const btnFuelSheetClose = document.getElementById('btnFuelSheetClose');
+if (btnFuelSheetClose) btnFuelSheetClose.addEventListener('click', () => closeFuelSheet());
+const fuelSub = document.getElementById('fuelSub');
+if (fuelSub) {
+  fuelSub.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-fsub]');
+    if (!b) return;
+    fuelSub.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    paintFuelSheetBody();
+  });
+}
+const fuelFab = document.getElementById('fuelFab');
+const fuelRadial = document.getElementById('fuelRadial');
+if (fuelFab && fuelRadial) {
+  fuelFab.addEventListener('click', () => {
+    fuelRadial.hidden = !fuelRadial.hidden;
+    fuelRadial.classList.toggle('open', !fuelRadial.hidden);
+  });
+  fuelRadial.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-rad]');
+    if (!b) return;
+    fuelRadial.hidden = true;
+    fuelRadial.classList.remove('open');
+    const a = b.dataset.rad;
+    if (a === 'start') startFreeTracking();
+    else if (a === 'fill') {
+      const fillSheet = document.getElementById('fillSheet');
+      if (fillSheet) fillSheet.hidden = false;
+    } else if (a === 'history' || a === 'sheet') openFuelSheet();
+  });
+}
+document.addEventListener('click', (e) => {
+  const row = e.target.closest && e.target.closest('.fuel-trip');
   if (!row) return;
+  const wrap = row.closest('#fuelTripList, #fuelTripListPanel, #fuelSheet');
+  if (!wrap) return;
   const active = row.dataset.active === '1';
   const dest = row.dataset.dest || '';
   const origin = row.dataset.origin || '';
@@ -2594,6 +3608,9 @@ function fuelStopTracking() {
   renderAlts();
   const recap = km > 0.05 ? `${km.toFixed(1)} km` : 'trajet';
   toast(`Fuel arrêté · ${recap}${dur ? ' · ' + dur : ''} — tu restes dans Maps.`);
+  showFuelRecap();
+  document.body.classList.remove('fuel-live');
+  paintFuelPeek();
   clearTrace();
   fuelHudStartedAt = 0;
   fuelLiveKm = 0;
@@ -2620,6 +3637,8 @@ startIdleGeo();
 setMusicDock(musicDockOn());
 syncVoiceBtn();
 syncChromeHeight();
+bindRouteCard();
+[80, 400, 1200].forEach((ms) => window.setTimeout(syncChromeHeight, ms));
 if (window.ResizeObserver) {
   const chromeEl = document.getElementById('chrome');
   if (chromeEl) new ResizeObserver(syncChromeHeight).observe(chromeEl);
@@ -2628,8 +3647,24 @@ window.addEventListener('resize', syncChromeHeight);
 paintModes();
 applyFuelFromQuery();
 paintId();
+try {
+  if (typeof HuberaSuite !== 'undefined' && HuberaSuite.refreshContacts) HuberaSuite.refreshContacts();
+} catch {
+  /* web */
+}
+fetch('contacts-seed.json')
+  .then((r) => (r.ok ? r.json() : []))
+  .then((seed) => {
+    mergeSeedContacts(seed);
+    paintContactPins();
+    renderSaved();
+  })
+  .catch(() => {
+    paintContactPins();
+  });
 renderChips();
 renderSaved();
+applyFuelUx();
 syncClear();
 
 const nativeMusic = typeof HuberaMusic !== 'undefined';
@@ -2722,3 +3757,18 @@ if (nativeMusic) {
     }
   }, 800);
 }
+
+(function hideBootFail() {
+  const el = document.getElementById('bootFail');
+  if (el) el.hidden = true;
+  const btn = document.getElementById('bootFailUpdate');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      try {
+        if (window.HuberaUpdate) HuberaUpdate.check();
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+})();

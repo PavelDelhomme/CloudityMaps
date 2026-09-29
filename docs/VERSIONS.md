@@ -1,5 +1,30 @@
 # Hubera Maps — versions
 
+## 0.1.46 (29 sept. 2026)
+- Fuel dans Maps en prod : mix feuille + HUD + GPS Fuel invisible (`com.gasoiltracking.app` inchangé).
+- Pause / Arrêter / Plein lisibles (plus masqués par Music).
+- Liste des trajets Fuel dans la feuille (y compris le trajet en cours).
+- Point bleu + halo ; noms maison/travail complets au zoom.
+- Comparer Fuel : Paramètres, plus de barre jaune permanente.
+
+## 0.1.39 (29 sept. 2026)
+- MAJ in-app même si la 0.1.37 a tout figé : « Plus tard » ne bloque plus la version suivante.
+- Tuiles : fetch natif OSM.de (file:// Nothing) + repli ArcGIS.
+- Bandeau si le JS ne démarre pas.
+
+## 0.1.38 (29 sept. 2026)
+- Carte : plus de crash JS au démarrage (`NIGHT_KEY` lu trop tôt → écran vide, pas de Music).
+- Tuiles **OSM.de / OSM.fr** : `tile.openstreetmap.org` répond 418 « Access blocked ».
+- Hors ligne : cache uniquement, plus de fetch Java qui enregistrait les tuiles 418.
+
+## 0.1.37 (29 sept. 2026)
+- Dock Music : **suivant / précédent** passent par `seekToNext` (commande toujours exposée), plus un no-op `seekToNextMediaItem` quand la file n’a qu’un titre.
+
+## 0.1.36 (29 sept. 2026)
+- Croix **✕** sur la carte d’itinéraire (Maison / Travail / recherche) : masque le trajet sans démarrer.
+- **Paramètres** : voix, nuit auto/on/off, mode, dock Music, vérif MAJ in-app.
+- **Cartes hors ligne** : cache tuiles OSM autour de moi / Maison / Travail (zooms 12–16).
+
 ## 0.1.31 (27 sept. 2026)
 - Clic sur le titre Music : **lecteur dans Maps** (titre + prev/play/next), trajet ou non. Plus d’ouverture forcée de l’app.
 - Dock : « Rien en cours » au lieu de « Aucun titre — ouvre Music ».

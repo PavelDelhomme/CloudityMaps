@@ -12,6 +12,7 @@ import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -26,6 +27,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fuel: FuelBridge
     private lateinit var speed: SpeedLimitBridge
     private lateinit var tts: TtsBridge
+    private lateinit var suite: SuiteBridge
+    private lateinit var offline: OfflineBridge
+    private lateinit var updates: UpdateBridge
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,7 +71,22 @@ class MainActivity : AppCompatActivity() {
         web.addJavascriptInterface(speed, "HuberaSpeed")
         val routes = RouteBridge { if (this::web.isInitialized) web else null }
         web.addJavascriptInterface(routes, "HuberaRoute")
+        suite = SuiteBridge(this) { if (this::web.isInitialized) web else null }
+        web.addJavascriptInterface(suite, "HuberaSuite")
+        suite.ingest(intent?.data)
+        offline = OfflineBridge(this) { if (this::web.isInitialized) web else null }
+        web.addJavascriptInterface(offline, "HuberaOffline")
+        updates = UpdateBridge(this)
+        web.addJavascriptInterface(updates, "HuberaUpdate")
         web.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest,
+            ): WebResourceResponse? {
+                return OfflineBridge.serveTile(this@MainActivity, request.url)
+                    ?: super.shouldInterceptRequest(view, request)
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url
                 if (u.scheme == "gasoiltracking" || u.scheme == "ytmusic" || u.scheme == "plm") {
@@ -90,6 +109,7 @@ class MainActivity : AppCompatActivity() {
                     host.endsWith("openstreetmap.org") ||
                         host.endsWith("openstreetmap.de") ||
                         host.endsWith("openstreetmap.fr") ||
+                        host.endsWith("arcgisonline.com") ||
                         host.endsWith("komoot.io") ||
                         host.endsWith("project-osrm.org") ||
                         host.endsWith("transitous.org") ||
@@ -106,6 +126,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 music.startWatch()
+                if (this@MainActivity::suite.isInitialized) suite.refreshContacts()
             }
         }
         web.webChromeClient = object : WebChromeClient() {
@@ -115,14 +136,27 @@ class MainActivity : AppCompatActivity() {
             ) {
                 callback?.invoke(origin, true, false)
             }
+
+            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                val m = consoleMessage ?: return super.onConsoleMessage(consoleMessage)
+                android.util.Log.w(
+                    "MapsJS",
+                    "${m.messageLevel()} ${m.sourceId()}:${m.lineNumber()} ${m.message()}",
+                )
+                return true
+            }
         }
         web.loadUrl(urlFromIntent(intent))
-        Handler(Looper.getMainLooper()).postDelayed({ InAppUpdate(this).check() }, 2500)
+        val updater = InAppUpdate(this)
+        Handler(Looper.getMainLooper()).postDelayed({ updater.check() }, 400)
+        Handler(Looper.getMainLooper()).postDelayed({ updater.check() }, 2500)
+        Handler(Looper.getMainLooper()).postDelayed({ updater.check() }, 8000)
     }
 
     override fun onResume() {
         super.onResume()
         InAppUpdate(this).retryPending()
+        InAppUpdate(this).check()
         if (this::web.isInitialized) {
             web.resumeTimers()
             web.onResume()
@@ -182,8 +216,13 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (!q.isNullOrBlank()) {
-            val auth = q.contains("email=") || data?.host == "auth"
+            val auth =
+                q.contains("email=") ||
+                    q.contains("token=") ||
+                    q.contains("access=") ||
+                    data?.host == "auth"
             if (auth) {
+                if (this::suite.isInitialized) suite.ingest(data)
                 val safe = q.replace("\\", "\\\\").replace("'", "\\'")
                 web.evaluateJavascript(
                     "window.__mapsApplyAuth&&window.__mapsApplyAuth('$safe')",

@@ -7,6 +7,7 @@
     <queries>
         <package android:name="ovh.delhomme.ytmusic" />
         <package android:name="com.gasoiltracking.app" />
+        <package android:name="fr.cloudity.cloudity_contacts" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="gasoiltracking" />
@@ -24,6 +25,7 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.HuberaMaps">
         <provider
             android:name="androidx.core.content.FileProvider"

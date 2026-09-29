@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fuel dans Maps — 10 propositions (brouillon)</title>
+  <style>
+    :root { --bg:#0f1118; --card:#1a1a2e; --line:#2d2d44; --txt:#f1f5f9; --mut:#94a3b8; --acc:#e94560; --ok:#0ea5e9; --vio:#7c3aed; }
+    * { box-sizing: border-box; }
+    body { margin:0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--txt); }
+    header { padding: 10px 18px 6px; border-bottom: 1px solid var(--line); }
+    header h1 { margin:0 0 2px; font-size: 18px; }
+    header p { margin:0; color: var(--mut); max-width: 920px; }
+    .pills { display:flex; flex-wrap:wrap; gap:6px; padding: 12px 22px; }
+    .pills button { border:1px solid var(--line); background: var(--card); color: var(--txt); border-radius:999px; padding:6px 12px; cursor:pointer; font-weight:700; font-size:12px; }
+    .pills button.on { background:#3f1d2e; border-color: var(--acc); }
+    .pills button.rec { outline: 1px solid #fbbf24; }
+    .brief { margin: 0 18px 10px; padding: 10px 14px; background: var(--card); border:1px solid var(--line); border-radius:14px; }
+    .brief h2 { margin:0 0 4px; font-size:15px; }
+    .brief p { margin: 4px 0; }
+    .brief .meta { color: var(--mut); font-size:12px; margin-bottom:8px; }
+    .phones { display:flex; gap:18px; justify-content:center; padding: 8px 18px 32px; flex-wrap:wrap; }
+    .col { width: 280px; }
+    .col h3 { margin:0 0 8px; font-size:12px; color: var(--mut); font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+    .phone { width:260px; height:500px; background:#0b0d14; border:8px solid #111; border-radius:28px; overflow:hidden; position:relative; color:#f8fafc; }
+    .mapbg { position:absolute; inset:0; background:
+      linear-gradient(180deg,#d7e3c8 0%, #c8d4b8 40%, #b7c9a6 100%);
+      background-image:
+        linear-gradient(#c9c4b8 1px, transparent 1px),
+        linear-gradient(90deg, #c9c4b8 1px, transparent 1px);
+      background-size: 28px 28px; }
+    .road { position:absolute; background:#e8e4d8; }
+    .search { position:absolute; left:10px; right:10px; top:10px; height:40px; background:#1a1a2e; border-radius:12px; display:flex; align-items:center; gap:8px; padding:0 10px; font-size:12px; z-index:5; }
+    .search b { color:#94a3b8; font-weight:600; }
+    .av { margin-left:auto; width:24px; height:24px; border-radius:12px; background:#e94560; display:grid; place-items:center; font-size:11px; font-weight:800; }
+    .chips { position:absolute; left:10px; top:56px; display:flex; gap:6px; z-index:5; }
+    .chip { background:#1a1a2e; border-radius:999px; padding:4px 8px; font-size:10px; font-weight:700; }
+    .chrome { position:absolute; left:0; right:0; bottom:0; background:#1a1a2e; z-index:6; }
+    .music { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:11px; border-bottom:1px solid #2d2d44; }
+    .tabs { display:flex; }
+    .tab { flex:1; text-align:center; padding:8px 2px 10px; font-size:10px; font-weight:700; color:#94a3b8; }
+    .tab.on { color:#e94560; }
+    .hud { position:absolute; left:10px; right:10px; bottom:86px; background:#1a1a2e; border-radius:14px; padding:10px; z-index:5; }
+    .hud .t { color:#e94560; font-weight:800; font-size:12px; }
+    .hud .s { color:#94a3b8; font-size:11px; margin:2px 0 8px; }
+    .row { display:flex; gap:6px; }
+    .btn { flex:1; border:0; border-radius:999px; padding:7px; font-weight:800; font-size:11px; cursor:default; }
+    .btn.p { background:#e94560; color:#fff; }
+    .btn.g { background:#16213e; color:#e2e8f0; }
+    .btn.b { background:#0284c7; color:#fff; }
+    .page { position:absolute; inset:0; background:#1a1a2e; z-index:4; padding:12px 12px 78px; overflow:hidden; }
+    .page h4 { margin:0 0 10px; font-size:16px; }
+    .statg { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .stat { background:#16213e; border-radius:12px; padding:10px; }
+    .stat .k { color:#94a3b8; font-size:10px; }
+    .stat .v { font-size:18px; font-weight:800; }
+    .list { margin-top:10px; }
+    .item { background:#16213e; border-radius:10px; padding:8px 10px; margin-bottom:6px; font-size:12px; }
+    .item small { display:block; color:#94a3b8; }
+    .gauge { height:14px; background:#0f172a; border-radius:99px; overflow:hidden; margin:8px 0 12px; }
+    .gauge i { display:block; height:100%; width:62%; background:#e94560; }
+    .pin { position:absolute; z-index:3; display:grid; place-items:center; color:#fff; font-size:11px; font-weight:800; border:2px solid #fff; }
+    .pin.home { width:36px; height:36px; border-radius:12px; background:#e94560; }
+    .pin.work { width:36px; height:36px; border-radius:12px; background:#0284c7; }
+    .pin.person { width:24px; height:24px; border-radius:12px; background:#7c3aed; }
+    .pin.pump { width:28px; height:28px; border-radius:8px; background:#f59e0b; }
+    .line { position:absolute; height:4px; background:#e94560; border-radius:4px; opacity:.85; z-index:2; }
+    .fab { position:absolute; right:12px; width:48px; height:48px; border-radius:14px; background:#1a1a2e; color:#e94560; display:grid; place-items:center; font-size:20px; z-index:5; border:1px solid #2d2d44; }
+    .peek { position:absolute; left:10px; right:10px; bottom:78px; background:#1a1a2e; border-radius:16px 16px 0 0; padding:10px 12px 14px; z-index:5; }
+    .handle { width:36px; height:4px; background:#334155; border-radius:4px; margin:0 auto 8px; }
+    .badge { display:inline-block; background:#3f1d2e; color:#fda4af; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; }
+    .split-top { position:absolute; left:0; right:0; top:0; height:55%; overflow:hidden; }
+    .split-bot { position:absolute; left:0; right:0; bottom:72px; top:55%; background:#1a1a2e; padding:10px; z-index:4; }
+    .radial { position:absolute; right:16px; bottom:140px; z-index:7; }
+    .radial button { display:block; margin:6px 0; border:0; background:#1a1a2e; color:#fff; border-radius:999px; padding:8px 12px; font-size:11px; font-weight:700; }
+    .recap { position:absolute; left:12px; right:12px; top:90px; background:#1a1a2e; border-radius:16px; padding:14px; z-index:5; }
+    .warn { color:#fbbf24; font-size:12px; font-weight:700; }
+    .note { font-size:12px; color:#cbd5e1; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Fuel dans Maps — 10 propositions, rien n’est définitif</h1>
+    <p>
+      Brouillon visuel. L’application Hubera Fuel (<code>com.gasoiltracking.app</code>) n’est pas fusionnée, pas renommée, pas supprimée.
+      Ouvre une pastille, compare les 3 écrans, dis-moi le numéro. Galerie aussi sur maps.hubera.cloud/fuel-ux/
+    </p>
+  </header>
+  <nav class="pills" id="pills"></nav>
+  <section class="brief" id="brief"></section>
+  <div class="phones" id="phones"></div>
+  <script>
+    const P = [
+      {
+        n:1, rec:false, title:"Catégorie Fuel à 4 onglets",
+        hook:"On garde Maps comme aujourd’hui, on remplit vraiment l’onglet Fuel.",
+        how:"Onglets Maps · Fuel · Enregistrés · Moi. L’onglet Fuel devient l’accueil Fuel (jauge, conso, autonomie, FAB Démarrer / Plein) avec sous-onglets Trajets, Pleins, Garage, Budget. Plus de bouton « Ouvrir Fuel ».",
+        mech:"Le GPS reste dans Fuel en silencieux. Maps affiche tout. Tu ne quittes plus Maps pour un plein ou l’historique.",
+        cov:"Tout le métier Fuel (garage, pleins, budget, CT) vit dans l’onglet. La carte reste l’onglet 1.",
+        plus:"Peu de rupture. Tu retrouves Fuel d’un tap.",
+        minus:"Deux « apps » dans une barre. L’onglet Fuel n’est pas la carte — on quitte encore le guidage visuel."
+      },
+      {
+        n:2, rec:false, title:"Feuille sous la carte (style Google Maps)",
+        hook:"La carte ne disparaît jamais. Fuel est une feuille qu’on tire.",
+        how:"Plus d’onglet Fuel. Une poignée en bas : jauge + km du jour. On tire à mi-hauteur = trajets du jour. On tire à fond = Garage / Pleins / Budget. Pendant un trajet, la feuille devient Pause / Plein / Arrêter, collée au dock Music.",
+        mech:"Un geste (glisser) au lieu d’un changement d’app. Maison/Travail/contacts restent sur la carte. Les pleins se posent comme stations.",
+        cov:"Toutes les fonctions Fuel, mais empilées dans la feuille, pas dans une 2e application.",
+        plus:"Le plus discret. Conduite et carnet sur le même écran. Cohérent avec Maps.",
+        minus:"La feuille pleine cache la carte. Il faut bien hiérarchiser jauge vs budget."
+      },
+      {
+        n:3, rec:false, title:"Cinq onglets métier (Fuel absorbé)",
+        hook:"Maps devient la coque. Fuel n’existe plus comme app visible.",
+        how:"Barre : Maps · Trajets · Pleins · Garage · Budget. Enregistrés passe dans le tiroir. L’icône Fuel du tiroir disparaît.",
+        mech:"Chaque écran Fuel actuel a un onglet. Le suivi GPS s’enclenche depuis Maps ou depuis Trajets.",
+        cov:"Couverture 1:1 de Fuel. Rien n’est oublié.",
+        plus:"Tout est trouvable. Clair pour un nouvel utilisateur.",
+        minus:"Barre trop chargée avec Music en plus. Maps n’est plus « une carte », c’est un tableau de bord auto."
+      },
+      {
+        n:4, rec:false, title:"Deux modes : Conduite / Carnet",
+        hook:"Un interrupteur dans la recherche, comme une vue satellite.",
+        how:"Conduite = carte + HUD. Carnet = l’UI Fuel actuelle (accueil, garage, pleins) sans carte. Un tap pour basculer.",
+        mech:"Deux skins, une app. Le trajet continue en fond quand tu passes Carnet.",
+        cov:"Carnet = copie fidèle de Fuel. Conduite = Maps.",
+        plus:"Zéro fonction perdue. Réversible : on peut même laisser l’APK Fuel un moment.",
+        minus:"Ça reste deux applications collées. Le problème actuel (ce n’est pas ouf) revient si le mode Carnet est juste Fuel dans Maps."
+      },
+      {
+        n:5, rec:false, title:"Tout est un calque sur la carte",
+        hook:"Les trajets, pleins et véhicules sont des objets carte, pas des listes.",
+        how:"Lignes colorées = trajets. Pompe = plein. Maison/Travail déjà là. Tap sur une ligne = « ce matin 43,4 km, moy. similaires 41 km ». Budget = pastille du mois près de la recherche.",
+        mech:"On consulte Fuel en tapant le monde, comme les contacts. Les listes restent en Enregistrés / feuille détail.",
+        cov:"Trajets et stations excellents. Garage / CT / exports moins naturels sur une carte — ils restent en fiche.",
+        plus:"Le plus « Maps ». Compare les trajets Guerche d’un coup d’œil.",
+        minus:"Plus long à bien faire. Garage et budget restent des pages."
+      },
+      {
+        n:6, rec:false, title:"FAB pompe + écrans overlay",
+        hook:"Carte 100 % propre. Un bouton pompe fait tout.",
+        how:"FAB bas-droite (à côté de Ma position). Appui long = Démarrer, Plein, Historique, Garage, Budget. Chaque action ouvre une page par-dessus la carte, fermable par X.",
+        mech:"Rien de permanent dans la barre. Fuel n’apparaît que quand tu t’en sers.",
+        cov:"Toutes les pages Fuel en overlay.",
+        plus:"Très discret au repos. Un geste pour démarrer un suivi.",
+        minus:"Les fonctions profondes (CT, budget annuel) sont cachées. Facile d’oublier qu’elles existent."
+      },
+      {
+        n:7, rec:false, title:"HUD conduite d’abord (esprit Waze)",
+        hook:"Fuel ne parle que quand tu roules — et là, il parle fort.",
+        how:"Au repos : petite jauge à côté de l’avatar. En trajet : HUD vitesse + litres restants + coût + « vs tes trajets similaires ». À l’arrêt : carte récap 3 secondes, puis historique.",
+        mech:"Le carnet (garage, pleins, budget) est dans l’avatar / Paramètres Fuel. La carte reste roi.",
+        cov:"Le live est parfait. Le métier (CT, exports) est un cran plus loin.",
+        plus:"Idéal sur la route La Guerche. Zéro friction pendant le guidage.",
+        minus:"Moins bon pour « j’enregistre un plein à la maison sans rouler »."
+      },
+      {
+        n:8, rec:false, title:"Écran partagé carte + tableau",
+        hook:"Toujours la carte ET les chiffres, sans changer d’onglet.",
+        how:"Haut : carte (~55 %). Bas : jauge, km du jour, 2 derniers trajets, bouton Démarrer. Music reste en dessous.",
+        mech:"Comparer un trajet à l’habitude sans quitter la vue. Le tracé GPS se dessine au-dessus pendant que les km bougent en bas.",
+        cov:"Dashboard Accueil Fuel visible en permanence. Garage/budget via tap « Plus ».",
+        plus:"Le plus lisible pour km vs conso. Tu vois la carte et le carnet ensemble.",
+        minus:"Carte trop petite en ville. Beaucoup de chrome avec Music."
+      },
+      {
+        n:9, rec:false, title:"Onglet Fuel = l’app Fuel telle quelle",
+        hook:"Le pont le plus honnête et le plus rapide.",
+        how:"L’onglet Fuel embarque l’UI actuelle de Fuel (Accueil, Garage, Pleins, Budget) dans Maps. Même écrans, même boutons. On enlève seulement le hop d’application.",
+        mech:"WebView / écran Fuel recadré. GPS inchangé. En 1 version tu as 100 % des fonctions.",
+        cov:"Complète le jour 1, y compris admin, QR, exports.",
+        plus:"Zéro oubli fonctionnel. Réversible : on retire l’onglet, Fuel redevient l’app.",
+        minus:"Deux designs collés (Maps sombre vs Fuel). Ce n’est pas une intégration, c’est un emboîtement."
+      },
+      {
+        n:10, rec:false, title:"Fuel invisible (moteur GPS) + UI 100 % Maps",
+        hook:"L’app Fuel reste installée, mais tu ne la vois plus.",
+        how:"Visuellement : la feuille de la n°2 + le HUD de la n°7. Techniquement : le package Fuel garde le GPS de fond, SQLite, sync cloud. Maps est la seule UI. L’icône Fuel peut rester cachée.",
+        mech:"Les deep links silencieux actuels s’étendent à garage/pleins/budget. Si Maps casse, Fuel peut encore s’ouvrir. Réversible à 100 %.",
+        plus:"Aucun risque GPS. Pas de rename de package. Données intactes.",
+        minus:"Deux APK à maintenir jusqu’à ce que le moteur GPS vive dans Maps — plus tard, pas maintenant.",
+        cov:"Toutes les fonctions Fuel, affichées par Maps, stockées par Fuel."
+      },
+      {
+        n:11, rec:true, title:"Mix 2 + 7 + 10 (celle à tester sur les téléphones)",
+        hook:"Feuille Fuel + HUD conduite + moteur GPS Fuel invisible. C’est ce qui est dans Maps 0.1.45-dev.",
+        how:"Au repos: carte + poignée jauge/km. On tire: Trajets, Pleins, Garage, Budget. En roulant: HUD vitesse, km, vs similaires, Pause/Plein/Arrêter. Fuel APK tourne sans UI. Bouton Comparer en bas pour changer de piste.",
+        mech:"GPS et SQLite restent dans com.gasoiltracking.app. Maps est la seule interface. Pas d’OTA prod: overlay Samsung + Blackview seulement.",
+        cov:"Trajets et plein déjà branchés. Garage/budget en aperçu jusqu’à ce que Fuel expose plus.",
+        plus:"Tu compares dans l’app. Tu vois Maison vs ta position (point bleu + halo). Textes complets au zoom.",
+        minus:"Build dev. Dis ce que tu gardes de chaque piste."
+      }
+    ];
+
+    function phone(inner, {tabs, active, extraChrome}={}) {
+      const t = tabs || ['Maps','Fuel','Enreg.'];
+      const tabsHtml = t.map((x,i)=>`<div class="tab${i===active?' on':''}">${x}</div>`).join('');
+      return `<div class="phone">
+        ${inner}
+        <div class="chrome">
+          <div class="music"><span>Signs</span><span style="color:#94a3b8;font-size:10px">Tate McRae</span><span style="margin-left:auto">▶</span></div>
+          <div class="tabs">${tabsHtml}</div>
+        </div>
+      </div>`;
+    }
+    function mapBase() {
+      return `<div class="mapbg"></div>
+        <div class="road" style="left:40px;top:80px;width:8px;height:420px;transform:rotate(18deg)"></div>
+        <div class="road" style="left:0;top:220px;width:100%;height:10px"></div>
+        <div class="search"><span>☰</span><b>Rechercher ici</b><span class="av">P</span></div>
+        <div class="chips"><span class="chip">Maison</span><span class="chip">Travail</span></div>
+        <div class="pin home" style="left:92px;top:210px">⌂</div>
+        <div class="pin work" style="left:168px;top:248px">▣</div>
+        <div class="pin person" style="left:70px;top:180px"></div>
+        <div class="fab" style="bottom:150px">⊕</div>`;
+    }
+
+    function screens(p) {
+      const A = [], B = [], C = [];
+      if (p.n===1) {
+        A.push(phone(`${mapBase()}<div class="hud"><div class="t">Suivi Fuel</div><div class="s">12,4 km · 18 min · vs moy. 11,8 km</div><div class="row"><button class="btn g">Pause</button><button class="btn p">Arrêter</button><button class="btn b">Plein</button></div></div>`, {tabs:['Maps','Fuel','Enreg.','Moi'], active:0}));
+        B.push(phone(`<div class="page"><h4>Fuel</h4><div class="note">Peugeot 208 · SP95</div><div class="gauge"><i></i></div><div class="statg"><div class="stat"><div class="k">Conso.</div><div class="v">6,8</div></div><div class="stat"><div class="k">Autonomie</div><div class="v">312 km</div></div><div class="stat"><div class="k">Dépensé</div><div class="v">84 €</div></div><div class="stat"><div class="k">Distance</div><div class="v">428 km</div></div></div><div class="row" style="margin-top:10px"><button class="btn p">Démarrer</button><button class="btn g">Plein</button></div></div>`, {tabs:['Maps','Fuel','Enreg.','Moi'], active:1}));
+        C.push(phone(`<div class="page"><h4>Pleins</h4><div class="item">Intermarché La Guerche<small>42,10 € · 28,4 L · aujourd’hui</small></div><div class="item">Leclerc Cesson<small>38,20 € · 26,1 L · 22 sept.</small></div><div class="item">Total Thorigné<small>plein partiel · 15,00 €</small></div></div>`, {tabs:['Maps','Fuel','Enreg.','Moi'], active:1}));
+      }
+      if (p.n===2) {
+        A.push(phone(`${mapBase()}<div class="peek"><div class="handle"></div><div class="t" style="color:#e94560;font-weight:800">Peugeot 208 · 62 %</div><div class="s" style="color:#94a3b8;font-size:11px">12,4 km aujourd’hui · tire pour l’historique</div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        B.push(phone(`${mapBase()}<div class="peek" style="height:230px"><div class="handle"></div><strong>Trajets du jour</strong><div class="item">Maison → Intermarché<small>43,4 km · moy. similaires 41,2 km</small></div><div class="item">Intermarché → Maison<small>41,8 km</small></div><button class="btn p" style="width:100%;margin-top:8px">Suivi libre</button></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        C.push(phone(`<div class="page"><h4>Fuel</h4><div class="row"><span class="chip">Trajets</span><span class="chip">Pleins</span><span class="chip">Garage</span><span class="chip">Budget</span></div><div class="gauge"><i></i></div><div class="item">CT avant le 12 nov.<small>Entretien</small></div><div class="item">Budget septembre<small>84 € / 150 €</small></div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+      }
+      if (p.n===3) {
+        A.push(phone(`${mapBase()}<div class="hud"><div class="t">Vers Intermarché</div><div class="s">guidage + suivi Fuel ensemble</div><div class="row"><button class="btn g">Pause</button><button class="btn p">Arrêter</button></div></div>`, {tabs:['Maps','Trajets','Pleins','Garage','Budget'], active:0}));
+        B.push(phone(`<div class="page"><h4>Trajets</h4><div class="item">Aujourd’hui · 43,4 km<small>Maison → La Guerche · similaire ×8</small></div><div class="item">Hier · 12,1 km<small>Suivi libre Rennes</small></div></div>`, {tabs:['Maps','Trajets','Pleins','Garage','Budget'], active:1}));
+        C.push(phone(`<div class="page"><h4>Garage</h4><div class="item">Peugeot 208<small>actif · 6,8 L/100 · SP95</small></div><div class="item">Ajouter un véhicule<small>catalogue ou saisie</small></div></div>`, {tabs:['Maps','Trajets','Pleins','Garage','Budget'], active:3}));
+      }
+      if (p.n===4) {
+        A.push(phone(`${mapBase().replace('Rechercher ici','Conduite · Rechercher')}<div class="hud"><div class="t">Conduite</div><div class="s">tap Carnet pour jauge et pleins</div><div class="row"><button class="btn p">Démarrer suivi</button></div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        B.push(phone(`<div class="page"><h4>Carnet Fuel</h4><div class="warn">Mode carnet — le GPS continue</div><div class="gauge"><i></i></div><div class="statg"><div class="stat"><div class="k">Autonomie</div><div class="v">312 km</div></div><div class="stat"><div class="k">Ce mois</div><div class="v">84 €</div></div></div></div>`, {tabs:['Carnet','Garage','Pleins','Budget'], active:0}));
+        C.push(phone(`${mapBase().replace('Rechercher ici','Carnet  |  Conduite')}`, {tabs:['Maps','Enreg.'], active:0}));
+      }
+      if (p.n===5) {
+        A.push(phone(`${mapBase()}<div class="line" style="left:70px;top:230px;width:120px;transform:rotate(12deg)"></div><div class="pin pump" style="left:150px;top:300px">⛽</div><div class="pin pump" style="left:40px;top:320px">⛽</div>`, {tabs:['Maps','Enreg.'], active:0}));
+        B.push(phone(`${mapBase()}<div class="hud"><div class="t">Ce matin · 43,4 km</div><div class="s">8 trajets similaires · moy. 41,2 km · +2,2 km</div><div class="row"><button class="btn g">Détail</button><button class="btn p">Refaire</button></div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        C.push(phone(`${mapBase()}<div class="hud"><div class="t">Plein Intermarché</div><div class="s">42,10 € · 28,4 L · lié au trajet de 7h20</div><div class="row"><button class="btn g">Modifier</button></div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+      }
+      if (p.n===6) {
+        A.push(phone(`${mapBase()}<div class="fab" style="bottom:150px;background:#e94560;color:#fff">⛽</div>`, {tabs:['Maps','Enreg.'], active:0}));
+        B.push(phone(`${mapBase()}<div class="radial"><button>Démarrer</button><button>Plein</button><button>Historique</button><button>Garage</button><button>Budget</button></div><div class="fab" style="bottom:150px;background:#e94560;color:#fff">✕</div>`, {tabs:['Maps','Enreg.'], active:0}));
+        C.push(phone(`<div class="page"><h4>Nouveau plein</h4><div class="item">Litres</div><div class="item">Montant €</div><div class="item">Station · Intermarché</div><button class="btn p" style="width:100%;margin-top:12px">Enregistrer</button></div>`, {tabs:['Maps','Enreg.'], active:0}));
+      }
+      if (p.n===7) {
+        A.push(phone(`${mapBase().replace('<span class="av">P</span>','<span class="av" style="font-size:8px">62%</span>')}`, {tabs:['Maps','Enreg.'], active:0}));
+        B.push(phone(`${mapBase()}<div class="hud" style="bottom:86px"><div class="t">78 km/h · 18 L restants</div><div class="s">coût ~4,20 € · similaire +1,1 km vs habitude Guerche</div><div class="row"><button class="btn g">Pause</button><button class="btn p">Arrêter</button><button class="btn b">Plein</button></div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        C.push(phone(`<div class="page"><div class="recap" style="position:relative;top:0;left:0;right:0"><h4>Trajet terminé</h4><div class="v" style="font-size:28px;font-weight:800">43,4 km</div><div class="note">moy. similaires 41,2 km · 2,9 L · 5,10 €</div><button class="btn p" style="width:100%;margin-top:10px">OK</button></div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+      }
+      if (p.n===8) {
+        A.push(phone(`<div class="split-top">${mapBase().replace('class="fab" style="bottom:150px"','class="fab" style="bottom:12px"')}</div><div class="split-bot"><div class="t" style="color:#e94560;font-weight:800">12,4 km aujourd’hui</div><div class="gauge"><i></i></div><div class="item">Maison → Guerche · 43,4 km</div></div>`, {tabs:['Maps','Plus'], active:0}));
+        B.push(phone(`<div class="split-top">${mapBase()}</div><div class="split-bot"><div class="t" style="color:#e94560;font-weight:800">Suivi · 18 min</div><div class="s" style="color:#94a3b8;font-size:11px">12,4 km · Pause · Plein · Arrêter</div><div class="row"><button class="btn g">Pause</button><button class="btn p">Stop</button></div></div>`, {tabs:['Maps','Plus'], active:0}));
+        C.push(phone(`<div class="page"><h4>Plus Fuel</h4><div class="item">Garage</div><div class="item">Pleins / export PDF</div><div class="item">Budget</div><div class="item">Entretien & CT</div></div>`, {tabs:['Maps','Plus'], active:1}));
+      }
+      if (p.n===9) {
+        A.push(phone(`${mapBase()}<div class="hud"><div class="t">Maps</div><div class="s">l’onglet Fuel = l’app Fuel actuelle</div></div>`, {tabs:['Maps','Fuel','Enreg.'], active:0}));
+        B.push(phone(`<div class="page" style="background:#0f172a"><h4>Accueil Fuel</h4><div class="note">UI Fuel telle quelle, dans Maps</div><div class="gauge"><i></i></div><div class="statg"><div class="stat"><div class="k">Conso.</div><div class="v">6,8</div></div><div class="stat"><div class="k">Km</div><div class="v">428</div></div></div></div>`, {tabs:['Maps','Fuel','Enreg.'], active:1}));
+        C.push(phone(`<div class="page" style="background:#0f172a"><h4>Mon Garage</h4><div class="item">Peugeot 208</div><div class="item">Ajouter un véhicule</div></div>`, {tabs:['Maps','Fuel','Enreg.'], active:1}));
+      }
+      if (p.n===10) {
+        A.push(phone(`${mapBase()}<div class="peek"><div class="handle"></div><div class="t" style="color:#e94560;font-weight:800">Suivi · GPS Fuel silencieux</div><div class="s" style="color:#94a3b8;font-size:11px">tu ne vois plus l’app Fuel · les données restent</div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        B.push(phone(`<div class="page"><h4>Architecture</h4><div class="item">Maps = toute l’UI<small>feuille + HUD + garage + pleins</small></div><div class="item">Fuel APK = moteur<small>GPS fond, SQLite, sync, package inchangé</small></div><div class="item">Réversible<small>on réaffiche Fuel si besoin</small></div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        C.push(phone(`<div class="page"><h4>Garage dans Maps</h4><div class="item">Peugeot 208 · actif</div><div class="item">CT · entretien · jauge</div><div class="note">Écrit dans la base Fuel, lu ici.</div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+      }
+      if (p.n===11) {
+        A.push(phone(`${mapBase().replace('<span class="av">P</span>','<span class="av" style="background:#1a73e8;font-size:8px">62%</span>')}<div class="pin" style="left:118px;top:268px;width:22px;height:22px;border-radius:11px;background:#1a73e8;border:3px solid #fff;box-shadow:0 0 0 10px rgba(26,115,232,.28)"></div><div class="peek"><div class="handle"></div><div class="t" style="color:#e94560;font-weight:800">Peugeot 208 · 62 %</div><div class="s" style="color:#94a3b8;font-size:11px">12,4 km aujourd’hui · GPS Fuel invisible</div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        B.push(phone(`${mapBase()}<div class="hud"><div class="t">78 km/h · 12,4 km</div><div class="s">vs moy. Guerche 11,8 km · Pause / Plein / Arrêter</div><div class="row"><button class="btn g">Pause</button><button class="btn p">Arrêter</button><button class="btn b">Plein</button></div></div>`, {tabs:['Maps','Enreg.'], active:0}));
+        C.push(phone(`<div class="page"><h4>Fuel</h4><div class="row"><span class="chip">Trajets</span><span class="chip">Pleins</span><span class="chip">Garage</span><span class="chip">Budget</span></div><div class="item">Maison → Intermarché<small>43,4 km · moy. similaires 41,2 km</small></div><div class="item">Nouveau plein</div><button class="btn p" style="width:100%;margin-top:8px">Suivi libre</button></div>`, {tabs:['Maps','Enreg.'], active:0}));
+      }
+      return {A:A[0], B:B[0], C:C[0]};
+    }
+
+    const labels = ['Carte / conduite', 'Cœur Fuel', 'Autre écran'];
+    function render(n) {
+      const p = P[n-1];
+      document.getElementById('brief').innerHTML = `
+        ${p.rec ? '<span class="badge">Avis : partir de celle-ci</span>' : ''}
+        <h2>${p.n}. ${p.title}</h2>
+        <div class="meta">${p.hook}</div>
+        <p><strong>Comment ça marche.</strong> ${p.how}</p>
+        <p><strong>Mécanique.</strong> ${p.mech}</p>
+        <p><strong>Fonctions Fuel.</strong> ${p.cov}</p>
+        <p><strong>Pour.</strong> ${p.plus} <strong>Contre.</strong> ${p.minus}</p>`;
+      const s = screens(p);
+      document.getElementById('phones').innerHTML = [s.A,s.B,s.C].map((html,i)=>`<div class="col"><h3>${labels[i]}</h3>${html}</div>`).join('');
+      document.querySelectorAll('.pills button').forEach(b => b.classList.toggle('on', Number(b.dataset.n)===p.n));
+      history.replaceState(null,'', '?p='+p.n);
+    }
+    document.getElementById('pills').innerHTML = P.map(p =>
+      `<button type="button" data-n="${p.n}" class="${p.rec?'rec':''}">${p.n}. ${p.title.split('(')[0].split('—')[0].trim()}</button>`
+    ).join('');
+    document.getElementById('pills').onclick = (e) => {
+      const b = e.target.closest('button'); if (b) render(Number(b.dataset.n));
+    };
+    const start = Math.min(11, Math.max(1, Number(new URLSearchParams(location.search).get('p')) || 11));
+    render(start);
+  </script>
+</body>
+</html>

@@ -8,8 +8,19 @@
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; font-family: "Segoe UI", system-ui, sans-serif; background: #0f0f1a; color: #f1f5f9; }
-    [hidden] { display: none !important; }
-    body { --chrome: 148px; }
+    .boot-fail {
+      position: absolute; z-index: 3000; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; padding: 24px; text-align: center;
+      background: #0f0f1a; color: #f1f5f9;
+    }
+    .boot-fail[hidden] { display: none !important; }
+    .boot-fail p { margin: 0; max-width: 280px; line-height: 1.4; color: #cbd5e1; }
+    .boot-fail button {
+      border: 0; border-radius: 999px; padding: 12px 22px; font-weight: 700;
+      background: #e94560; color: #fff; cursor: pointer;
+    }
+    body { --chrome: 168px; }
     body.music-off { --chrome: 58px; }
     #map { position: absolute; inset: 0; }
     .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
@@ -54,16 +65,21 @@
     .hud-speed .v { font-size: 20px; font-weight: 800; line-height: 1; letter-spacing: -.04em; }
     .hud-speed .u { font-size: 9px; color: #94a3b8; font-weight: 700; letter-spacing: .04em; margin-top: 3px; }
     body.nav.freehand .fab { border-color: #e94560; color: #e94560; }
-    .me-puck { background: none !important; border: 0 !important; }
-    .puck-inner { width: 28px; height: 28px; position: relative; }
+    .me-puck { background: none !important; border: 0 !important; overflow: visible !important; }
+    .puck-wrap { width: 56px; height: 56px; position: relative; }
+    .puck-halo {
+      position: absolute; left: 8px; top: 8px; width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(26,115,232,.28); border: 0;
+    }
+    .puck-inner { width: 28px; height: 28px; position: absolute; left: 14px; top: 14px; }
     .puck-c {
-      position: absolute; left: 6px; top: 6px; width: 16px; height: 16px; border-radius: 50%;
-      background: #e94560; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45);
+      position: absolute; left: 5px; top: 5px; width: 18px; height: 18px; border-radius: 50%;
+      background: #1a73e8; border: 3px solid #fff;
     }
     .puck-n {
-      position: absolute; left: 11px; top: -2px; width: 0; height: 0;
+      position: absolute; left: 10px; top: -3px; width: 0; height: 0;
       border-left: 4px solid transparent; border-right: 4px solid transparent;
-      border-bottom: 10px solid #e94560;
+      border-bottom: 10px solid #1a73e8;
     }
     body.night .search-bar, body.night .hud { background: #12121c; }
     body.night .leaflet-tile-pane {
@@ -90,6 +106,7 @@
       display: flex; gap: 8px; overflow-x: auto; margin-top: 10px;
       scrollbar-width: none; -webkit-overflow-scrolling: touch;
     }
+    body.routing .chips { display: none !important; }
     .chips::-webkit-scrollbar { display: none; }
     .chip {
       flex-shrink: 0; border: 1px solid #2d2d44; background: #1a1a2e; color: #f1f5f9;
@@ -117,24 +134,87 @@
       position: relative; z-index: 1200;
     }
     .route-card {
-      margin-top: 8px; background: #1a1a2e; border: 1px solid #2d2d44; border-radius: 16px;
-      padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.45); color: #f1f5f9;
+      margin-top: 6px; background: #1a1a2e; border: 1px solid #2d2d44; border-radius: 14px;
+      padding: 8px 10px 9px; box-shadow: 0 2px 8px rgba(0,0,0,.45); color: #f1f5f9;
     }
+    .route-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin: 0 0 6px; }
+    .route-head h3 { margin: 0; font-size: 13px; flex: 1; min-width: 0; line-height: 1.25; }
+    .route-close, .panel-close {
+      width: 40px; height: 40px; min-width: 40px; min-height: 40px; border: 0; border-radius: 20px;
+      background: #2d2d44; color: #f8fafc; font-size: 20px; line-height: 1; cursor: pointer;
+      flex-shrink: 0; position: relative; z-index: 5; pointer-events: auto;
+    }
+    .route-close:active, .panel-close:active { background: #e94560; }
     .route-card h3 { margin: 0 0 8px; font-size: 14px; }
     .route-card .picks { display: flex; gap: 8px; overflow-x: auto; }
-    .works-note { color: #fbbf24; font-size: 12px; margin: 8px 0 0; line-height: 1.35; }
+    .set-row {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      padding: 14px 0; border-bottom: 1px solid #2d2d44;
+    }
+    .set-row .lab { font-weight: 650; }
+    .set-row .hint { color: #94a3b8; font-size: 12px; margin-top: 3px; }
+    .seg { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 62%; }
+    .seg button {
+      border: 1px solid #2d2d44; background: #16213e; color: #f1f5f9;
+      border-radius: 999px; padding: 8px 11px; font-weight: 700; font-size: 12px; cursor: pointer;
+    }
+    .seg button.on { border-color: #e94560; background: #3f1d2e; color: #fff; }
+    .pack { padding: 12px 0; border-bottom: 1px solid #2d2d44; }
+    .pack strong { display: block; }
+    .pack .meta { color: #94a3b8; font-size: 12px; margin-top: 2px; }
+    .bar { height: 6px; background: #16213e; border-radius: 99px; overflow: hidden; margin: 10px 0; }
+    .bar > i { display: block; height: 100%; background: #e94560; width: 0; }
+    .works-note { color: #fbbf24; font-size: 11px; margin: 4px 0 0; line-height: 1.3; }
+    .contact-pin, .place-pin { background: none !important; border: 0 !important; overflow: visible !important; }
+    .leaflet-div-icon.place-pin, .leaflet-marker-icon.place-pin { overflow: visible !important; }
+    .place-badge {
+      display: grid; place-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,.45);
+      border: 2px solid #fff;
+    }
+    .place-badge.kind-home {
+      width: 44px; height: 44px; border-radius: 14px; background: #e94560;
+    }
+    .place-badge.kind-work {
+      width: 44px; height: 44px; border-radius: 14px; background: #b45309;
+    }
+    .place-badge.kind-person {
+      width: 30px; height: 30px; border-radius: 15px; background: #7c3aed;
+    }
+    .place-badge svg { display: block; }
+    .place-lab {
+      display: none; position: absolute; left: 50%; top: calc(100% + 4px);
+      transform: translateX(-50%);
+      padding: 3px 8px; border-radius: 8px;
+      background: rgba(26,26,46,.94); color: #f8fafc; font-size: 12px; font-weight: 700;
+      line-height: 1.25; white-space: nowrap; max-width: none;
+      overflow: visible; text-overflow: clip;
+      box-shadow: 0 1px 4px rgba(0,0,0,.4); text-align: center;
+      pointer-events: none;
+    }
+    body.pins-named .place-lab { display: block; }
+    .place-line {
+      display: flex; align-items: center; gap: 4px;
+      border-bottom: 1px solid #2d2d44;
+    }
+    .place-edit {
+      width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px;
+      background: transparent; color: #94a3b8; font-size: 16px; cursor: pointer;
+    }
+    .place-edit:active { background: #16213e; color: #e94560; }
+    .place-line .place-row { border-bottom: 0; flex: 1; min-width: 0; }
     .hit { display: block; width: 100%; text-align: left; padding: 12px 14px; border: 0; background: #1a1a2e; color: #f1f5f9; cursor: pointer; border-bottom: 1px solid #2d2d44; font-size: 15px; }
     .hit.here { background: #16213e; }
     .hit-t { font-weight: 650; }
     .hit-h { color: #94a3b8; font-size: 12px; margin-top: 2px; }
     .modes {
-      display: flex; gap: 6px; overflow-x: auto; margin: 0 0 10px;
+      display: flex; gap: 5px; overflow-x: auto; margin: 0 0 6px;
       scrollbar-width: none; -webkit-overflow-scrolling: touch;
     }
     .modes::-webkit-scrollbar { display: none; }
     .mode {
       flex-shrink: 0; border: 1px solid #2d2d44; background: #1a1a2e; color: #cbd5e1;
-      border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+      border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 700; cursor: pointer;
     }
     .mode.on { background: #3f1d2e; border-color: #e94560; color: #fff; }
     .fab {
@@ -152,8 +232,8 @@
     .sheet strong { display: block; color: #f1f5f9; }
     .sheet span { color: #94a3b8; font-size: 13px; }
     .sheet .go, .alts .go, .route-card .go {
-      margin-top: 10px; width: 100%; border: 0; border-radius: 999px; padding: 12px;
-      background: #e94560; color: #fff; font-weight: 700; cursor: pointer; font-size: 16px;
+      margin-top: 8px; width: 100%; border: 0; border-radius: 999px; padding: 10px;
+      background: #e94560; color: #fff; font-weight: 700; cursor: pointer; font-size: 15px;
       pointer-events: auto;
     }
     .alts {
@@ -163,30 +243,36 @@
     .alts h3 { margin: 0 0 8px; font-size: 14px; }
     .alts .picks { display: flex; gap: 8px; overflow-x: auto; }
     .alt {
-      flex: 1; min-width: 96px; border: 1px solid #2d2d44; background: #16213e; color: #f1f5f9;
-      border-radius: 12px; padding: 10px 8px; cursor: pointer; text-align: left;
+      flex: 1; min-width: 84px; border: 1px solid #2d2d44; background: #16213e; color: #f1f5f9;
+      border-radius: 10px; padding: 7px 6px; cursor: pointer; text-align: left;
     }
     .alt.on { border-color: #e94560; background: #3f1d2e; }
-    .alt .k { font-weight: 800; font-size: 13px; color: #e94560; }
-    .alt .t { font-size: 16px; font-weight: 700; }
-    .alt .d { font-size: 12px; color: #94a3b8; }
+    .alt .k { font-weight: 800; font-size: 11px; color: #e94560; }
+    .alt .t { font-size: 14px; font-weight: 700; }
+    .alt .d { font-size: 11px; color: #94a3b8; }
     .fuel {
       left: 10px; right: 10px; width: auto;
       bottom: var(--chrome);
-      padding: 8px 12px 10px; border-radius: 16px 16px 0 0; z-index: 1210;
+      padding: 8px 12px 10px; border-radius: 16px 16px 0 0; z-index: 1206;
+      margin: 0;
     }
     .fuel .title { color: #e94560; font-weight: 700; margin-bottom: 4px; font-size: 13px; }
     .fuel .stats { color: #94a3b8; font-size: 12px; font-weight: 600; margin-bottom: 8px; min-height: 1em; }
     .fuel .row { display: flex; gap: 8px; margin-right: 58px; }
+    body.music-off.fuel-live .fuel .row { margin-left: 0; }
     .fuel button, .panel button.act, .page-actions button { flex: 1; border: 0; border-radius: 999px; padding: 8px; font-weight: 700; cursor: pointer; }
     .pause { background: #16213e; color: #f1f5f9; }
     .stop { background: #3f1d2e; color: #e94560; }
     .fill { background: #16302a; color: #34d399; }
     .panel {
-      bottom: var(--chrome); max-height: 58vh; overflow-y: auto; padding: 16px 16px 20px;
-      border-radius: 16px 16px 0 0; z-index: 1210;
+      bottom: var(--chrome); max-height: 58vh; overflow-y: auto; padding: 12px 16px 16px;
+      border-radius: 16px 16px 0 0; z-index: 1190; margin: 0;
     }
-    .panel h2 { margin: 0 0 12px; font-size: 16px; }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      margin: 0 0 10px;
+    }
+    .panel h2 { margin: 0; font-size: 16px; }
     .panel .row { min-height: 44px; }
     .panel p { margin: 0 0 12px; color: #94a3b8; font-size: 13px; }
     .fuel-trip {
@@ -198,6 +284,85 @@
     .fuel-trip .path { font-weight: 700; font-size: 14px; margin-top: 2px; }
     .fuel-trip .meta { color: #e94560; font-size: 12px; font-weight: 700; margin-top: 2px; }
     .fuel-trip.live .path { color: #34d399; }
+    .dev-fuel-bar {
+      position: absolute; z-index: 1500; left: 12px; right: 12px;
+      bottom: calc(var(--chrome) + 6px);
+      display: none; align-items: center; gap: 8px;
+      background: #16213e; border: 1px dashed #fbbf24; border-radius: 12px;
+      padding: 6px 10px; font-size: 12px; font-weight: 700; color: #fde68a;
+    }
+    body.fux-dev .dev-fuel-bar { display: flex; }
+    body.fux-mix .dev-fuel-bar, body.fux-2 .dev-fuel-bar, body.fux-7 .dev-fuel-bar, body.fux-10 .dev-fuel-bar {
+      bottom: calc(var(--chrome) + 62px);
+    }
+    body.fuel-live .dev-fuel-bar,
+    body.fuel-sheet-open .dev-fuel-bar,
+    body.nav .dev-fuel-bar { display: none !important; }
+    .dev-fuel-bar button {
+      margin-left: auto; border: 0; border-radius: 999px; padding: 6px 10px;
+      background: #fbbf24; color: #1a1a2e; font-weight: 800; cursor: pointer;
+    }
+    .fuel-peek {
+      display: none; position: absolute; z-index: 1205; left: 10px; right: 10px;
+      bottom: var(--chrome); background: #1a1a2e; border-radius: 16px 16px 0 0;
+      padding: 8px 12px 10px; border: 1px solid #2d2d44; border-bottom: 0;
+    }
+    body.fux-mix .fuel-peek, body.fux-2 .fuel-peek, body.fux-10 .fuel-peek { display: block; }
+    body.fux-mix:has(#fuel:not([hidden])) .fuel-peek,
+    body.fux-7:has(#fuel:not([hidden])) .fuel-peek { display: none; }
+    .fuel-peek .handle { width: 36px; height: 4px; border-radius: 4px; background: #334155; margin: 0 auto 8px; }
+    .peek-row { display: flex; align-items: center; gap: 10px; }
+    .gauge-mini { width: 42px; height: 10px; border-radius: 99px; background: #0f172a; overflow: hidden; flex-shrink: 0; }
+    .gauge-mini i { display: block; height: 100%; width: 62%; background: #1a73e8; }
+    .peek-row strong { display: block; font-size: 13px; }
+    .peek-row span { color: #94a3b8; font-size: 11px; }
+    .peek-km { margin-left: auto; font-weight: 800; color: #e94560; font-size: 13px; }
+    .fuel-sheet {
+      display: none; position: absolute; z-index: 1215; left: 0; right: 0; bottom: 0;
+      top: 18%; background: #1a1a2e; border-radius: 18px 18px 0 0; padding: 10px 14px 90px;
+      overflow-y: auto; box-shadow: 0 -4px 16px rgba(0,0,0,.4);
+    }
+    .fuel-sheet.open { display: block; }
+    .fuel-sheet .handle { width: 36px; height: 4px; border-radius: 4px; background: #334155; margin: 4px auto 10px; }
+    .fuel-sub { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 10px; }
+    .fuel-sub button {
+      flex-shrink: 0; border: 1px solid #2d2d44; background: #16213e; color: #cbd5e1;
+      border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700;
+    }
+    .fuel-sub button.on { background: #3f1d2e; border-color: #e94560; color: #fff; }
+    body.fux-mix .tab[data-tab="trips"], body.fux-2 .tab[data-tab="trips"], body.fux-10 .tab[data-tab="trips"],
+    body.fux-7 .tab[data-tab="trips"] { display: none; }
+    body.fux-mix #btnFuelOpen, body.fux-10 #btnFuelOpen { display: none; }
+    body.fux-6 .fuel-fab { display: grid; }
+    .fuel-fab {
+      display: none; position: absolute; z-index: 1300; right: 14px;
+      bottom: calc(var(--chrome) + 70px);
+      width: 52px; height: 52px; border-radius: 14px; border: 0; background: #e94560; color: #fff;
+      place-items: center; font-size: 22px; cursor: pointer;
+    }
+    .fuel-radial {
+      display: none; position: absolute; z-index: 1301; right: 14px;
+      bottom: calc(var(--chrome) + 130px); text-align: right;
+    }
+    .fuel-radial.open { display: block; }
+    .fuel-radial button {
+      display: block; margin: 6px 0 6px auto; border: 0; background: #1a1a2e; color: #fff;
+      border-radius: 999px; padding: 8px 12px; font-weight: 700; font-size: 12px;
+    }
+    body.fux-8 #map { bottom: 42%; }
+    body.fux-8 .fuel-split {
+      display: block; position: absolute; left: 0; right: 0; top: 58%; bottom: var(--chrome);
+      background: #1a1a2e; z-index: 1180; padding: 10px 12px; overflow: auto;
+    }
+    .fuel-split { display: none; }
+    .ux-card {
+      display: block; width: 100%; text-align: left; border: 1px solid #2d2d44; background: #16213e;
+      color: #f1f5f9; border-radius: 12px; padding: 12px; margin: 0 0 8px; cursor: pointer;
+    }
+    .ux-card.on { border-color: #e94560; background: #3f1d2e; }
+    .ux-card b { display: block; margin-bottom: 4px; }
+    .ux-card span { color: #94a3b8; font-size: 12px; }
+    .avatar.gauge { font-size: 9px; font-weight: 800; }
     .row { display: flex; gap: 8px; }
     .ghost { background: #16213e; color: #f1f5f9; }
     .primary { background: #e94560; color: #fff; }
@@ -211,9 +376,10 @@
       padding: 0 0 calc(6px + env(safe-area-inset-bottom));
       border-top: 1px solid #2d2d44;
       z-index: 1200;
+      transform: none !important;
+      pointer-events: auto;
     }
-    body.kb .chrome { transform: translateY(110%); pointer-events: none; }
-    body.kb .fab, body.kb .fuel, body.kb .alts, body.kb .sheet { bottom: 12px; }
+    body.kb .hits { max-height: 28vh; }
     .music {
       display: flex; align-items: center; gap: 4px;
       padding: 4px 4px 4px 12px; border-bottom: 1px solid #2d2d44; min-height: 60px;
@@ -238,6 +404,9 @@
       width: 40px; height: 40px; border-radius: 20px; border: 1px solid #2d2d44;
       background: #1a1a2e; color: #e94560; font-size: 16px; cursor: pointer;
       box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    }
+    body.music-off.fuel-live .music-peek {
+      bottom: calc(var(--chrome) + 72px);
     }
     body:not(.music-off) .music-peek { display: none !important; }
     .music-sheet {
@@ -271,7 +440,7 @@
     .tab .ic { display: block; font-size: 18px; line-height: 1.2; }
     .tab.on { color: #e94560; }
     .page {
-      position: absolute; z-index: 1100; left: 0; right: 0; top: 0; bottom: 0;
+      position: absolute; z-index: 1600; left: 0; right: 0; top: 0; bottom: 0;
       background: #0f0f1a; display: flex; flex-direction: column;
       padding-bottom: var(--chrome);
     }
@@ -318,6 +487,9 @@
       </button>
       <input id="q" type="text" inputmode="search" enterkeyhint="search" placeholder="Rechercher ici" autocomplete="off" />
       <button type="button" class="ico clear" id="btnClear" hidden title="Effacer" aria-label="Effacer la recherche">×</button>
+      <button type="button" class="ico" id="btnSettingsGear" title="Paramètres" aria-label="Paramètres">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10.09 3H10.1a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z"/></svg>
+      </button>
       <button type="button" class="avatar" id="btnUser" title="Compte" aria-label="Compte">P</button>
     </form>
     <div class="hud" id="navBar" hidden>
@@ -389,14 +561,17 @@
     </div>
   </div>
   <div class="panel" id="panelFuel" hidden>
-    <h2>Trajets Fuel</h2>
-    <p>Suivi GPS et historique — tu restes dans Maps. ✕ ferme le guidage sans arrêter le trajet.</p>
+    <div class="panel-head">
+      <h2>Trajets Fuel</h2>
+      <button type="button" class="panel-close" id="btnFuelClose" aria-label="Fermer les trajets Fuel">✕</button>
+    </div>
+    <p>Suivi GPS et historique — tu restes dans Maps. La croix ferme ce panneau. ✕ dans le guidage n’arrête pas le trajet Fuel.</p>
     <div class="row">
       <button type="button" class="act ghost" id="btnFuelOpen">Ouvrir Fuel</button>
       <button type="button" class="act ghost" id="btnFuelRefresh">Actualiser</button>
       <button type="button" class="act primary" id="btnFuelTrack">Suivi libre</button>
     </div>
-    <div id="fuelTripList"></div>
+    <div id="fuelTripListPanel"></div>
   </div>
   <div class="page" id="pageSaved" hidden>
     <div class="page-head">
@@ -408,9 +583,23 @@
       <button type="button" class="ghost" id="btnDefineWork">Ajouter Travail</button>
     </div>
     <div class="page-body">
-      <p class="page-hint">Cherche un nom ou une adresse. « Ma position actuelle » est proposée en premier, sans rien taper.</p>
+      <p class="page-hint">Le crayon à gauche change Maison ou Travail. Tes contacts Hubera s’affichent sur la carte, avec leur nom.</p>
       <div id="savedList"></div>
     </div>
+  </div>
+  <div class="page" id="pageSettings" hidden>
+    <div class="page-head">
+      <button type="button" class="ico" id="btnSettingsBack" aria-label="Retour">←</button>
+      <h1>Paramètres</h1>
+    </div>
+    <div class="page-body" id="settingsBody"></div>
+  </div>
+  <div class="page" id="pageOffline" hidden>
+    <div class="page-head">
+      <button type="button" class="ico" id="btnOfflineBack" aria-label="Retour">←</button>
+      <h1>Cartes hors ligne</h1>
+    </div>
+    <div class="page-body" id="offlineBody"></div>
   </div>
   <div class="chrome" id="chrome">
     <div class="music" id="musicDock">
@@ -445,6 +634,7 @@
     <button type="button" class="d-item" data-go="maps">Maps</button>
     <button type="button" class="d-item" data-go="trips">Trajets Fuel</button>
     <button type="button" class="d-item" data-go="saved">Lieux enregistrés</button>
+    <button type="button" class="d-item" data-go="contacts">Hubera Contacts</button>
     <div class="d-label">Compte</div>
     <button type="button" class="d-item" data-go="account">Profil Hubera</button>
     <button type="button" class="d-item" data-go="settings">Paramètres</button>
@@ -453,6 +643,57 @@
     <button type="button" class="d-item" data-go="fuel">Hubera Fuel</button>
     <button type="button" class="d-item" data-go="music">Hubera Music</button>
   </aside>
+  <div class="dev-fuel-bar" id="devFuelBar">
+    <span id="devFuelLabel">DEV Fuel</span>
+    <button type="button" id="btnFuelUx">Comparer</button>
+  </div>
+  <div class="fuel-peek" id="fuelPeek">
+    <div class="handle"></div>
+    <div class="peek-row">
+      <div class="gauge-mini"><i id="fuelGaugeFill"></i></div>
+      <div>
+        <strong id="fuelPeekTitle">Fuel</strong>
+        <span id="fuelPeekSub">tire pour trajets, pleins, garage</span>
+      </div>
+      <div class="peek-km" id="fuelPeekKm"></div>
+    </div>
+  </div>
+  <div class="fuel-split" id="fuelSplit">
+    <div class="title" style="color:#e94560;font-weight:800">Aujourd’hui</div>
+    <div id="fuelSplitBody"></div>
+  </div>
+  <button type="button" class="fuel-fab" id="fuelFab" aria-label="Fuel">⛽</button>
+  <div class="fuel-radial" id="fuelRadial" hidden>
+    <button type="button" data-rad="start">Démarrer</button>
+    <button type="button" data-rad="fill">Plein</button>
+    <button type="button" data-rad="history">Historique</button>
+    <button type="button" data-rad="sheet">Carnet</button>
+  </div>
+  <div class="fuel-sheet" id="fuelSheet">
+    <div class="handle" id="fuelSheetHandle"></div>
+    <div class="panel-head">
+      <h2>Fuel</h2>
+      <button type="button" class="panel-close" id="btnFuelSheetClose" aria-label="Fermer Fuel">✕</button>
+    </div>
+    <div class="fuel-sub" id="fuelSub">
+      <button type="button" class="on" data-fsub="trips">Trajets</button>
+      <button type="button" data-fsub="fills">Pleins</button>
+      <button type="button" data-fsub="garage">Garage</button>
+      <button type="button" data-fsub="budget">Budget</button>
+    </div>
+    <div id="fuelSheetBody"></div>
+  </div>
+  <div class="page" id="pageFuelUx" hidden>
+    <div class="page-head">
+      <button type="button" class="ico" id="btnFuelUxBack" aria-label="Retour">←</button>
+      <h1>Comparer Fuel</h1>
+    </div>
+    <div class="page-body" id="fuelUxBody"></div>
+  </div>
+  <div class="boot-fail" id="bootFail">
+    <p>Chargement de la carte… Si rien n’apparaît, installe la mise à jour.</p>
+    <button type="button" id="bootFailUpdate">Mettre à jour Maps</button>
+  </div>
   <script src="leaflet.js"></script>
   <script src="app.js"></script>
 </body>

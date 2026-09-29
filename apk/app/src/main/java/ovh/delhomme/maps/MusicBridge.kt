@@ -129,11 +129,17 @@ class MusicBridge(
         main.post {
             connect()
             val c = controller
-            if (c != null) c.seekToNextMediaItem() else sendKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+            if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT)) {
+                runCatching { c.seekToNext() }
+            } else if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) {
+                runCatching { c.seekToNextMediaItem() }
+            } else {
+                sendKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+            }
             main.postDelayed({
                 refreshCache()
                 pushToWeb()
-            }, 250)
+            }, 400)
         }
     }
 
@@ -142,11 +148,17 @@ class MusicBridge(
         main.post {
             connect()
             val c = controller
-            if (c != null) c.seekToPreviousMediaItem() else sendKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS)) {
+                runCatching { c.seekToPrevious() }
+            } else if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)) {
+                runCatching { c.seekToPreviousMediaItem() }
+            } else {
+                sendKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            }
             main.postDelayed({
                 refreshCache()
                 pushToWeb()
-            }, 250)
+            }, 400)
         }
     }
 

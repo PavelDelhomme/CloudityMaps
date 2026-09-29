@@ -26,13 +26,13 @@ class InAppUpdate(private val activity: Activity) {
 
     fun check() {
         Thread {
-            if (snoozed()) return@Thread
             val local = runCatching {
                 activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0"
             }.getOrElse { "0" }
             val feed = fetchFeed() ?: return@Thread
             val remote = feed.optString("version")
             if (remote.isBlank() || !isNewer(remote, local)) return@Thread
+            if (snoozed(remote, local)) return@Thread
             val notes = feed.optString("notes").ifBlank { "Nouvelle version Hubera Maps." }
             val apkUrl = feed.optString("apk").ifBlank {
                 feed.optString("apk_url").ifBlank { APK_URL }
@@ -59,9 +59,13 @@ class InAppUpdate(private val activity: Activity) {
         }
     }
 
-    private fun snoozed(): Boolean {
+    private fun snoozed(remote: String, local: String): Boolean {
+        if (local in BAD_LOCAL) return false
         val until = prefs.getLong(SNOOZE_UNTIL, 0L)
-        return until > System.currentTimeMillis()
+        if (until <= System.currentTimeMillis()) return false
+        val snoozedVer = prefs.getString(SNOOZE_VERSION, "") ?: ""
+        if (snoozedVer.isNotEmpty() && snoozedVer != remote) return false
+        return true
     }
 
     private fun showDialog(version: String, notes: String, apkUrl: String, sha: String) {
@@ -74,7 +78,10 @@ class InAppUpdate(private val activity: Activity) {
                 Thread { downloadAndInstall(apkUrl, sha, version) }.start()
             }
             .setNegativeButton("Plus tard") { _, _ ->
-                prefs.edit().putLong(SNOOZE_UNTIL, System.currentTimeMillis() + SNOOZE_MS).apply()
+                prefs.edit()
+                    .putLong(SNOOZE_UNTIL, System.currentTimeMillis() + SNOOZE_MS)
+                    .putString(SNOOZE_VERSION, version)
+                    .apply()
             }
             .show()
     }
@@ -211,7 +218,9 @@ class InAppUpdate(private val activity: Activity) {
         const val APK_URL = "https://maps.hubera.cloud/apk/hubera-maps.apk"
         private const val PREFS = "hubera_maps_update"
         private const val SNOOZE_UNTIL = "snooze_until"
+        private const val SNOOZE_VERSION = "snooze_version"
         private const val PENDING_AFTER_PERM = "pending_after_perm"
-        private const val SNOOZE_MS = 24L * 60 * 60 * 1000
+        private const val SNOOZE_MS = 6L * 60 * 60 * 1000
+        private val BAD_LOCAL = setOf("0.1.36", "0.1.37")
     }
 }
