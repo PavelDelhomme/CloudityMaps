@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.46",
-  "versionCode": 48,
+  "version": "0.1.58",
+  "versionCode": 59,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Fuel dans Maps : feuille trajets/pleins + HUD + GPS Fuel en fond. Point bleu avec halo. Noms maison/travail complets au zoom. Comparer Fuel dans Paramètres. Mise à jour proposée, pas forcée.",
-  "published_at": "2026-09-29T18:25:00+02:00",
-  "sha256": "3d0b9a15e6cdaf208a90aaf72d54e6f0cea422b9d806c3ed7730de2d7344c377"
+  "notes": "Ouvrir l\u2019app Hubera Fuel depuis le HUD. MAJ : Continuer. Jamais forc\u00e9.",
+  "published_at": "2026-09-30T18:50:00Z",
+  "sha256": "4e7e9499124073c337ab4466db99383a8d1008c8b78d0559df7fb54e78de0988"
 }

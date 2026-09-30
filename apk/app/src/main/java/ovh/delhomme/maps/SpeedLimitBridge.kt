@@ -2,12 +2,16 @@ package ovh.delhomme.maps
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -24,14 +28,25 @@ class SpeedLimitBridge(
     private val io = Executors.newSingleThreadExecutor()
     @Volatile
     private var lastAt = 0L
+    @Volatile
+    private var lastOk = false
 
     @JavascriptInterface
-    fun lookup(lat: Double, lon: Double) {
+    fun lookup(lat: String, lon: String) {
+        val la = lat.toDoubleOrNull() ?: return
+        val lo = lon.toDoubleOrNull() ?: return
+        lookupCoords(la, lo)
+    }
+
+    private fun lookupCoords(lat: Double, lon: Double) {
         val now = System.currentTimeMillis()
-        if (now - lastAt < 3500) return
+        val wait = if (lastOk) 3500L else 800L
+        if (now - lastAt < wait) return
         lastAt = now
         io.execute {
             val kmh = runCatching { fetch(lat, lon) }.getOrNull()
+            lastOk = kmh != null
+            Log.i(TAG, "speed lookup $lat,$lon -> $kmh")
             if (kmh != null) push(kmh)
         }
     }
@@ -49,31 +64,43 @@ class SpeedLimitBridge(
         val la = String.format(java.util.Locale.US, "%.5f", lat)
         val lo = String.format(java.util.Locale.US, "%.5f", lon)
         val query =
-            "[out:json][timeout:10];way(around:200,$la,$lo)[highway];out center tags 40;"
+            "[out:json][timeout:8];way(around:200,$la,$lo)[highway];out center tags 40;"
         val body = "data=" + java.net.URLEncoder.encode(query, Charsets.UTF_8.name())
-        for (endpoint in ENDPOINTS) {
-            val raw = post(endpoint, body) ?: continue
-            val parsed = parse(raw, lat, lon)
-            if (parsed != null) return parsed
+        val winner = AtomicReference<Int?>(null)
+        val latch = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(ENDPOINTS.size.coerceAtMost(4))
+        try {
+            for (endpoint in ENDPOINTS) {
+                pool.execute {
+                    if (winner.get() != null) return@execute
+                    val raw = post(endpoint, body) ?: return@execute
+                    val parsed = parse(raw, lat, lon) ?: return@execute
+                    if (winner.compareAndSet(null, parsed)) latch.countDown()
+                }
+            }
+            latch.await(7, TimeUnit.SECONDS)
+            return winner.get()
+        } finally {
+            pool.shutdownNow()
         }
-        return null
     }
 
     private fun post(endpoint: String, body: String): String? {
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 12_000
-            readTimeout = 12_000
+            connectTimeout = 5_000
+            readTimeout = 6_000
             doOutput = true
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.20 (https://maps.hubera.cloud)")
+            setRequestProperty("User-Agent", "HuberaMaps/0.1.48 (https://maps.hubera.cloud)")
         }
         return try {
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             if (conn.responseCode !in 200..299) return null
             conn.inputStream.bufferedReader().use { it.readText() }
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            Log.w(TAG, "overpass fail $endpoint: ${t.message}")
             null
         } finally {
             conn.disconnect()
@@ -114,9 +141,12 @@ class SpeedLimitBridge(
     }
 
     companion object {
+        private const val TAG = "HuberaSpeed"
         private val ENDPOINTS = listOf(
+            "https://maps.hubera.cloud/overpass",
             "https://overpass-api.de/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.osm.ch/api/interpreter",
         )
         private val FR = mapOf(
             "FR:urban" to 50,

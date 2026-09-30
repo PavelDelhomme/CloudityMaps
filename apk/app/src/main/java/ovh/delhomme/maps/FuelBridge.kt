@@ -25,6 +25,47 @@ class FuelBridge(private val context: Context) {
         bringBack = null
     }
 
+    /** Ouvre Hubera Fuel pour de vrai (garage, pleins, budget) — Maps ne reprend pas le premier plan.
+     *  Si Fuel n’est pas installé : page d’install indépendante (APK). */
+    @JavascriptInterface
+    fun openApp() {
+        main.post {
+            cancelBringBack()
+            val launch = context.packageManager.getLaunchIntentForPackage(FUEL_PKG)
+            if (launch != null) {
+                launch.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
+                runCatching { context.startActivity(launch) }
+                return@post
+            }
+            val view = Intent(Intent.ACTION_VIEW, Uri.parse("gasoiltracking://")).apply {
+                setPackage(FUEL_PKG)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
+            }
+            val launched = runCatching { context.startActivity(view) }.isSuccess
+            if (!launched) openInstallPage()
+        }
+    }
+
+    @JavascriptInterface
+    fun isInstalled(): Boolean {
+        return context.packageManager.getLaunchIntentForPackage(FUEL_PKG) != null
+    }
+
+    private fun openInstallPage() {
+        val install = Intent(Intent.ACTION_VIEW, Uri.parse(FUEL_INSTALL)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(install) }
+    }
+
     @JavascriptInterface
     fun control(action: String, payloadJson: String) {
         main.post {
@@ -34,7 +75,7 @@ class FuelBridge(private val context: Context) {
             val b = Uri.parse("gasoiltracking://trip/control").buildUpon()
                 .appendQueryParameter("action", act)
                 .appendQueryParameter("silent", "1")
-            listOf("tripId", "dest", "liters", "total", "station").forEach { key ->
+              listOf("tripId", "dest", "liters", "total", "station", "vehicleId").forEach { key ->
                 val v = extra.optString(key)
                 if (v.isNotBlank()) b.appendQueryParameter(key, v)
             }
@@ -66,11 +107,15 @@ class FuelBridge(private val context: Context) {
 
     companion object {
         const val FUEL_PKG = "com.gasoiltracking.app"
+        const val FUEL_INSTALL = "https://fuel.hubera.cloud/install"
 
         /** start : GPS + FGS (~3–7 s). history : SQLite. le reste : instantané. */
         fun bringBackMs(action: String): Long = when (action) {
             "start" -> 8_000L
+            "snapshot" -> 500L
             "history" -> 1_600L
+            "select", "vehicle" -> 500L
+            "fill" -> 900L
             "stop" -> 1_400L
             else -> 500L
         }

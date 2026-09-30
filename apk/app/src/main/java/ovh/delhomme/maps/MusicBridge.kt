@@ -32,13 +32,22 @@ class MusicBridge(
     private val tick = object : Runnable {
         override fun run() {
             if (!watching) return
-            if (controller == null) connect()
+            if (liveController() == null) connect()
             else {
                 refreshCache()
                 pushToWeb()
             }
             main.postDelayed(this, 1000)
         }
+    }
+
+    private fun liveController(): MediaController? {
+        val c = controller ?: return null
+        if (c.isConnected) return c
+        runCatching { c.release() }
+        controller = null
+        connecting = false
+        return null
     }
 
     fun connect() {
@@ -110,8 +119,9 @@ class MusicBridge(
     @JavascriptInterface
     fun playPause() {
         main.post {
+            liveController()
             connect()
-            val c = controller
+            val c = liveController()
             if (c != null) {
                 if (c.isPlaying) c.pause() else c.play()
             } else {
@@ -127,8 +137,9 @@ class MusicBridge(
     @JavascriptInterface
     fun next() {
         main.post {
+            liveController()
             connect()
-            val c = controller
+            val c = liveController()
             if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT)) {
                 runCatching { c.seekToNext() }
             } else if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) {
@@ -146,11 +157,11 @@ class MusicBridge(
     @JavascriptInterface
     fun prev() {
         main.post {
+            liveController()
             connect()
-            val c = controller
-            if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS)) {
-                runCatching { c.seekToPrevious() }
-            } else if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)) {
+            val c = liveController()
+            if (c != null) {
+                // Dans Maps on veut le titre d’avant, pas le restart de la piste en cours.
                 runCatching { c.seekToPreviousMediaItem() }
             } else {
                 sendKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
@@ -195,7 +206,7 @@ class MusicBridge(
     }
 
     private fun stateObject(): JSONObject {
-        val c = controller
+        val c = liveController()
         val meta = c?.mediaMetadata
         val title = meta?.title?.toString()?.trim().orEmpty()
         val artist = meta?.artist?.toString()?.trim().orEmpty()

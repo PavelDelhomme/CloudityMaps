@@ -72,16 +72,27 @@ class InAppUpdate(private val activity: Activity) {
         if (activity.isFinishing) return
         AlertDialog.Builder(activity)
             .setTitle("Mise à jour $version")
-            .setMessage(notes)
+            .setMessage("$notes\n\nVous pouvez continuer sans installer. La mise à jour n’est pas obligatoire.")
             .setCancelable(true)
             .setPositiveButton("Installer") { _, _ ->
                 Thread { downloadAndInstall(apkUrl, sha, version) }.start()
             }
-            .setNegativeButton("Plus tard") { _, _ ->
+            .setNegativeButton("Continuer") { _, _ ->
                 prefs.edit()
                     .putLong(SNOOZE_UNTIL, System.currentTimeMillis() + SNOOZE_MS)
                     .putString(SNOOZE_VERSION, version)
                     .apply()
+            }
+            .setNeutralButton("Site web") { _, _ ->
+                prefs.edit()
+                    .putLong(SNOOZE_UNTIL, System.currentTimeMillis() + SNOOZE_MS)
+                    .putString(SNOOZE_VERSION, version)
+                    .apply()
+                runCatching {
+                    activity.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(INSTALL_URL)),
+                    )
+                }
             }
             .show()
     }
@@ -117,7 +128,16 @@ class InAppUpdate(private val activity: Activity) {
         } catch (t: Throwable) {
             dest.delete()
             main.post {
-                Toast.makeText(activity, "Téléchargement impossible.", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    activity,
+                    "Téléchargement impossible — ouverture du site d’install.",
+                    Toast.LENGTH_LONG,
+                ).show()
+                runCatching {
+                    activity.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(INSTALL_URL)),
+                    )
+                }
             }
         }
     }
@@ -216,6 +236,7 @@ class InAppUpdate(private val activity: Activity) {
 
     companion object {
         const val APK_URL = "https://maps.hubera.cloud/apk/hubera-maps.apk"
+        const val INSTALL_URL = "https://maps.hubera.cloud/install"
         private const val PREFS = "hubera_maps_update"
         private const val SNOOZE_UNTIL = "snooze_until"
         private const val SNOOZE_VERSION = "snooze_version"

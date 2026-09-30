@@ -148,15 +148,12 @@ class MainActivity : AppCompatActivity() {
         }
         web.loadUrl(urlFromIntent(intent))
         val updater = InAppUpdate(this)
-        Handler(Looper.getMainLooper()).postDelayed({ updater.check() }, 400)
         Handler(Looper.getMainLooper()).postDelayed({ updater.check() }, 2500)
-        Handler(Looper.getMainLooper()).postDelayed({ updater.check() }, 8000)
     }
 
     override fun onResume() {
         super.onResume()
         InAppUpdate(this).retryPending()
-        InAppUpdate(this).check()
         if (this::web.isInitialized) {
             web.resumeTimers()
             web.onResume()

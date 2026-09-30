@@ -8,6 +8,9 @@ const VOICE_KEY = 'hubera-maps-voice';
 const NIGHT_KEY = 'hubera-maps-night';
 const FUEL_TRIPS_KEY = 'hubera-maps-fuel-trips';
 const FUEL_UX_KEY = 'hubera-maps-fuel-ux-dev';
+const FUEL_SNAP_KEY = 'hubera-maps-fuel-snap';
+let fuelPageTab = 'home';
+let fuelSelectedVehicleId = 0;
 function readLastMe() {
   try {
     const p = JSON.parse(localStorage.getItem(LAST_ME_KEY) || 'null');
@@ -205,6 +208,7 @@ function fuelControl(action, extra) {
     liters: extra.liters || '',
     total: extra.total || '',
     station: extra.station || '',
+    vehicleId: extra.vehicleId ? String(extra.vehicleId) : '',
   });
   try {
     if (window.HuberaFuel && typeof window.HuberaFuel.control === 'function') {
@@ -214,7 +218,7 @@ function fuelControl(action, extra) {
   } catch {
     /* WebView hors APK */
   }
-  if (action !== 'start' && action !== 'stop' && action !== 'history') {
+  if (action !== 'start' && action !== 'stop' && action !== 'history' && action !== 'snapshot' && action !== 'select' && action !== 'fill') {
     toast('Commande Fuel enregistrée dans Maps.');
   }
   return false;
@@ -333,7 +337,7 @@ function renderFuelTripList(rows) {
     ];
   }
   const html = !list.length
-    ? '<p>Aucun trajet pour l’instant — lance un suivi libre.</p>'
+    ? '<p>Aucun trajet pour l’instant — démarre un suivi depuis Maps.</p>'
     : list
         .map((t) => {
           const from = t.origin || 'Départ';
@@ -733,10 +737,20 @@ function placeNear(lat, lon, place, meters) {
   return haversineKm({ lat, lon }, { lat: place.lat, lon: place.lon }) * 1000 < (meters || 80);
 }
 
-function nudgeAwayFromMe(lat, lon) {
-  if (!me || !Number.isFinite(me.lat) || !Number.isFinite(me.lon)) return [lat, lon];
-  if (haversineKm(me, { lat, lon }) * 1000 > 40) return [lat, lon];
-  return [lat + 0.00022, lon];
+let lastPlaceHideKey = '';
+
+function hideSavedPlaceBecauseHere(place) {
+  if (!me || !place) return false;
+  return placeNear(me.lat, me.lon, place, 45);
+}
+
+function maybeRepaintPlacesForMe() {
+  if (!me) return;
+  const places = loadPlaces();
+  const key = `${hideSavedPlaceBecauseHere(places.home) ? 1 : 0}|${hideSavedPlaceBecauseHere(places.work) ? 1 : 0}`;
+  if (key === lastPlaceHideKey) return;
+  lastPlaceHideKey = key;
+  paintPlacePins();
 }
 
 function placePinIcon(kind, name) {
@@ -797,9 +811,9 @@ function paintPlacePins() {
       .addTo(contactLayer)
       .on('click', () => void routeTo(item.lat, item.lon, item.label));
   });
-  if (places.home && Number.isFinite(places.home.lat) && Number.isFinite(places.home.lon)) {
-    const [hLat, hLon] = nudgeAwayFromMe(places.home.lat, places.home.lon);
-    L.marker([hLat, hLon], {
+  if (places.home && Number.isFinite(places.home.lat) && Number.isFinite(places.home.lon)
+      && !hideSavedPlaceBecauseHere(places.home)) {
+    L.marker([places.home.lat, places.home.lon], {
       icon: placePinIcon('home', 'Maison'),
       zIndexOffset: 420,
       keyboard: false,
@@ -807,9 +821,9 @@ function paintPlacePins() {
       .addTo(contactLayer)
       .on('click', () => void routeTo(places.home.lat, places.home.lon, places.home.label || 'Maison'));
   }
-  if (places.work && Number.isFinite(places.work.lat) && Number.isFinite(places.work.lon)) {
-    const [wLat, wLon] = nudgeAwayFromMe(places.work.lat, places.work.lon);
-    L.marker([wLat, wLon], {
+  if (places.work && Number.isFinite(places.work.lat) && Number.isFinite(places.work.lon)
+      && !hideSavedPlaceBecauseHere(places.work)) {
+    L.marker([places.work.lat, places.work.lon], {
       icon: placePinIcon('work', 'Travail'),
       zIndexOffset: 410,
       keyboard: false,
@@ -1056,6 +1070,7 @@ function setMe(lat, lon, fly, fromCache) {
     meMarker.setLatLng(here);
     meMarker.setIcon(puckIcon(lastHeadingDeg));
   }
+  maybeRepaintPlacesForMe();
   if (meMarker && moved < 3 && !fly) {
     if (!lastRoadPos || (roadNameEl && roadNameEl.textContent === '—')) void refreshRoad(lat, lon);
     return;
@@ -1973,8 +1988,8 @@ function paintHud(choice) {
     const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '0 min';
     if (distEl) distEl.textContent = km > 0.05 ? `${km.toFixed(1)} km` : 'GPS';
     if (iconEl) iconEl.textContent = paused ? '⏸' : '⛽';
-    if (titleEl) titleEl.textContent = paused ? 'Fuel en pause' : 'Suivi Fuel';
-    if (subEl) subEl.textContent = Number(fuelTrip) > 0 ? `trajet ${fuelTrip}` : 'libre';
+    if (titleEl) titleEl.textContent = paused ? 'Trajet en pause' : 'Trajet Fuel';
+    if (subEl) subEl.textContent = Number(fuelTrip) > 0 ? `trajet ${fuelTrip}` : 'GPS';
     if (thenEl) {
       thenEl.hidden = true;
       thenEl.textContent = '';
@@ -1989,7 +2004,7 @@ function paintHud(choice) {
   }
   if (distEl) distEl.textContent = step ? fmtDist(toManeuver) : '—';
   if (iconEl) iconEl.textContent = maneuverIcon(step?.maneuver?.type, step?.maneuver?.modifier);
-  if (titleEl) titleEl.textContent = step ? fmtStep(step) : navigating ? 'Suivi libre' : 'Guidage';
+  if (titleEl) titleEl.textContent = step ? fmtStep(step) : navigating ? 'Trajet Fuel' : 'Guidage';
   if (subEl) {
     const road = (step?.name || '').trim();
     subEl.textContent = road && !fmtStep(step).includes(road) ? road : '';
@@ -2031,7 +2046,7 @@ function enterFreeHud(tripId) {
   if (!fuelHudStartedAt) fuelHudStartedAt = Date.now();
   if (tripId) fuelTrip = tripId;
   if (!lastDest) {
-    lastDest = { lat: me?.lat || 0, lon: me?.lon || 0, label: 'Suivi libre' };
+    lastDest = { lat: me?.lat || 0, lon: me?.lon || 0, label: 'Trajet Fuel' };
   }
   setFollowNav(true);
   stopIdleGeo();
@@ -2042,7 +2057,7 @@ function enterFreeHud(tripId) {
   chipsEl.hidden = true;
   if (altsEl) altsEl.hidden = true;
   if (routeCardEl) routeCardEl.hidden = true;
-  showFuelBar(tripId ? `Suivi Fuel · trajet ${tripId}` : 'Suivi Fuel · libre');
+  showFuelBar(tripId ? `Trajet Fuel · ${tripId}` : 'Trajet Fuel');
   paintHud(currentChoice());
   const speedEl = document.getElementById('hudSpeed');
   if (speedEl) speedEl.hidden = false;
@@ -2050,19 +2065,34 @@ function enterFreeHud(tripId) {
   startFuelPoll();
 }
 
-function startFreeTracking() {
+function startFuelTrip() {
+  const veh = activeFuelVehicle();
+  const list = loadFuelSnap().vehicles || [];
+  if (list.length > 1 && !fuelSelectedVehicleId && !(veh && veh.active)) {
+    toast('Choisis d’abord le véhicule, puis démarre.');
+    setTab('trips');
+    renderFuelHome();
+    return;
+  }
+  startFreeTracking(veh && veh.id);
+}
+
+function startFreeTracking(vehicleId) {
   setTab('maps');
   if (navigating && mapsStartedFuel) {
-    toast('Suivi déjà en cours');
+    toast('Trajet déjà en cours');
     return;
   }
   clearTrace();
   fuelLiveKm = 0;
   fuelHudStartedAt = Date.now();
   enterFreeHud(fuelTrip);
-  const ok = fuelControl('start');
+  const extra = {};
+  const vid = vehicleId || fuelSelectedVehicleId || (activeFuelVehicle() && activeFuelVehicle().id);
+  if (vid) extra.vehicleId = vid;
+  const ok = fuelControl('start', extra);
   if (!ok) toast('Fuel non joignable depuis ce navigateur');
-  speakNav('Suivi libre démarré', 0);
+  speakNav('Trajet Fuel démarré', 0);
 }
 
 function enterNavUi() {
@@ -2078,7 +2108,7 @@ function enterNavUi() {
   }
   paintHud(currentChoice());
   if (isCarMode() || Number(fuelTrip) > 0) {
-    showFuelBar(Number(fuelTrip) > 0 ? `Suivi Fuel · trajet ${fuelTrip}` : 'Suivi Fuel · guidage');
+    showFuelBar(Number(fuelTrip) > 0 ? `Trajet Fuel · ${fuelTrip}` : 'Trajet Fuel');
   } else {
     fuelEl.hidden = true;
   }
@@ -2307,10 +2337,13 @@ function taggedSpeed(tags) {
   return null;
 }
 
+let lastPaintedLimit = null;
+
 function paintSpeedLimit(kmh) {
   if (!roadNameEl) return;
   if (roadSignEl) roadSignEl.hidden = false;
   if (kmh == null) return;
+  lastPaintedLimit = kmh;
   roadNameEl.textContent = String(kmh);
 }
 
@@ -2330,16 +2363,17 @@ async function refreshRoad(lat, lon) {
   lastRoadAt = now;
   if (typeof HuberaSpeed !== 'undefined' && HuberaSpeed.lookup) {
     try {
-      HuberaSpeed.lookup(lat, lon);
-      return;
+      HuberaSpeed.lookup(String(lat), String(lon));
     } catch {
-      /* fallback Overpass JS (web) */
+      /* proxy JS ci-dessous */
     }
   }
-  const query = `[out:json][timeout:10];way(around:200,${lat.toFixed(5)},${lon.toFixed(5)})[highway];out center tags 40;`;
+  const query = `[out:json][timeout:8];way(around:200,${lat.toFixed(5)},${lon.toFixed(5)})[highway];out center tags 40;`;
   const urls = [
+    'https://maps.hubera.cloud/overpass',
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.osm.ch/api/interpreter',
   ];
   for (const endpoint of urls) {
     try {
@@ -2718,7 +2752,7 @@ function appVersionLabel() {
   } catch {
     /* web */
   }
-  return '0.1.46';
+  return '0.1.58';
 }
 
 const FUEL_UX_OPTS = [
@@ -2748,7 +2782,7 @@ function setFuelUx(id) {
 
 function usesFuelSheet() {
   const id = fuelUxId();
-  return id === 'mix' || id === '2' || id === '10';
+  return id === '2';
 }
 
 function applyFuelUx() {
@@ -2766,7 +2800,7 @@ function applyFuelUx() {
     if (id === '3') {
       tabs.innerHTML =
         `<button type="button" class="tab on" data-tab="maps"><span class="ic">🗺️</span>Maps</button>` +
-        `<button type="button" class="tab" data-tab="trips"><span class="ic">⛽</span>Trajets</button>` +
+        `<button type="button" class="tab" data-tab="trips"><span class="ic">⛽</span>Fuel</button>` +
         `<button type="button" class="tab" data-tab="fills"><span class="ic">P</span>Pleins</button>` +
         `<button type="button" class="tab" data-tab="saved"><span class="ic">★</span>Garage</button>` +
         `<button type="button" class="tab" data-tab="budget"><span class="ic">€</span>Budget</button>`;
@@ -2785,13 +2819,8 @@ function applyFuelUx() {
   }
   const av = document.getElementById('btnUser');
   if (av) {
-    if (id === '7' || id === 'mix') {
-      av.classList.add('gauge');
-      av.textContent = '62%';
-    } else {
-      av.classList.remove('gauge');
-      paintId();
-    }
+    av.classList.remove('gauge');
+    paintId();
   }
   closeFuelSheet();
   paintFuelPeek();
@@ -2805,18 +2834,192 @@ function applyFuelUx() {
   syncChromeHeight();
 }
 
+function loadFuelSnap() {
+  try {
+    const s = JSON.parse(localStorage.getItem(FUEL_SNAP_KEY) || 'null');
+    return s && typeof s === 'object' ? s : { vehicles: [], fills: [], budget: null };
+  } catch {
+    return { vehicles: [], fills: [], budget: null };
+  }
+}
+
+function saveFuelSnap(s) {
+  localStorage.setItem(FUEL_SNAP_KEY, JSON.stringify(s));
+}
+
+function parseFuelSnapPack(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  const parts = s.split('||');
+  const out = { vehicles: [], fills: [], budget: null };
+  for (let i = 0; i < parts.length; i += 2) {
+    const kind = parts[i];
+    const body = parts[i + 1] || '';
+    if (kind === 'V') {
+      out.vehicles = body.split('|').map((row) => {
+        const [idRaw, name, pctRaw, act] = row.split('~');
+        const id = Number(idRaw);
+        const pct = Number(pctRaw);
+        return {
+          id,
+          name: name || `Véhicule ${id}`,
+          pct: Number.isFinite(pct) ? pct : -1,
+          active: act === '1',
+        };
+      }).filter((v) => Number.isFinite(v.id) && v.id > 0);
+    } else if (kind === 'F') {
+      out.fills = body.split('|').filter(Boolean).map((row) => {
+        const [date, L, cost, station] = row.split('~');
+        return { date: date || '', liters: Number(L) || 0, cost: Number(cost) || 0, station: station || '' };
+      });
+    } else if (kind === 'B' && body) {
+      const [amount, spent, name] = body.split('~');
+      out.budget = { amount: Number(amount) || 0, spent: Number(spent) || 0, name: name || 'Budget' };
+    }
+  }
+  return out;
+}
+
+function activeFuelVehicle() {
+  const snap = loadFuelSnap();
+  const list = snap.vehicles || [];
+  if (fuelSelectedVehicleId) {
+    const hit = list.find((v) => v.id === fuelSelectedVehicleId);
+    if (hit) return hit;
+  }
+  return list.find((v) => v.active) || list[0] || null;
+}
+
+let lastFuelSnapAt = 0;
+
+function requestFuelSnapshot(force) {
+  const cached = loadFuelSnap();
+  const hasVeh = (cached.vehicles || []).length > 0;
+  if (!force && hasVeh && Date.now() - lastFuelSnapAt < 45000) return;
+  lastFuelSnapAt = Date.now();
+  fuelControl('snapshot');
+}
+
+function fuelAppInstalled() {
+  try {
+    if (window.HuberaFuel && typeof window.HuberaFuel.isInstalled === 'function') {
+      return !!window.HuberaFuel.isInstalled();
+    }
+  } catch {
+    /* hors APK */
+  }
+  return true;
+}
+
+function openFuelApp() {
+  try {
+    if (window.HuberaFuel && typeof window.HuberaFuel.openApp === 'function') {
+      window.HuberaFuel.openApp();
+      return true;
+    }
+  } catch {
+    /* WebView hors APK */
+  }
+  if (!fuelAppInstalled()) {
+    location.href = 'https://fuel.hubera.cloud/install';
+    return false;
+  }
+  location.href = 'gasoiltracking://';
+  return false;
+}
+
+function renderFuelHome() {
+  const home = document.getElementById('fuelHome');
+  if (!home) return;
+  const snap = loadFuelSnap();
+  const veh = activeFuelVehicle();
+  const live = mapsStartedFuel || Number(fuelTrip) > 0;
+  const pct = veh && veh.pct >= 0 ? veh.pct : null;
+  const chips = (snap.vehicles || [])
+    .map(
+      (v) =>
+        `<button type="button" class="fuel-veh${veh && v.id === veh.id ? ' on' : ''}" data-vid="${v.id}">${esc(v.name)}</button>`,
+    )
+    .join('');
+  const gaugeLabel = pct != null ? `${pct} %` : '—';
+  const gaugeSub = veh
+    ? pct != null
+      ? `Réservoir ${pct} %`
+      : 'Jauge dès que Fuel a envoyé le snapshot'
+    : fuelAppInstalled()
+      ? 'Ouvre Hubera Fuel une fois pour le garage'
+      : 'Installe Hubera Fuel (app indépendante) pour le garage';
+  if (!fuelAppInstalled()) {
+    home.innerHTML =
+      `<div class="fuel-panel">` +
+      `<div class="fuel-gauge-card">` +
+      `<div class="lab">Hubera Fuel</div>` +
+      `<div class="pct">App</div>` +
+      `<div class="lab" style="margin-top:8px">${esc(gaugeSub)}</div>` +
+      `</div>` +
+      `<div class="fuel-actions">` +
+      `<button type="button" class="primary" id="fuelHomeInstall">Installer Hubera Fuel</button>` +
+      `</div></div>`;
+    const inst = document.getElementById('fuelHomeInstall');
+    if (inst) inst.onclick = () => openFuelApp();
+    return;
+  }
+  home.innerHTML =
+    `<div class="fuel-panel">` +
+    (chips ? `<div class="fuel-veh-row">${chips}</div>` : '') +
+    `<div class="fuel-gauge-card">` +
+    `<div class="lab">${esc(veh ? veh.name : 'Véhicule')}</div>` +
+    `<div class="pct">${esc(gaugeLabel)}</div>` +
+    `<div class="bar"><i id="fuelHomeGaugeFill" style="width:${pct == null ? 0 : pct}%"></i></div>` +
+    `<div class="lab" style="margin-top:8px">${esc(gaugeSub)}</div>` +
+    `<button type="button" class="ghost" id="fuelHomeOpenApp" style="margin-top:10px;width:100%">Ouvrir l’app Hubera Fuel</button>` +
+    `</div>` +
+    `<div class="fuel-actions${live ? ' live' : ''}">` +
+    (live
+      ? `<button type="button" class="ghost" id="fuelHomePause">Pause</button>` +
+        `<button type="button" class="ghost" id="fuelHomeStop">Arrêter</button>` +
+        `<button type="button" class="primary" id="fuelHomeFill">Ajouter un plein</button>`
+      : `<button type="button" class="primary" id="fuelHomeStart">Démarrer un trajet</button>` +
+        `<button type="button" class="ghost" id="fuelHomeFill">Ajouter un plein</button>`) +
+    `</div></div>`;
+  const start = document.getElementById('fuelHomeStart');
+  const pause = document.getElementById('fuelHomePause');
+  const stop = document.getElementById('fuelHomeStop');
+  const fill = document.getElementById('fuelHomeFill');
+  const openApp = document.getElementById('fuelHomeOpenApp');
+  if (start) start.onclick = () => startFuelTrip();
+  if (pause) pause.onclick = () => document.getElementById('btnPause')?.click();
+  if (stop) stop.onclick = () => document.getElementById('btnStop')?.click();
+  if (fill) fill.onclick = () => openFillSheet();
+  if (openApp) openApp.onclick = () => openFuelApp();
+  home.querySelectorAll('[data-vid]').forEach((b) => {
+    b.onclick = () => {
+      const id = Number(b.dataset.vid);
+      fuelSelectedVehicleId = id;
+      fuelControl('select', { vehicleId: id });
+      renderFuelHome();
+    };
+  });
+}
+
 function paintFuelPeek() {
   const kmEl = document.getElementById('fuelPeekKm');
   const sub = document.getElementById('fuelPeekSub');
   const title = document.getElementById('fuelPeekTitle');
+  const fill = document.getElementById('fuelGaugeFill');
   const rows = loadCachedFuelTrips();
   const todayKm = rows.filter((t) => (t.start || '').slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((s, t) => s + (t.km || 0), 0);
-  if (kmEl) kmEl.textContent = todayKm > 0 ? `${todayKm.toFixed(1)} km` : '';
-  if (title) title.textContent = mapsStartedFuel ? 'Suivi Fuel' : 'Fuel';
+  const veh = activeFuelVehicle();
+  const pct = veh && veh.pct >= 0 ? veh.pct : null;
+  if (fill) fill.style.width = pct == null ? '0%' : `${pct}%`;
+  if (kmEl) kmEl.textContent = pct != null ? `${pct} %` : todayKm > 0 ? `${todayKm.toFixed(1)} km` : '';
+  if (title) title.textContent = mapsStartedFuel ? 'Trajet en cours' : veh ? veh.name : 'Fuel';
   if (sub) {
     sub.textContent = mapsStartedFuel
-      ? `${liveFuelKm().toFixed(1)} km · Pause / Plein / Arrêter`
-      : 'trajets, pleins, garage — GPS Fuel en fond';
+      ? `${liveFuelKm().toFixed(1)} km · pause / plein / arrêter`
+      : pct != null
+        ? `Jauge réservoir ${pct} % · tap pour Fuel`
+        : 'Tap : véhicules, plein, budget';
   }
 }
 
@@ -2828,12 +3031,12 @@ function paintFuelSheetBody() {
   if (which === 'trips') {
     body.innerHTML =
       `<div class="row" style="margin-bottom:10px">` +
-      `<button type="button" class="act primary" id="sheetTrack">Suivi libre</button>` +
+      `<button type="button" class="act primary" id="sheetTrack">Démarrer un trajet</button>` +
       `<button type="button" class="act ghost" id="sheetRefresh">Actualiser</button></div>` +
       `<div id="fuelTripList"></div>`;
     const st = document.getElementById('sheetTrack');
     const rf = document.getElementById('sheetRefresh');
-    if (st) st.onclick = () => { closeFuelSheet(); startFreeTracking(); };
+    if (st) st.onclick = () => { closeFuelSheet(); startFuelTrip(); };
     if (rf) rf.onclick = () => requestFuelHistory(true);
     renderFuelTripList();
     return;
@@ -2931,7 +3134,7 @@ function renderSettings() {
     `<button type="button" class="choice${dock ? '' : ' on'}" data-set="dock" data-val="0">Off</button></div></div>` +
     `<div class="set-row"><div><div class="lab">Mise à jour</div><div class="hint">Installer depuis Maps, sans Chrome</div></div>` +
     `<div class="seg"><button type="button" class="choice" data-set="update">Vérifier</button></div></div>` +
-    `<div class="set-row"><div><div class="lab">Comparer Fuel</div><div class="hint">Mix 2+7+10 (défaut) et les autres pistes</div></div>` +
+    `<div class="set-row"><div><div class="lab">Comparer Fuel</div><div class="hint">Pistes UX (onglet Fuel intégré par défaut)</div></div>` +
     `<div class="seg"><button type="button" class="choice" data-set="fuelux">Ouvrir</button></div></div>` +
     `<div class="set-row"><div><div class="lab">Cartes hors ligne</div><div class="hint">Télécharger une zone (Maison, ici…)</div></div>` +
     `<div class="seg"><button type="button" class="choice" data-set="goto-offline">Ouvrir</button></div></div>`;
@@ -3079,7 +3282,9 @@ function setTab(id) {
   }
   activeTab = id;
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === id));
-  panelFuel.hidden = id !== 'trips';
+  const pageFuel = document.getElementById('pageFuel');
+  if (pageFuel) pageFuel.hidden = id !== 'trips';
+  panelFuel.hidden = true;
   pageSaved.hidden = id !== 'saved';
   if (pageSettings) pageSettings.hidden = id !== 'settings';
   if (pageOffline) pageOffline.hidden = id !== 'offline';
@@ -3087,8 +3292,8 @@ function setTab(id) {
   const overlay = id === 'saved' || id === 'settings' || id === 'offline' || id === 'fuelux';
   topChrome.style.visibility = overlay ? 'hidden' : '';
   roadSignEl.hidden = overlay;
-  btnHere.hidden = id !== 'maps';
-  if (id !== 'maps') {
+  btnHere.hidden = id !== 'maps' && id !== 'trips';
+  if (id !== 'maps' && id !== 'trips') {
     sheetEl.hidden = true;
     if (altsEl) altsEl.hidden = true;
   } else if (navigating) {
@@ -3099,7 +3304,8 @@ function setTab(id) {
   if (id === 'saved') renderSaved();
   if (id === 'trips') {
     syncChromeHeight();
-    requestFuelHistory();
+    renderFuelHome();
+    requestFuelSnapshot();
   }
   if (id === 'settings') renderSettings();
   if (id === 'offline') renderOffline();
@@ -3331,6 +3537,10 @@ drawer.addEventListener('click', (e) => {
   const go = item.dataset.go;
   if (go === 'maps' || go === 'trips' || go === 'saved') setTab(go);
   else if (go === 'fuel') setTab('trips');
+  else if (go === 'fuelapp') {
+    closeDrawer();
+    openFuelApp();
+  }
   else if (go === 'music') {
     closeDrawer();
     openMusicSheet();
@@ -3357,6 +3567,18 @@ document.getElementById('tabs').addEventListener('click', (e) => {
   if (!tab) return;
   setTab(tab.dataset.tab);
 });
+const fuelPageSub = document.getElementById('fuelPageSub');
+if (fuelPageSub) {
+  fuelPageSub.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-fpage]');
+    if (!b) return;
+    fuelPageTab = b.dataset.fpage || 'home';
+    fuelPageSub.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    renderFuelHome();
+  });
+}
+const btnFuelPageBack = document.getElementById('btnFuelPageBack');
+if (btnFuelPageBack) btnFuelPageBack.addEventListener('click', () => setTab('maps'));
 
 savedList.addEventListener('click', (e) => {
   const edit = e.target.closest('.place-edit');
@@ -3393,13 +3615,14 @@ document.getElementById('btnFuelClose').addEventListener('click', () => {
   setTab('maps');
 });
 document.getElementById('btnFuelOpen').addEventListener('click', () => {
-  location.href = fuelUrl('maps');
+  openFuelApp();
 });
 document.getElementById('btnFuelRefresh').addEventListener('click', () => {
   requestFuelHistory(true);
+  requestFuelSnapshot();
 });
 document.getElementById('btnFuelTrack').addEventListener('click', () => {
-  startFreeTracking();
+  startFuelTrip();
 });
 const btnFuelUx = document.getElementById('btnFuelUx');
 if (btnFuelUx) btnFuelUx.addEventListener('click', () => setTab('fuelux'));
@@ -3416,7 +3639,7 @@ if (fuelUxBody) {
   });
 }
 const fuelPeek = document.getElementById('fuelPeek');
-if (fuelPeek) fuelPeek.addEventListener('click', () => openFuelSheet());
+if (fuelPeek) fuelPeek.addEventListener('click', () => setTab('trips'));
 const btnFuelSheetClose = document.getElementById('btnFuelSheetClose');
 if (btnFuelSheetClose) btnFuelSheetClose.addEventListener('click', () => closeFuelSheet());
 const fuelSub = document.getElementById('fuelSub');
@@ -3441,7 +3664,7 @@ if (fuelFab && fuelRadial) {
     fuelRadial.hidden = true;
     fuelRadial.classList.remove('open');
     const a = b.dataset.rad;
-    if (a === 'start') startFreeTracking();
+    if (a === 'start') startFuelTrip();
     else if (a === 'fill') {
       const fillSheet = document.getElementById('fillSheet');
       if (fillSheet) fillSheet.hidden = false;
@@ -3510,8 +3733,8 @@ function applyFuelFromQuery() {
   if (tripId) {
     fuelTrip = tripId;
     paused = false;
-    showFuelBar(`Suivi Fuel · trajet ${tripId}`);
-    lastDest = { lat: me?.lat || 0, lon: me?.lon || 0, label: `Suivi Fuel ${tripId}` };
+    showFuelBar(`Trajet Fuel · ${tripId}`);
+    lastDest = { lat: me?.lat || 0, lon: me?.lon || 0, label: `Trajet Fuel ${tripId}` };
     searchForm.hidden = true;
     navBar.hidden = false;
     chipsEl.hidden = true;
@@ -3519,7 +3742,7 @@ function applyFuelFromQuery() {
     const titleEl = document.getElementById('hudTitle');
     const metaEl = document.getElementById('hudMeta');
     const distEl = document.getElementById('hudDist');
-    if (titleEl) titleEl.textContent = 'Suivi libre';
+    if (titleEl) titleEl.textContent = 'Trajet Fuel';
     if (metaEl) metaEl.textContent = `trajet Fuel ${tripId}`;
     if (distEl) distEl.textContent = 'GPS';
     navigating = true;
@@ -3533,10 +3756,17 @@ function openFillSheet() {
   const sheet = document.getElementById('fillSheet');
   if (!sheet) return;
   sheet.hidden = false;
+  const hint = document.getElementById('fillSheetHint');
+  const veh = activeFuelVehicle();
+  if (hint) {
+    hint.textContent = veh
+      ? `${veh.name}${mapsStartedFuel ? ' · lié au trajet en cours' : ''} — litres ou montant suffisent.`
+      : 'Litres ou montant. Le plein va sur le véhicule Fuel actif.';
+  }
   const st = document.getElementById('fillStation');
-  if (st && !st.value) {
-    const name = document.getElementById('roadName')?.textContent;
-    if (name && name !== '…' && name !== '—') st.value = name;
+  if (st) {
+    const cur = (st.value || '').trim();
+    if (!cur || /^\d+$/.test(cur)) st.value = '';
   }
   document.getElementById('fillLiters')?.focus();
 }
@@ -3554,12 +3784,18 @@ function saveFillFromSheet() {
     toast('Indique les litres ou le montant.');
     return;
   }
-  paused = true;
-  document.getElementById('btnPause').textContent = 'Reprendre';
-  stopNavWatch();
-  fuelControl('fill', { liters, total, station });
+  const extra = { liters, total, station };
+  const veh = activeFuelVehicle();
+  if (veh) extra.vehicleId = veh.id;
+  if (mapsStartedFuel) {
+    paused = true;
+    const pauseBtn = document.getElementById('btnPause');
+    if (pauseBtn) pauseBtn.textContent = 'Reprendre';
+    stopNavWatch();
+  }
+  fuelControl('fill', extra);
   closeFillSheet();
-  toast('Plein envoyé à Fuel — tu restes dans Maps.');
+  toast('Plein envoyé — tu restes dans Maps.');
 }
 
 window.__mapsFuelEvent = function (raw) {
@@ -3567,6 +3803,18 @@ window.__mapsFuelEvent = function (raw) {
     const q = new URLSearchParams(String(raw || '').replace(/^\?/, ''));
     const pack = q.get('trips');
     if (pack) applyFuelTripPack(pack);
+    const snapPack = q.get('snap');
+    if (snapPack) {
+      const parsed = parseFuelSnapPack(snapPack);
+      if (parsed) {
+        saveFuelSnap(parsed);
+        const act = (parsed.vehicles || []).find((v) => v.active);
+        if (act) fuelSelectedVehicleId = act.id;
+        lastFuelSnapAt = Date.now();
+        paintFuelPeek();
+        if (activeTab === 'trips') renderFuelHome();
+      }
+    }
     const ok = q.get('ok') !== '0';
     const started = q.get('started');
     const id = q.get('tripId');
@@ -3574,7 +3822,7 @@ window.__mapsFuelEvent = function (raw) {
     if (Number.isFinite(kmQ) && kmQ > 0) fuelLiveKm = kmQ;
     if (id && Number(id) > 0) {
       fuelTrip = id;
-      showFuelBar(`Suivi Fuel · trajet ${id}`);
+      showFuelBar(`Trajet Fuel · ${id}`);
       if (!navigating && !hudCollapsed) {
         enterFreeHud(id);
       } else {
@@ -3583,7 +3831,7 @@ window.__mapsFuelEvent = function (raw) {
       }
     }
     const msg = q.get('msg');
-    if (msg && msg !== 'Historique Fuel') toast(msg);
+    if (msg && msg !== 'Historique Fuel' && msg !== 'Fuel') toast(msg);
     if (!ok) {
       mapsStartedFuel = false;
       stopFuelPoll();
@@ -3682,6 +3930,9 @@ function musicEmptyArtist(s) {
 function applyMusicState(s) {
   if (!s || typeof s !== 'object') return;
   lastMusicState = s;
+  if (s.playing && document.body.classList.contains('music-off')) {
+    setMusicDock(true);
+  }
   const glyph = s.playing ? '❚❚' : '▶';
   const title = document.getElementById('musicTitle');
   const artist = document.getElementById('musicArtist');
@@ -3771,4 +4022,5 @@ if (nativeMusic) {
       }
     });
   }
+  window.setTimeout(() => requestFuelSnapshot(), 1800);
 })();

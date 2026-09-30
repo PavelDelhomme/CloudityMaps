@@ -229,6 +229,12 @@
       background: #1a1a2e; box-shadow: 0 -2px 8px rgba(0,0,0,.4);
     }
     .sheet { left: 12px; right: 12px; bottom: calc(var(--chrome) + 16px); border-radius: 16px; padding: 14px; width: auto; z-index: 1210; }
+    #fillSheet {
+      z-index: 4000; top: calc(56px + env(safe-area-inset-top, 0px)); bottom: auto;
+      max-height: 72vh; overflow-y: auto;
+      background: #1a1a2e;
+    }
+    body.kb #fillSheet { top: 8px; }
     .sheet strong { display: block; color: #f1f5f9; }
     .sheet span { color: #94a3b8; font-size: 13px; }
     .sheet .go, .alts .go, .route-card .go {
@@ -303,17 +309,17 @@
       background: #fbbf24; color: #1a1a2e; font-weight: 800; cursor: pointer;
     }
     .fuel-peek {
-      display: none; position: absolute; z-index: 1205; left: 10px; right: 10px;
+      display: none !important; position: absolute; z-index: 1205; left: 10px; right: 10px;
       bottom: var(--chrome); background: #1a1a2e; border-radius: 16px 16px 0 0;
       padding: 8px 12px 10px; border: 1px solid #2d2d44; border-bottom: 0;
     }
-    body.fux-mix .fuel-peek, body.fux-2 .fuel-peek, body.fux-10 .fuel-peek { display: block; }
+    body:has(#pageFuel:not([hidden])) .fuel-peek { display: none !important; }
     body.fux-mix:has(#fuel:not([hidden])) .fuel-peek,
     body.fux-7:has(#fuel:not([hidden])) .fuel-peek { display: none; }
     .fuel-peek .handle { width: 36px; height: 4px; border-radius: 4px; background: #334155; margin: 0 auto 8px; }
     .peek-row { display: flex; align-items: center; gap: 10px; }
     .gauge-mini { width: 42px; height: 10px; border-radius: 99px; background: #0f172a; overflow: hidden; flex-shrink: 0; }
-    .gauge-mini i { display: block; height: 100%; width: 62%; background: #1a73e8; }
+    .gauge-mini i { display: block; height: 100%; width: 0; background: #e94560; }
     .peek-row strong { display: block; font-size: 13px; }
     .peek-row span { color: #94a3b8; font-size: 11px; }
     .peek-km { margin-left: auto; font-weight: 800; color: #e94560; font-size: 13px; }
@@ -330,8 +336,6 @@
       border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700;
     }
     .fuel-sub button.on { background: #3f1d2e; border-color: #e94560; color: #fff; }
-    body.fux-mix .tab[data-tab="trips"], body.fux-2 .tab[data-tab="trips"], body.fux-10 .tab[data-tab="trips"],
-    body.fux-7 .tab[data-tab="trips"] { display: none; }
     body.fux-mix #btnFuelOpen, body.fux-10 #btnFuelOpen { display: none; }
     body.fux-6 .fuel-fab { display: grid; }
     .fuel-fab {
@@ -363,6 +367,40 @@
     .ux-card b { display: block; margin-bottom: 4px; }
     .ux-card span { color: #94a3b8; font-size: 12px; }
     .avatar.gauge { font-size: 9px; font-weight: 800; }
+    .fuel-home { padding: 0; }
+    .fuel-gauge-card {
+      background: #16213e; border: 1px solid #2d2d44; border-radius: 16px; padding: 14px 16px; margin: 0 0 12px;
+    }
+    .fuel-gauge-card .lab { color: #94a3b8; font-size: 12px; font-weight: 700; }
+    .fuel-gauge-card .pct { font-size: 28px; font-weight: 800; letter-spacing: -.04em; margin: 4px 0; }
+    .fuel-gauge-card .bar { height: 10px; border-radius: 99px; background: #0f172a; overflow: hidden; }
+    .fuel-gauge-card .bar i { display: block; height: 100%; background: #e94560; }
+    .fuel-veh-row { display: flex; gap: 8px; overflow-x: auto; margin: 0 0 12px; scrollbar-width: none; }
+    .fuel-veh {
+      flex-shrink: 0; border: 1px solid #2d2d44; background: #16213e; color: #f1f5f9;
+      border-radius: 999px; padding: 8px 12px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .fuel-veh.on { border-color: #e94560; background: #3f1d2e; }
+    .fuel-actions { display: grid; gap: 8px; margin: 0; }
+    .fuel-actions button {
+      width: 100%; border: 0; border-radius: 14px; padding: 13px; font-weight: 800; font-size: 15px; cursor: pointer;
+    }
+    .fuel-actions.live {
+      grid-template-columns: 1fr 1fr;
+    }
+    .fuel-actions.live #fuelHomeFill { grid-column: 1 / -1; }
+    .fuel-item {
+      display: block; width: 100%; text-align: left; background: transparent;
+      border: 0; border-bottom: 1px solid #2d2d44; color: #f1f5f9; padding: 12px 0;
+    }
+    .fuel-item small { display: block; color: #94a3b8; margin-top: 2px; }
+    .fuel-budget .amt { font-size: 22px; font-weight: 800; }
+    .page-fuel-sub { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 12px; }
+    .page-fuel-sub button {
+      flex-shrink: 0; border: 1px solid #2d2d44; background: #16213e; color: #cbd5e1;
+      border-radius: 999px; padding: 7px 12px; font-size: 12px; font-weight: 700;
+    }
+    .page-fuel-sub button.on { background: #3f1d2e; border-color: #e94560; color: #fff; }
     .row { display: flex; gap: 8px; }
     .ghost { background: #16213e; color: #f1f5f9; }
     .primary { background: #e94560; color: #fff; }
@@ -375,7 +413,7 @@
     .chrome {
       padding: 0 0 calc(6px + env(safe-area-inset-bottom));
       border-top: 1px solid #2d2d44;
-      z-index: 1200;
+      z-index: 1800;
       transform: none !important;
       pointer-events: auto;
     }
@@ -399,14 +437,16 @@
       color: #94a3b8; font-size: 18px; cursor: pointer; flex-shrink: 0;
     }
     .music-peek {
-      position: absolute; z-index: 1201; left: 12px; right: auto;
+      position: absolute; z-index: 1305; left: auto; right: 12px;
       bottom: calc(var(--chrome) + 12px);
-      width: 40px; height: 40px; border-radius: 20px; border: 1px solid #2d2d44;
-      background: #1a1a2e; color: #e94560; font-size: 16px; cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0,0,0,.4);
+      width: 44px; height: 44px; border-radius: 22px; border: 1px solid #2d2d44;
+      background: #1a1a2e; color: #e94560; font-size: 18px; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,.45);
     }
     body.music-off.fuel-live .music-peek {
-      bottom: calc(var(--chrome) + 72px);
+      /* À gauche du bouton recentrer Fuel. */
+      bottom: calc(var(--chrome) + 78px);
+      right: 68px;
     }
     body:not(.music-off) .music-peek { display: none !important; }
     .music-sheet {
@@ -440,9 +480,32 @@
     .tab .ic { display: block; font-size: 18px; line-height: 1.2; }
     .tab.on { color: #e94560; }
     .page {
-      position: absolute; z-index: 1600; left: 0; right: 0; top: 0; bottom: 0;
+      position: absolute; z-index: 1150; left: 0; right: 0; top: 0; bottom: 0;
       background: #0f0f1a; display: flex; flex-direction: column;
       padding-bottom: var(--chrome);
+    }
+    /* Fuel : carte + barre Maps restent. Plus un écran « 2e app » ni liste de trajets. */
+    #pageFuel {
+      top: auto;
+      bottom: var(--chrome);
+      background: transparent;
+      padding-bottom: 0;
+      pointer-events: none;
+      z-index: 1160;
+    }
+    #pageFuel .page-head { display: none; }
+    #pageFuel .page-body {
+      flex: none;
+      overflow: visible;
+      padding: 0 10px 8px;
+      pointer-events: auto;
+    }
+    .fuel-panel {
+      background: #1a1a2e;
+      border: 1px solid #2d2d44;
+      border-radius: 20px;
+      padding: 12px 14px 14px;
+      box-shadow: 0 -6px 24px rgba(0,0,0,.5);
     }
     .page-head {
       display: flex; align-items: center; gap: 4px;
@@ -453,6 +516,7 @@
     .page-actions { display: flex; gap: 8px; padding: 12px 16px 4px; }
     .page-body { flex: 1; overflow-y: auto; padding: 4px 16px 24px; }
     .page-hint { color: #94a3b8; font-size: 13px; margin: 8px 0 4px; }
+    body:has(#pageFuel:not([hidden])) .fuel-peek { display: none !important; }
     .scrim {
       position: absolute; inset: 0; z-index: 2000; background: rgba(0,0,0,.45); border: 0; padding: 0;
     }
@@ -540,8 +604,8 @@
     <button type="button" class="ghost" id="musicSheetOpenApp" style="width:100%;border:0;border-radius:999px;padding:10px;font-weight:700;cursor:pointer">Ouvrir l’app Music</button>
   </div>
   <div class="sheet" id="fillSheet" hidden>
-    <strong>Plein Fuel</strong>
-    <span>Enregistré dans Hubera Fuel, sans quitter Maps.</span>
+    <strong>Enregistrer un plein</strong>
+    <span id="fillSheetHint">Dans Hubera Fuel, sans quitter Maps. Lié au trajet en cours si tu roules.</span>
     <input id="fillLiters" type="number" inputmode="decimal" placeholder="Litres" />
     <input id="fillTotal" type="number" inputmode="decimal" placeholder="Montant €" />
     <input id="fillStation" type="text" placeholder="Station (optionnel)" />
@@ -560,6 +624,15 @@
       <button type="button" class="fill" id="btnFill">Plein</button>
     </div>
   </div>
+  <div class="page" id="pageFuel" hidden>
+    <div class="page-head">
+      <button type="button" class="ico" id="btnFuelPageBack" aria-label="Retour carte">←</button>
+      <h1>Fuel</h1>
+    </div>
+    <div class="page-body">
+      <div class="fuel-home" id="fuelHome"></div>
+    </div>
+  </div>
   <div class="panel" id="panelFuel" hidden>
     <div class="panel-head">
       <h2>Trajets Fuel</h2>
@@ -567,9 +640,9 @@
     </div>
     <p>Suivi GPS et historique — tu restes dans Maps. La croix ferme ce panneau. ✕ dans le guidage n’arrête pas le trajet Fuel.</p>
     <div class="row">
-      <button type="button" class="act ghost" id="btnFuelOpen">Ouvrir Fuel</button>
+      <button type="button" class="act ghost" id="btnFuelOpen">Ouvrir Hubera Fuel</button>
       <button type="button" class="act ghost" id="btnFuelRefresh">Actualiser</button>
-      <button type="button" class="act primary" id="btnFuelTrack">Suivi libre</button>
+      <button type="button" class="act primary" id="btnFuelTrack">Démarrer un trajet</button>
     </div>
     <div id="fuelTripListPanel"></div>
   </div>
@@ -616,8 +689,8 @@
     </div>
     <div class="tabs" id="tabs">
       <button type="button" class="tab on" data-tab="maps"><span class="ic">🗺️</span>Maps</button>
-      <button type="button" class="tab" data-tab="trips"><span class="ic">⛽</span>Trajets Fuel</button>
-      <button type="button" class="tab" data-tab="saved"><span class="ic">★</span>Enregistrés</button>
+      <button type="button" class="tab" data-tab="trips"><span class="ic">⛽</span>Fuel</button>
+      <button type="button" class="tab" data-tab="saved"><span class="ic">★</span>Enreg.</button>
     </div>
   </div>
   <button type="button" class="music-peek" id="musicPeek" hidden title="Afficher Music" aria-label="Réafficher Hubera Music">♪</button>
@@ -632,7 +705,7 @@
     </div>
     <div class="d-label">Navigation</div>
     <button type="button" class="d-item" data-go="maps">Maps</button>
-    <button type="button" class="d-item" data-go="trips">Trajets Fuel</button>
+    <button type="button" class="d-item" data-go="trips">Fuel dans Maps</button>
     <button type="button" class="d-item" data-go="saved">Lieux enregistrés</button>
     <button type="button" class="d-item" data-go="contacts">Hubera Contacts</button>
     <div class="d-label">Compte</div>
@@ -640,7 +713,7 @@
     <button type="button" class="d-item" data-go="settings">Paramètres</button>
     <button type="button" class="d-item" data-go="offline">Cartes hors ligne</button>
     <div class="d-label">Apps</div>
-    <button type="button" class="d-item" data-go="fuel">Hubera Fuel</button>
+    <button type="button" class="d-item" data-go="fuelapp">Ouvrir l’app Fuel</button>
     <button type="button" class="d-item" data-go="music">Hubera Music</button>
   </aside>
   <div class="dev-fuel-bar" id="devFuelBar">
@@ -653,7 +726,7 @@
       <div class="gauge-mini"><i id="fuelGaugeFill"></i></div>
       <div>
         <strong id="fuelPeekTitle">Fuel</strong>
-        <span id="fuelPeekSub">tire pour trajets, pleins, garage</span>
+        <span id="fuelPeekSub">jauge du réservoir · tap pour Fuel</span>
       </div>
       <div class="peek-km" id="fuelPeekKm"></div>
     </div>

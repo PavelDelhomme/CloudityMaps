@@ -1,5 +1,42 @@
 # Hubera Maps — versions
 
+## 0.1.56 (30 sept. 2026)
+- Onglet Fuel : jauge, véhicule, démarrer, plein — plus d’historique ni d’écran « 2e app ».
+- Plus de flash splash / dialogue MAJ quand Maps parle à Fuel en silencieux.
+
+## 0.1.55 (30 sept. 2026)
+- Ouvrir Hubera Fuel : lance l’app Accueil (plus d’écran blanc laissé par le GPS silencieux).
+
+## 0.1.54 (30 sept. 2026)
+- Maps = démarrer / suivre un trajet. Hubera Fuel (l’app) = garage, pleins, budget, conso.
+- Menu « Hubera Fuel » ouvre l’app dédiée, plus un clone Fuel dans Maps.
+
+## 0.1.53 (30 sept. 2026)
+- Plein : plus de « 30 » (limite de vitesse) dans le champ station. Formulaire sous la barre d’état.
+
+## 0.1.52 (30 sept. 2026)
+- Onglet Fuel dédié dans Maps (jauge, véhicule, plein, garage, budget) — plus d’ouverture d’une 2e app.
+- Le 62 % à côté de la recherche n’était pas la batterie : faux badge. Avatar = initiale. La jauge réelle est dans Fuel.
+- Démarrer un trajet = choix du véhicule, plus de « suivi libre ». Plein possible pendant le trajet.
+
+## 0.1.51 (30 sept. 2026)
+- Dock Music : reconnecte la session si Music a redémarré (plus de « Rien en cours » alors que ça joue).
+
+## 0.1.50 (29 sept. 2026)
+- Bouton ♪ Music à gauche du recentrer Fuel (plus par-dessus).
+
+## 0.1.49 (29 sept. 2026)
+- Dock Music : réaffichage auto dès qu’un titre joue ; bouton ♪ à droite (plus caché par Fuel).
+- Précédent = vrai titre précédent (plus de restart de la piste en cours).
+
+## 0.1.48 (29 sept. 2026)
+- Disque limite : proxy `maps.hubera.cloud/overpass`, lookup natif en parallèle (plus de file d’attente 36 s), arguments String (WebView).
+- Repli JS vers le même proxy (CORS *) si le pont natif rate.
+
+## 0.1.47 (29 sept. 2026)
+- À la maison / au travail : le pin enregistré se cache (plus de superposition avec le point bleu).
+- Limitation de vitesse : 3e Overpass, retry plus rapide si le disque reste « — ».
+
 ## 0.1.46 (29 sept. 2026)
 - Fuel dans Maps en prod : mix feuille + HUD + GPS Fuel invisible (`com.gasoiltracking.app` inchangé).
 - Pause / Arrêter / Plein lisibles (plus masqués par Music).
