@@ -32,12 +32,12 @@ class FuelBridge(private val context: Context) {
     }
 
     /** Ouvre Hubera Fuel pour de vrai (garage, pleins, budget) — Maps ne reprend pas le premier plan.
-     *  Si Fuel n’est pas installé : page d’install indépendante (APK). */
+     *  Prefere cloud.hubera.fuel (le compte owner) si les deux APK sont installes. */
     @JavascriptInterface
     fun openApp() {
         main.post {
             cancelBringBack()
-            val pkg = installedFuelPkg(preferNew = false)
+            val pkg = installedFuelPkg(preferNew = true)
             if (pkg != null) {
                 val launch = context.packageManager.getLaunchIntentForPackage(pkg) ?: return@post
                 launch.addFlags(
@@ -87,14 +87,16 @@ class FuelBridge(private val context: Context) {
                     if (v.isNotBlank()) putString(key, v)
                 }
             }
-            for (pkg in FUEL_PKGS) {
+            val targets = listOfNotNull(installedFuelPkg(preferNew = true)).ifEmpty { FUEL_PKGS }
+            for (pkg in targets) {
                 val bcast = Intent(ACTION_MAPS_CONTROL).apply {
                     setPackage(pkg)
                     putExtras(extras)
+                    addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
                 }
                 runCatching { context.sendBroadcast(bcast) }
             }
-            android.util.Log.i("FuelBridge", "control $act broadcast, pas d'Activity")
+            android.util.Log.i("FuelBridge", "control $act broadcast ${targets.joinToString()} , pas d'Activity")
         }
     }
 

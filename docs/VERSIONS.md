@@ -1,5 +1,16 @@
 # Hubera Maps — versions
 
+## 0.1.68 (1er oct. 2026)
+- **Ouvrir Hubera Fuel** : pastille rouge Hubera (plus le bouton ghost gris). Lance `cloud.hubera.fuel` en priorité (plus l’ancien package si les deux sont installés).
+- Garage Maps : nom du véhicule du compte, chips sélectionnables, véhicule **actif Fuel** pré-sélectionné. Snapshot forcé à l’ouverture de l’onglet.
+- Dock Music : précédent / suivant via la session Media3 Hubera (plus de double skip ni touche média globale si connecté). Boutons next/prev au design Hubera.
+
+## 0.1.67 (1er oct. 2026)
+- Overlay production A+B, Fuel, dock Music. Signature debug `3cf6c532`. MAJ jamais forcée.
+
+## 0.1.66 (1er oct. 2026)
+- Alignement install / OTA package `cloud.hubera.maps`.
+
 ## 0.1.65 (1er oct. 2026)
 - Itinéraire : points A/B remplacés par des **points** avec le **nom en dessous** (Domicile, Intermarché, ou n° de rue).
 - Carte type Google Maps : champ **départ** (nom + adresse) au-dessus de **arrivée**, bouton **inverser**.

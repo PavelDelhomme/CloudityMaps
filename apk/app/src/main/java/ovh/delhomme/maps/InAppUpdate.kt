@@ -30,6 +30,23 @@ class InAppUpdate(private val activity: Activity) {
                 activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0"
             }.getOrElse { "0" }
             val feed = fetchFeed() ?: return@Thread
+            val remotePkg = feed.optString("package")
+            if (remotePkg.isNotBlank() && remotePkg != activity.packageName) {
+                val canon = feed.optJSONObject("canonical")
+                if (canon != null && canon.optString("package") == activity.packageName) {
+                    val cv = canon.optString("version")
+                    if (cv.isBlank() || !isNewer(cv, local)) return@Thread
+                    val notes = canon.optString("notes").ifBlank {
+                        feed.optString("notes").ifBlank { "Nouvelle version Hubera Maps." }
+                    }
+                    val apkUrl = canon.optString("apk_url").ifBlank { canon.optString("apk") }
+                    val sha = canon.optString("sha256")
+                    if (apkUrl.isBlank()) return@Thread
+                    main.post { showDialog(cv, notes, apkUrl, sha) }
+                    return@Thread
+                }
+                return@Thread
+            }
             val remote = feed.optString("version")
             if (remote.isBlank() || !isNewer(remote, local)) return@Thread
             if (snoozed(remote, local)) return@Thread

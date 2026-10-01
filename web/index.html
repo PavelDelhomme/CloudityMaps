@@ -475,6 +475,12 @@
       grid-template-columns: 1fr 1fr;
     }
     .fuel-actions.live #fuelHomeFill { grid-column: 1 / -1; }
+    .hubera-open {
+      display: block; width: 100%; border: 0; border-radius: 999px;
+      padding: 13px 16px; margin-top: 12px; font-weight: 800; font-size: 15px;
+      background: #e94560; color: #fff; cursor: pointer;
+    }
+    .hubera-open:active { filter: brightness(1.08); }
     .fuel-item {
       display: block; width: 100%; text-align: left; background: transparent;
       border: 0; border-bottom: 1px solid #2d2d44; color: #f1f5f9; padding: 12px 0;
@@ -514,8 +520,8 @@
     .music .artist { color: #94a3b8; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .music .ctrls { display: flex; gap: 2px; flex-shrink: 0; }
     .music .ctrls button {
-      width: 52px; height: 52px; border: 0; border-radius: 26px; background: transparent;
-      color: #f1f5f9; font-size: 20px; cursor: pointer;
+      width: 48px; height: 48px; border: 0; border-radius: 24px; background: #16213e;
+      color: #f1f5f9; font-size: 18px; cursor: pointer;
     }
     .music .ctrls button.play { width: 56px; height: 56px; background: #e94560; color: #fff; font-size: 18px; }
     .music .hide {
@@ -690,7 +696,7 @@
       <button type="button" class="play" id="musicSheetPlay" title="Lecture / pause" aria-label="Lecture ou pause">▶</button>
       <button type="button" id="musicSheetNext" title="Suivant" aria-label="Suivant">⏭</button>
     </div>
-    <button type="button" class="ghost" id="musicSheetOpenApp" style="width:100%;border:0;border-radius:999px;padding:10px;font-weight:700;cursor:pointer">Ouvrir l’app Music</button>
+    <button type="button" class="hubera-open" id="musicSheetOpenApp">Ouvrir Hubera Music</button>
   </div>
   <div class="sheet" id="fillSheet" hidden>
     <strong>Enregistrer un plein</strong>
@@ -729,7 +735,7 @@
     </div>
     <p>Suivi GPS et historique — tu restes dans Maps. La croix ferme ce panneau. ✕ dans le guidage n’arrête pas le trajet Fuel.</p>
     <div class="row">
-      <button type="button" class="act ghost" id="btnFuelOpen">Ouvrir Hubera Fuel</button>
+      <button type="button" class="act primary" id="btnFuelOpen">Ouvrir Hubera Fuel</button>
       <button type="button" class="act ghost" id="btnFuelRefresh">Actualiser</button>
       <button type="button" class="act primary" id="btnFuelTrack">Démarrer un trajet</button>
     </div>

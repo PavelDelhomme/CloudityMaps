@@ -10,9 +10,24 @@ const FUEL_TRIPS_KEY = 'hubera-maps-fuel-trips';
 const FUEL_UX_KEY = 'hubera-maps-fuel-ux-dev';
 const FUEL_SNAP_KEY = 'hubera-maps-fuel-snap';
 const FUEL_LOGO_KEY = 'hubera-maps-fuel-logo';
+const FUEL_VEH_KEY = 'hubera-maps-fuel-veh';
 const PLACES_CACHE_KEY = 'hubera-maps-osm-places-v1';
 let fuelPageTab = 'home';
-let fuelSelectedVehicleId = 0;
+function loadSelectedFuelVehicleId() {
+  const n = Number(localStorage.getItem(FUEL_VEH_KEY) || '0');
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function setSelectedFuelVehicle(id) {
+  const n = Number(id);
+  fuelSelectedVehicleId = Number.isFinite(n) && n > 0 ? n : 0;
+  try {
+    if (fuelSelectedVehicleId) localStorage.setItem(FUEL_VEH_KEY, String(fuelSelectedVehicleId));
+    else localStorage.removeItem(FUEL_VEH_KEY);
+  } catch {
+    /* quota */
+  }
+}
+let fuelSelectedVehicleId = loadSelectedFuelVehicleId();
 function readLastMe() {
   try {
     const p = JSON.parse(localStorage.getItem(LAST_ME_KEY) || 'null');
@@ -2440,15 +2455,22 @@ function enterFreeHud(tripId) {
 }
 
 function startFuelTrip() {
-  const veh = activeFuelVehicle();
   const list = loadFuelSnap().vehicles || [];
-  if (list.length > 1 && !fuelSelectedVehicleId && !(veh && veh.active)) {
+  if (!list.length) {
+    requestFuelSnapshot(true);
+    toast('Garage Fuel en cours de chargement…');
+    setTab('trips');
+    renderFuelHome();
+    return;
+  }
+  const veh = activeFuelVehicle();
+  if (!veh) {
     toast('Choisis d’abord le véhicule, puis démarre.');
     setTab('trips');
     renderFuelHome();
     return;
   }
-  startFreeTracking(veh && veh.id);
+  startFreeTracking(veh.id);
 }
 
 function startFreeTracking(vehicleId) {
@@ -3668,7 +3690,9 @@ function activeFuelVehicle() {
     const hit = list.find((v) => v.id === fuelSelectedVehicleId);
     if (hit) return hit;
   }
-  return list.find((v) => v.active) || list[0] || null;
+  const act = list.find((v) => v.active) || list[0] || null;
+  if (act && !fuelSelectedVehicleId) setSelectedFuelVehicle(act.id);
+  return act;
 }
 
 let lastFuelSnapAt = 0;
@@ -3705,30 +3729,63 @@ function openFuelApp() {
     location.href = 'https://fuel.hubera.cloud/install';
     return false;
   }
-  location.href = 'gasoiltracking://';
+  location.href = 'https://fuel.hubera.cloud';
   return false;
+}
+
+function applyFuelSnapDefaultVehicle(parsed) {
+  const list = (parsed && parsed.vehicles) || [];
+  if (fuelSelectedVehicleId && list.some((v) => v.id === fuelSelectedVehicleId)) return;
+  const act = list.find((v) => v.active) || list[0];
+  if (act) setSelectedFuelVehicle(act.id);
+}
+
+function vehicleChipsHtml() {
+  const snap = loadFuelSnap();
+  const veh = activeFuelVehicle();
+  const list = snap.vehicles || [];
+  if (!list.length) return '';
+  return (
+    `<div class="fuel-veh-row">` +
+    list
+      .map(
+        (v) =>
+          `<button type="button" class="fuel-veh${veh && v.id === veh.id ? ' on' : ''}" data-vid="${v.id}">${esc(v.name)}</button>`,
+      )
+      .join('') +
+    `</div>`
+  );
+}
+
+function bindFuelVehicleChips(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-vid]').forEach((b) => {
+    b.onclick = () => {
+      const id = Number(b.dataset.vid);
+      if (!Number.isFinite(id) || id <= 0) return;
+      setSelectedFuelVehicle(id);
+      fuelControl('select', { vehicleId: id });
+      renderFuelHome();
+      paintFuelSheetBody();
+      paintFuelPeek();
+    };
+  });
 }
 
 function renderFuelHome() {
   const home = document.getElementById('fuelHome');
   if (!home) return;
-  const snap = loadFuelSnap();
   const veh = activeFuelVehicle();
   const live = mapsStartedFuel || Number(fuelTrip) > 0;
   const pct = veh && veh.pct >= 0 ? veh.pct : null;
-  const chips = (snap.vehicles || [])
-    .map(
-      (v) =>
-        `<button type="button" class="fuel-veh${veh && v.id === veh.id ? ' on' : ''}" data-vid="${v.id}">${esc(v.name)}</button>`,
-    )
-    .join('');
+  const chips = vehicleChipsHtml();
   const gaugeLabel = pct != null ? `${pct} %` : '—';
   const gaugeSub = veh
     ? pct != null
-      ? `Réservoir ${pct} %`
-      : 'Jauge dès que Fuel a envoyé le snapshot'
+      ? `Réservoir ${pct} % · ${veh.name}`
+      : `${veh.name} — jauge dès le snapshot Fuel`
     : fuelAppInstalled()
-      ? 'Ouvre Hubera Fuel une fois pour le garage'
+      ? 'Chargement du véhicule de ce compte…'
       : 'Installe Hubera Fuel (app indépendante) pour le garage';
   if (!fuelAppInstalled()) {
     home.innerHTML =
@@ -3747,13 +3804,13 @@ function renderFuelHome() {
   }
   home.innerHTML =
     `<div class="fuel-panel">` +
-    (chips ? `<div class="fuel-veh-row">${chips}</div>` : '') +
+    (chips || `<p class="page-hint">Véhicule du compte Fuel — snapshot en cours.</p>`) +
     `<div class="fuel-gauge-card">` +
     `<div class="lab">${esc(veh ? veh.name : 'Véhicule')}</div>` +
     `<div class="pct">${esc(gaugeLabel)}</div>` +
     `<div class="bar"><i id="fuelHomeGaugeFill" style="width:${pct == null ? 0 : pct}%"></i></div>` +
     `<div class="lab" style="margin-top:8px">${esc(gaugeSub)}</div>` +
-    `<button type="button" class="ghost" id="fuelHomeOpenApp" style="margin-top:10px;width:100%">Ouvrir l’app Hubera Fuel</button>` +
+    `<button type="button" class="hubera-open" id="fuelHomeOpenApp">Ouvrir Hubera Fuel</button>` +
     `</div>` +
     `<div class="fuel-actions${live ? ' live' : ''}">` +
     (live
@@ -3773,14 +3830,7 @@ function renderFuelHome() {
   if (stop) stop.onclick = () => fuelStopTracking();
   if (fill) fill.onclick = () => openFillSheet();
   if (openApp) openApp.onclick = () => openFuelApp();
-  home.querySelectorAll('[data-vid]').forEach((b) => {
-    b.onclick = () => {
-      const id = Number(b.dataset.vid);
-      fuelSelectedVehicleId = id;
-      fuelControl('select', { vehicleId: id });
-      renderFuelHome();
-    };
-  });
+  bindFuelVehicleChips(home);
 }
 
 function paintFuelPeek() {
@@ -3835,9 +3885,19 @@ function paintFuelSheetBody() {
     return;
   }
   if (which === 'garage') {
+    const veh = activeFuelVehicle();
+    const chips = vehicleChipsHtml();
+    requestFuelSnapshot();
     body.innerHTML =
-      `<p class="page-hint">Véhicules, jauge et CT restent dans la base Fuel. Maps les affichera ici sans ouvrir l’app.</p>` +
-      `<div class="item">Véhicule actif — données Fuel en arrière-plan</div>`;
+      `<p class="page-hint">Le véhicule actif de ton compte Fuel est pré-sélectionné. Tape un autre chip pour changer.</p>` +
+      (chips || `<div class="item">${veh ? esc(veh.name) : 'Garage Fuel — snapshot en cours'}</div>`) +
+      (veh
+        ? `<div class="fuel-gauge-card" style="margin-top:12px"><div class="lab">Véhicule sélectionné</div><div class="pct" style="font-size:20px">${esc(veh.name)}</div><div class="lab">${veh.pct >= 0 ? `Réservoir ${veh.pct} %` : 'Jauge dès le snapshot'}</div></div>`
+        : '') +
+      `<button type="button" class="hubera-open" id="sheetOpenFuel">Ouvrir Hubera Fuel</button>`;
+    const b = document.getElementById('sheetOpenFuel');
+    if (b) b.onclick = () => openFuelApp();
+    bindFuelVehicleChips(body);
     return;
   }
   body.innerHTML =
@@ -4094,7 +4154,7 @@ function setTab(id) {
   if (id === 'trips') {
     syncChromeHeight();
     renderFuelHome();
-    requestFuelSnapshot();
+    requestFuelSnapshot(true);
   }
   if (id === 'settings') renderSettings();
   if (id === 'offline') renderOffline();
@@ -4613,11 +4673,11 @@ window.__mapsFuelEvent = function (raw) {
       const parsed = parseFuelSnapPack(snapPack);
       if (parsed) {
         saveFuelSnap(parsed);
-        const act = (parsed.vehicles || []).find((v) => v.active);
-        if (act) fuelSelectedVehicleId = act.id;
+        applyFuelSnapDefaultVehicle(parsed);
         lastFuelSnapAt = Date.now();
         paintFuelPeek();
-        if (activeTab === 'trips') renderFuelHome();
+        renderFuelHome();
+        paintFuelSheetBody();
         const pending = loadPendingFuelFill();
         if (pending) {
           const wantL = Number(String(pending.liters || '').replace(',', '.'));

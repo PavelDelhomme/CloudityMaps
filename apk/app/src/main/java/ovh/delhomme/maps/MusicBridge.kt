@@ -15,9 +15,10 @@ import androidx.media3.session.SessionToken
 import org.json.JSONObject
 
 /**
- * Commande Hubera Music depuis Maps (comme YouTube Music dans Google Maps).
- * Media3 session ; poll 4 s pour le dock (batterie). Next/prev : session + touche média.
- */
+     * Commande Hubera Music depuis Maps (comme YouTube Music dans Google Maps).
+     * Media3 session ; poll 4 s pour le dock (batterie). Next/prev : session Media3 uniquement
+     * si connectee (pas de touche media globale qui double-skip / autre app).
+     */
 class MusicBridge(
     private val context: Context,
     private val web: () -> WebView?,
@@ -158,10 +159,14 @@ class MusicBridge(
             connect()
             val c = liveController()
             if (c != null) {
-                runCatching { c.seekToNextMediaItem() }
+                // seekToNext() → PlaybackService.skipToNextFromExternal (file Hubera).
+                // Pas de KEYCODE_MEDIA_* si la session est connectee : evite le double skip
+                // et de voler le focus a une autre app.
+                val ok = runCatching { c.seekToNext(); true }.getOrDefault(false)
+                if (!ok) runCatching { c.seekToNextMediaItem() }
+            } else {
+                sendKey(KeyEvent.KEYCODE_MEDIA_NEXT)
             }
-            // Debounce côté Music (220 ms) : si le MediaController ne skip pas la file.
-            sendKey(KeyEvent.KEYCODE_MEDIA_NEXT)
             main.postDelayed({
                 refreshCache()
                 pushToWeb()
@@ -176,9 +181,11 @@ class MusicBridge(
             connect()
             val c = liveController()
             if (c != null) {
-                runCatching { c.seekToPreviousMediaItem() }
+                val ok = runCatching { c.seekToPrevious(); true }.getOrDefault(false)
+                if (!ok) runCatching { c.seekToPreviousMediaItem() }
+            } else {
+                sendKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             }
-            sendKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             main.postDelayed({
                 refreshCache()
                 pushToWeb()
@@ -255,7 +262,7 @@ class MusicBridge(
     companion object {
         const val MUSIC_PKG = "cloud.hubera.music"
         const val MUSIC_PKG_LEGACY = "ovh.delhomme.ytmusic"
-        val MUSIC_PKGS = listOf(MUSIC_PKG_LEGACY, MUSIC_PKG)
+        val MUSIC_PKGS = listOf(MUSIC_PKG, MUSIC_PKG_LEGACY)
         const val MUSIC_SERVICE = "ovh.delhomme.ytmusic.player.PlaybackService"
     }
 }

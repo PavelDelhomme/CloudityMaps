@@ -2,14 +2,16 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.65",
-  "versionCode": 66,
+  "version": "0.1.68",
+  "versionCode": 69,
+  "package": "cloud.hubera.maps",
+  "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Points nommés + carte départ/arrivée type Google Maps. MAJ jamais forcée.",
-  "published_at": "2026-10-01T14:20:00Z",
-  "sha256": "cd97dbd51852db173aec4b00e350459a5e24c4df91f4f861da27b874a8fdce95"
+  "notes": "Fuel : bouton Hubera, v\u00e9hicule du compte, ouverture cloud.hubera.fuel. Music : next/prev session (pas de double skip). MAJ jamais forc\u00e9e.",
+  "published_at": "2026-10-01T20:05:00Z",
+  "sha256": "df1e3f9e756e3ed2cfb4e96ff47de65782266a38cef3837f5e758b22c2f21534"
 }
