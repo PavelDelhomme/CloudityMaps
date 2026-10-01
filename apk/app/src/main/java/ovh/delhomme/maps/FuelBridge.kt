@@ -3,6 +3,7 @@ package ovh.delhomme.maps
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
@@ -10,11 +11,9 @@ import org.json.JSONObject
 import java.util.Locale
 
 /**
- * Commande Hubera Fuel depuis Maps sans rester sur l’UI Fuel :
- * deep link silencieux. Maps ne reprend le premier plan qu’après
- * que Fuel ait eu le temps de démarrer le GPS (FGS), sinon le suivi
- * libre meurt (le vol à 320 ms tuait getCurrentLocation).
- * Fuel ramène Maps via hubera-maps://fuel ; le délai est un filet.
+ * Hubera Fuel depuis Maps.
+ * openApp() : vraiment ouvrir l’app.
+ * control() : broadcast + service headless — **jamais** d’Activity, Maps reste à l’écran.
  */
 class FuelBridge(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
@@ -25,14 +24,22 @@ class FuelBridge(private val context: Context) {
         bringBack = null
     }
 
+    private fun installedFuelPkg(preferNew: Boolean): String? {
+        val order = if (preferNew) FUEL_PKGS else FUEL_PKGS.reversed()
+        return order.firstOrNull { pkg ->
+            context.packageManager.getLaunchIntentForPackage(pkg) != null
+        }
+    }
+
     /** Ouvre Hubera Fuel pour de vrai (garage, pleins, budget) — Maps ne reprend pas le premier plan.
      *  Si Fuel n’est pas installé : page d’install indépendante (APK). */
     @JavascriptInterface
     fun openApp() {
         main.post {
             cancelBringBack()
-            val launch = context.packageManager.getLaunchIntentForPackage(FUEL_PKG)
-            if (launch != null) {
+            val pkg = installedFuelPkg(preferNew = false)
+            if (pkg != null) {
+                val launch = context.packageManager.getLaunchIntentForPackage(pkg) ?: return@post
                 launch.addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TASK or
@@ -56,7 +63,7 @@ class FuelBridge(private val context: Context) {
 
     @JavascriptInterface
     fun isInstalled(): Boolean {
-        return context.packageManager.getLaunchIntentForPackage(FUEL_PKG) != null
+        return installedFuelPkg(preferNew = true) != null
     }
 
     private fun openInstallPage() {
@@ -72,52 +79,30 @@ class FuelBridge(private val context: Context) {
             cancelBringBack()
             val extra = runCatching { JSONObject(payloadJson) }.getOrElse { JSONObject() }
             val act = action.lowercase(Locale.ROOT)
-            val b = Uri.parse("gasoiltracking://trip/control").buildUpon()
-                .appendQueryParameter("action", act)
-                .appendQueryParameter("silent", "1")
-              listOf("tripId", "dest", "liters", "total", "station", "vehicleId").forEach { key ->
-                val v = extra.optString(key)
-                if (v.isNotBlank()) b.appendQueryParameter(key, v)
-            }
-            val fuel = Intent(Intent.ACTION_VIEW, b.build()).apply {
-                setPackage(FUEL_PKG)
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
-                )
-            }
-            runCatching { context.startActivity(fuel) }
-            val task = Runnable {
-                bringBack = null
-                val back = Intent(context, MainActivity::class.java).apply {
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                            Intent.FLAG_ACTIVITY_NO_ANIMATION,
-                    )
+            val extras = Bundle().apply {
+                putString("action", act)
+                putString("silent", "1")
+                listOf("tripId", "dest", "liters", "total", "station", "vehicleId").forEach { key ->
+                    val v = extra.optString(key)
+                    if (v.isNotBlank()) putString(key, v)
                 }
-                runCatching { context.startActivity(back) }
             }
-            bringBack = task
-            main.postDelayed(task, bringBackMs(act))
+            for (pkg in FUEL_PKGS) {
+                val bcast = Intent(ACTION_MAPS_CONTROL).apply {
+                    setPackage(pkg)
+                    putExtras(extras)
+                }
+                runCatching { context.sendBroadcast(bcast) }
+            }
+            android.util.Log.i("FuelBridge", "control $act broadcast, pas d'Activity")
         }
     }
 
     companion object {
-        const val FUEL_PKG = "com.gasoiltracking.app"
+        const val FUEL_PKG = "cloud.hubera.fuel"
+        const val FUEL_PKG_LEGACY = "com.gasoiltracking.app"
+        val FUEL_PKGS = listOf(FUEL_PKG, FUEL_PKG_LEGACY)
         const val FUEL_INSTALL = "https://fuel.hubera.cloud/install"
-
-        /** start : GPS + FGS (~3–7 s). history : SQLite. le reste : instantané. */
-        fun bringBackMs(action: String): Long = when (action) {
-            "start" -> 8_000L
-            "snapshot" -> 500L
-            "history" -> 1_600L
-            "select", "vehicle" -> 500L
-            "fill" -> 900L
-            "stop" -> 1_400L
-            else -> 500L
-        }
+        const val ACTION_MAPS_CONTROL = "com.gasoiltracking.app.MAPS_CONTROL"
     }
 }

@@ -2,14 +2,14 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.58",
-  "versionCode": 59,
+  "version": "0.1.65",
+  "versionCode": 66,
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Ouvrir l\u2019app Hubera Fuel depuis le HUD. MAJ : Continuer. Jamais forc\u00e9.",
-  "published_at": "2026-09-30T18:50:00Z",
-  "sha256": "4e7e9499124073c337ab4466db99383a8d1008c8b78d0559df7fb54e78de0988"
+  "notes": "Points nommés + carte départ/arrivée type Google Maps. MAJ jamais forcée.",
+  "published_at": "2026-10-01T14:20:00Z",
+  "sha256": "cd97dbd51852db173aec4b00e350459a5e24c4df91f4f861da27b874a8fdce95"
 }

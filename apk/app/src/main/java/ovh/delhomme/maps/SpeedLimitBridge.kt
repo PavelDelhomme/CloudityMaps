@@ -40,33 +40,37 @@ class SpeedLimitBridge(
 
     private fun lookupCoords(lat: Double, lon: Double) {
         val now = System.currentTimeMillis()
-        val wait = if (lastOk) 3500L else 800L
+        val wait = if (lastOk) 4000L else 800L
         if (now - lastAt < wait) return
         lastAt = now
         io.execute {
-            val kmh = runCatching { fetch(lat, lon) }.getOrNull()
-            lastOk = kmh != null
-            Log.i(TAG, "speed lookup $lat,$lon -> $kmh")
-            if (kmh != null) push(kmh)
+            val hit = runCatching { fetch(lat, lon) }.getOrNull()
+            lastOk = hit != null
+            Log.i(TAG, "speed lookup $lat,$lon -> $hit")
+            if (hit != null) push(hit)
         }
     }
 
-    private fun push(kmh: Int) {
+    private fun push(hit: SpeedHit) {
         main.post {
             web()?.evaluateJavascript(
-                "window.__huberaSpeedLimit && window.__huberaSpeedLimit($kmh)",
+                "window.__huberaSpeedLimit && window.__huberaSpeedLimit(${hit.kmh}, ${if (hit.zone) "true" else "false"})",
                 null,
             )
         }
     }
 
-    private fun fetch(lat: Double, lon: Double): Int? {
+    private fun fetch(lat: Double, lon: Double): SpeedHit? {
         val la = String.format(java.util.Locale.US, "%.5f", lat)
         val lo = String.format(java.util.Locale.US, "%.5f", lon)
         val query =
-            "[out:json][timeout:8];way(around:200,$la,$lo)[highway];out center tags 40;"
+            "[out:json][timeout:8];(" +
+                "way(around:80,$la,$lo)[highway];" +
+                "way(around:160,$la,$lo)[\"zone:maxspeed\"];" +
+                "way(around:160,$la,$lo)[\"maxspeed:type\"];" +
+                ");out center tags 50;"
         val body = "data=" + java.net.URLEncoder.encode(query, Charsets.UTF_8.name())
-        val winner = AtomicReference<Int?>(null)
+        val winner = AtomicReference<SpeedHit?>(null)
         val latch = CountDownLatch(1)
         val pool = Executors.newFixedThreadPool(ENDPOINTS.size.coerceAtMost(4))
         try {
@@ -93,7 +97,7 @@ class SpeedLimitBridge(
             doOutput = true
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.48 (https://maps.hubera.cloud)")
+        setRequestProperty("User-Agent", "HuberaMaps/0.1.64 (https://maps.hubera.cloud)")
         }
         return try {
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
@@ -107,16 +111,16 @@ class SpeedLimitBridge(
         }
     }
 
-    private fun parse(raw: String, lat: Double, lon: Double): Int? {
+    private fun parse(raw: String, lat: Double, lon: Double): SpeedHit? {
         val root = JSONObject(raw)
         val elements = root.optJSONArray("elements") ?: return null
-        data class Cand(val dist: Double, val tagged: Int?, val implied: Int?, val urban: Boolean)
+        data class Cand(val dist: Double, val tagged: Int?, val implied: Int?, val urban: Boolean, val zone: Boolean)
         val cands = ArrayList<Cand>()
         for (i in 0 until elements.length()) {
             val el = elements.optJSONObject(i) ?: continue
             val tags = el.optJSONObject("tags") ?: continue
             val hw = tags.optString("highway")
-            if (skipPedestrian(hw)) continue
+            if (hw.isNotBlank() && skipPedestrian(hw)) continue
             val center = el.optJSONObject("center")
             val dist = if (center != null) {
                 meters(lat, lon, center.optDouble("lat"), center.optDouble("lon"))
@@ -127,21 +131,25 @@ class SpeedLimitBridge(
             val implied = impliedHighway(hw)
             if (tagged == null && implied == null) continue
             val urban = hw == "residential" || hw == "living_street" || hw == "unclassified"
-            cands.add(Cand(dist, tagged, implied, urban))
+            val zone = zoneTag(tags)
+            cands.add(Cand(dist, tagged, implied, urban, zone))
         }
         if (cands.isEmpty()) return null
         cands.sortBy { it.dist }
         val closest = cands[0]
-        closest.tagged?.let { return it }
+        closest.tagged?.let { return SpeedHit(it, closest.zone || it <= 30) }
         val zone30 = cands
             .filter { it.dist <= 220 && it.urban && it.tagged != null && it.tagged <= 30 }
             .minOfOrNull { it.tagged!! }
-        if (zone30 != null && (closest.implied == null || closest.implied == 50)) return zone30
-        return closest.implied
+        if (zone30 != null && (closest.implied == null || closest.implied == 50)) {
+            return SpeedHit(zone30, true)
+        }
+        return closest.implied?.let { SpeedHit(it, it <= 30) }
     }
 
     companion object {
         private const val TAG = "HuberaSpeed"
+        data class SpeedHit(val kmh: Int, val zone: Boolean)
         private val ENDPOINTS = listOf(
             "https://maps.hubera.cloud/overpass",
             "https://overpass-api.de/api/interpreter",
@@ -195,6 +203,13 @@ class SpeedLimitBridge(
                 parseMaxspeed(tags.optString(k).ifBlank { null })?.let { return it }
             }
             return null
+        }
+
+        private fun zoneTag(tags: JSONObject): Boolean {
+            val blob = listOf("zone:maxspeed", "maxspeed:type", "maxspeed", "source:maxspeed")
+                .joinToString(" ") { tags.optString(it) }
+                .lowercase()
+            return blob.contains("zone")
         }
 
         private fun impliedHighway(hw: String): Int? = when (hw) {

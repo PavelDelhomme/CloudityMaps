@@ -16,7 +16,7 @@ import org.json.JSONObject
 
 /**
  * Commande Hubera Music depuis Maps (comme YouTube Music dans Google Maps).
- * Media3 session ; poll 1 s pour le dock (titre en temps réel).
+ * Media3 session ; poll 4 s pour le dock (batterie). Next/prev : session + touche média.
  */
 class MusicBridge(
     private val context: Context,
@@ -37,7 +37,7 @@ class MusicBridge(
                 refreshCache()
                 pushToWeb()
             }
-            main.postDelayed(this, 1000)
+            main.postDelayed(this, 4000)
         }
     }
 
@@ -50,18 +50,34 @@ class MusicBridge(
         return null
     }
 
+    private fun musicPkgsInstalled(): List<String> {
+        val installed = MUSIC_PKGS.filter { pkg ->
+            context.packageManager.getLaunchIntentForPackage(pkg) != null
+        }
+        return installed.ifEmpty { MUSIC_PKGS }
+    }
+
     fun connect() {
         if (controller != null || connecting) return
         connecting = true
+        tryConnect(musicPkgsInstalled(), 0)
+    }
+
+    private fun tryConnect(pkgs: List<String>, index: Int) {
+        if (index >= pkgs.size) {
+            connecting = false
+            scheduleReconnect()
+            return
+        }
+        val pkg = pkgs[index]
         try {
             val token = SessionToken(
                 context,
-                ComponentName(MUSIC_PKG, MUSIC_SERVICE),
+                ComponentName(pkg, MUSIC_SERVICE),
             )
             val future = MediaController.Builder(context, token).buildAsync()
             future.addListener(
                 {
-                    connecting = false
                     val ok = runCatching {
                         val c = future.get()
                         controller = c
@@ -77,14 +93,15 @@ class MusicBridge(
                     }.isSuccess
                     if (!ok) {
                         controller = null
-                        scheduleReconnect()
+                        tryConnect(pkgs, index + 1)
+                    } else {
+                        connecting = false
                     }
                 },
                 { r -> main.post(r) },
             )
         } catch (_: Throwable) {
-            connecting = false
-            scheduleReconnect()
+            tryConnect(pkgs, index + 1)
         }
     }
 
@@ -140,13 +157,11 @@ class MusicBridge(
             liveController()
             connect()
             val c = liveController()
-            if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT)) {
-                runCatching { c.seekToNext() }
-            } else if (c != null && c.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) {
+            if (c != null) {
                 runCatching { c.seekToNextMediaItem() }
-            } else {
-                sendKey(KeyEvent.KEYCODE_MEDIA_NEXT)
             }
+            // Debounce côté Music (220 ms) : si le MediaController ne skip pas la file.
+            sendKey(KeyEvent.KEYCODE_MEDIA_NEXT)
             main.postDelayed({
                 refreshCache()
                 pushToWeb()
@@ -161,11 +176,9 @@ class MusicBridge(
             connect()
             val c = liveController()
             if (c != null) {
-                // Dans Maps on veut le titre d’avant, pas le restart de la piste en cours.
                 runCatching { c.seekToPreviousMediaItem() }
-            } else {
-                sendKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             }
+            sendKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             main.postDelayed({
                 refreshCache()
                 pushToWeb()
@@ -176,7 +189,10 @@ class MusicBridge(
     @JavascriptInterface
     fun openApp() {
         main.post {
-            val launch = context.packageManager.getLaunchIntentForPackage(MUSIC_PKG)
+            val pkg = MUSIC_PKGS.firstOrNull { p ->
+                context.packageManager.getLaunchIntentForPackage(p) != null
+            }
+            val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
             if (launch != null) {
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(launch)
@@ -237,7 +253,9 @@ class MusicBridge(
     }
 
     companion object {
-        const val MUSIC_PKG = "ovh.delhomme.ytmusic"
+        const val MUSIC_PKG = "cloud.hubera.music"
+        const val MUSIC_PKG_LEGACY = "ovh.delhomme.ytmusic"
+        val MUSIC_PKGS = listOf(MUSIC_PKG_LEGACY, MUSIC_PKG)
         const val MUSIC_SERVICE = "ovh.delhomme.ytmusic.player.PlaybackService"
     }
 }

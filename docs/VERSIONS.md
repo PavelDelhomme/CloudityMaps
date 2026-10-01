@@ -1,5 +1,28 @@
 # Hubera Maps — versions
 
+## 0.1.65 (1er oct. 2026)
+- Itinéraire : points A/B remplacés par des **points** avec le **nom en dessous** (Domicile, Intermarché, ou n° de rue).
+- Carte type Google Maps : champ **départ** (nom + adresse) au-dessus de **arrivée**, bouton **inverser**.
+- Départ GPS si non choisi : rue + numéro, ou Domicile si on est à la maison. Zoom entre les deux bouts inchangé.
+
+## 0.1.64 (1er oct. 2026)
+- Guidage : vue première personne (inclinaison + cap) dès Démarrer, comme Google Maps.
+- HUD : rue en titre, **Puis** compact ; plus la phrase « En bout de voie… ».
+- Panneau de vitesse + ZONE en haut à droite. Logo Fuel en bas (Pause / Arrêter / Plein), réglable.
+- ✕ arrête le guidage **et** Fuel. Villes / POI selon le zoom. Pins perso plus petits.
+
+## 0.1.63 (1er oct. 2026)
+- Dock Music : bouton suivant = vrai titre suivant (plus de restart du titre en cours).
+
+## 0.1.62 (1er oct. 2026)
+- A (Départ) et B (Arrivée) cadrés **dans le trou de carte** sous la barre transport, au-dessus du dock.
+- Padding Leaflet en (x, y) : plus le milieu du tracé tout seul. Arrêter Fuel = broadcast, Maps ne bouge pas.
+
+## 0.1.61 (1er oct. 2026)
+- Itinéraire : cadrage **uniquement A (départ) et B (arrivée)** — plus le barycentre du tracé « au milieu de nulle part ».
+- Dézoom + centrage entre les deux points, en tenant compte de la carte transport / recherche / FAB.
+- Arrêter Fuel depuis Maps : **broadcast / headless**, plus d’ouverture-fermeture de l’app Fuel.
+
 ## 0.1.56 (30 sept. 2026)
 - Onglet Fuel : jauge, véhicule, démarrer, plein — plus d’historique ni d’écran « 2e app ».
 - Plus de flash splash / dialogue MAJ quand Maps parle à Fuel en silencieux.

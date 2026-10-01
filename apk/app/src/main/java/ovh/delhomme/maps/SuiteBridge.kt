@@ -81,7 +81,10 @@ class SuiteBridge(
     @JavascriptInterface
     fun openContacts() {
         main.post {
-            val launch = context.packageManager.getLaunchIntentForPackage(CONTACTS_PKG)
+            val pkg = CONTACTS_PKGS.firstOrNull { p ->
+                context.packageManager.getLaunchIntentForPackage(p) != null
+            }
+            val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
             if (launch != null) {
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 runCatching { context.startActivity(launch) }
@@ -128,7 +131,9 @@ class SuiteBridge(
     }
 
     companion object {
-        const val CONTACTS_PKG = "fr.cloudity.cloudity_contacts"
+        const val CONTACTS_PKG = "cloud.hubera.contacts"
+        const val CONTACTS_PKG_LEGACY = "fr.cloudity.cloudity_contacts"
+        val CONTACTS_PKGS = listOf(CONTACTS_PKG, CONTACTS_PKG_LEGACY)
         val CONTACTS_URLS = listOf(
             "https://api.cloudity.delhomme.ovh/contacts",
             "https://contacts.hubera.cloud/contacts",

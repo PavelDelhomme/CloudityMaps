@@ -15,14 +15,36 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ovh.delhomme.maps",
+      "bundleIdentifier": "cloud.hubera.maps",
+      "deploymentTarget": "15.1",
+      "associatedDomains": [
+        "applinks:maps.hubera.cloud",
+        "applinks:fuel.hubera.cloud"
+      ],
       "infoPlist": {
+        "CFBundleDisplayName": "Hubera Maps",
+        "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Hubera Maps utilise votre position pour afficher la carte, les itinéraires et le suivi Fuel.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Hubera Maps peut tracer un trajet Fuel en arrière-plan pendant la navigation.",
+        "NSLocationAlwaysUsageDescription": "Hubera Maps peut tracer un trajet Fuel en arrière-plan pendant la navigation.",
+        "UIBackgroundModes": ["location", "fetch"],
         "LSApplicationQueriesSchemes": [
           "gasoiltracking",
           "gasoiltracking-preprod",
+          "hubera-maps",
           "cloudity-maps"
+        ]
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+          }
         ]
       }
     },
@@ -31,7 +53,7 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "ovh.delhomme.maps",
+      "package": "cloud.hubera.maps",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",

@@ -9,6 +9,8 @@ const NIGHT_KEY = 'hubera-maps-night';
 const FUEL_TRIPS_KEY = 'hubera-maps-fuel-trips';
 const FUEL_UX_KEY = 'hubera-maps-fuel-ux-dev';
 const FUEL_SNAP_KEY = 'hubera-maps-fuel-snap';
+const FUEL_LOGO_KEY = 'hubera-maps-fuel-logo';
+const PLACES_CACHE_KEY = 'hubera-maps-osm-places-v1';
 let fuelPageTab = 'home';
 let fuelSelectedVehicleId = 0;
 function readLastMe() {
@@ -32,6 +34,11 @@ const map = L.map('map', {
 }).setView(bootMe ? [bootMe.lat, bootMe.lon] : [46.6, 2.4], bootMe ? 16 : 6);
 map.createPane('mePane');
 map.getPane('mePane').style.zIndex = 900;
+map.createPane('labelsPane');
+map.getPane('labelsPane').style.zIndex = 450;
+map.getPane('labelsPane').style.pointerEvents = 'none';
+map.createPane('poiPane');
+map.getPane('poiPane').style.zIndex = 620;
 map.whenReady(() => {
   map.invalidateSize();
   setTimeout(() => map.invalidateSize(), 350);
@@ -41,6 +48,7 @@ map.on('dragstart', () => {
 });
 map.on('zoomend moveend', () => {
   syncPinLabels();
+  scheduleMapPlaces();
 });
 let baseTiles = null;
 let nightOn = null;
@@ -140,6 +148,8 @@ let paused = false;
 let searchTimer = 0;
 let pendingAssign = null;
 let lastDest = null;
+let lastOrigin = null;
+let pendingEnd = null;
 let activeTab = 'maps';
 let altLayers = [];
 let routeChoices = [];
@@ -164,6 +174,11 @@ let fuelLiveKm = 0;
 let fuelPollTimer = 0;
 let fuelHudTick = 0;
 let hudCollapsed = false;
+let livePoiLayer = null;
+let placeLabelLayer = null;
+let mapPlacesTimer = 0;
+let lastPlacesKey = '';
+let selectedPoi = null;
 
 const FETCH_HDR = { Accept: 'application/json' };
 const TRAVEL_MODES = [
@@ -222,6 +237,47 @@ function fuelControl(action, extra) {
     toast('Commande Fuel enregistrée dans Maps.');
   }
   return false;
+}
+
+const PENDING_FILL_KEY = 'maps_pending_fuel_fill_v1';
+function savePendingFuelFill(extra) {
+  try {
+    localStorage.setItem(PENDING_FILL_KEY, JSON.stringify({
+      liters: extra.liters || '',
+      total: extra.total || '',
+      station: extra.station || '',
+      vehicleId: extra.vehicleId ? String(extra.vehicleId) : '',
+      at: Date.now(),
+    }));
+  } catch {
+    /* quota */
+  }
+}
+function loadPendingFuelFill() {
+  try {
+    const raw = localStorage.getItem(PENDING_FILL_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || Date.now() - Number(o.at || 0) > 14 * 86400000) {
+      localStorage.removeItem(PENDING_FILL_KEY);
+      return null;
+    }
+    if (!o.liters && !o.total) return null;
+    return o;
+  } catch {
+    return null;
+  }
+}
+function clearPendingFuelFill() {
+  try { localStorage.removeItem(PENDING_FILL_KEY); } catch { /* */ }
+}
+let pendingFillRetryAt = 0;
+function retryPendingFuelFill() {
+  const p = loadPendingFuelFill();
+  if (!p) return;
+  if (Date.now() - pendingFillRetryAt < 4000) return;
+  pendingFillRetryAt = Date.now();
+  fuelControl('fill', p);
 }
 
 function decodeFuelTripPack(raw) {
@@ -551,6 +607,45 @@ function clearRoute() {
 function setFollowNav(on) {
   followNav = !!on;
   document.body.classList.toggle('freehand', navigating && !followNav);
+  if (navigating && followNav && me) applyNavCamera(me.lat, me.lon, true);
+  if (!followNav) document.body.style.removeProperty('--nav-rot');
+}
+
+function destAlong(lat, lon, bearingDeg, meters) {
+  const R = 6371000;
+  const br = (bearingDeg * Math.PI) / 180;
+  const p1 = (lat * Math.PI) / 180;
+  const l1 = (lon * Math.PI) / 180;
+  const d = meters / R;
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(br));
+  const l2 = l1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+  return { lat: (p2 * 180) / Math.PI, lon: (l2 * 180) / Math.PI };
+}
+
+function navHeading() {
+  if (Number.isFinite(lastHeadingDeg) && lastHeadingDeg >= 0) return lastHeadingDeg;
+  const choice = currentChoice();
+  const step = upcomingManeuver(me, choice?.steps).now;
+  const p = stepPoint(step);
+  if (me && p) return bearingDeg(me, p);
+  return 0;
+}
+
+function applyNavCamera(lat, lon, instant) {
+  if (!followNav || !navigating) {
+    document.body.style.removeProperty('--nav-rot');
+    return;
+  }
+  const hdg = navHeading();
+  document.body.style.setProperty('--nav-rot', `${-hdg}deg`);
+  const z = lastSpeedKmh >= 95 ? 16 : lastSpeedKmh >= 50 ? 17 : 18;
+  const ahead = lastSpeedKmh >= 80 ? 150 : lastSpeedKmh >= 40 ? 85 : 46;
+  const look = destAlong(lat, lon, hdg, ahead);
+  try {
+    map.setView([look.lat, look.lon], z, instant ? { animate: false } : { animate: true, duration: 0.28 });
+  } catch {
+    /* carte pas prête */
+  }
 }
 
 function updateSpeed(coords, next) {
@@ -579,13 +674,7 @@ function applyNavFix(pos) {
   const next = { lat: pos.coords.latitude, lon: pos.coords.longitude };
   updateSpeed(pos.coords, next);
   setMe(next.lat, next.lon, false);
-  if (followNav && navigating) {
-    try {
-      map.panTo([next.lat, next.lon], { animate: true, duration: 0.32 });
-    } catch {
-      /* carte pas prête */
-    }
-  }
+  if (followNav && navigating) applyNavCamera(next.lat, next.lon, false);
   appendTrace(next.lat, next.lon);
   paintHud(currentChoice());
   if (navigating && isCarMode()) void refreshWorksNearMe(next);
@@ -744,6 +833,13 @@ function hideSavedPlaceBecauseHere(place) {
   return placeNear(me.lat, me.lon, place, 45);
 }
 
+function hideSavedBecauseRoute(place) {
+  if (!place) return false;
+  if (lastOrigin && placeNear(lastOrigin.lat, lastOrigin.lon, place, 70)) return true;
+  if (lastDest && placeNear(lastDest.lat, lastDest.lon, place, 70)) return true;
+  return false;
+}
+
 function maybeRepaintPlacesForMe() {
   if (!me) return;
   const places = loadPlaces();
@@ -754,7 +850,7 @@ function maybeRepaintPlacesForMe() {
 }
 
 function placePinIcon(kind, name) {
-  const size = kind === 'person' ? 30 : 44;
+  const size = kind === 'person' ? 22 : 28;
   return L.divIcon({
     className: 'place-pin',
     html: `<div class="place-badge kind-${kind}">${PLACE_SVGS[kind] || PLACE_SVGS.person}</div><div class="place-lab">${esc(name)}</div>`,
@@ -767,13 +863,17 @@ function contactPinIcon(name) {
   return placePinIcon('person', name);
 }
 
-function abIcon(letter) {
+function endpointIcon(role, title) {
   return L.divIcon({
-    className: 'place-pin',
-    html: `<div class="place-badge kind-person" style="background:#e94560;width:22px;height:22px;font-size:11px;font-weight:800;color:#fff">${letter}</div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
+    className: 'place-pin ab-pin',
+    html: `<div class="ab-dot ${role === 'dest' ? 'dest' : 'origin'}"></div><div class="place-lab">${esc(title || '')}</div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
   });
+}
+
+function abIcon(letter) {
+  return endpointIcon(letter === 'A' ? 'origin' : 'dest', letter === 'A' ? 'Départ' : 'Arrivée');
 }
 
 function paintPlacePins() {
@@ -812,7 +912,7 @@ function paintPlacePins() {
       .on('click', () => void routeTo(item.lat, item.lon, item.label));
   });
   if (places.home && Number.isFinite(places.home.lat) && Number.isFinite(places.home.lon)
-      && !hideSavedPlaceBecauseHere(places.home)) {
+      && !hideSavedPlaceBecauseHere(places.home) && !hideSavedBecauseRoute(places.home)) {
     L.marker([places.home.lat, places.home.lon], {
       icon: placePinIcon('home', 'Maison'),
       zIndexOffset: 420,
@@ -822,7 +922,7 @@ function paintPlacePins() {
       .on('click', () => void routeTo(places.home.lat, places.home.lon, places.home.label || 'Maison'));
   }
   if (places.work && Number.isFinite(places.work.lat) && Number.isFinite(places.work.lon)
-      && !hideSavedPlaceBecauseHere(places.work)) {
+      && !hideSavedPlaceBecauseHere(places.work) && !hideSavedBecauseRoute(places.work)) {
     L.marker([places.work.lat, places.work.lon], {
       icon: placePinIcon('work', 'Travail'),
       zIndexOffset: 410,
@@ -1039,7 +1139,8 @@ function setVoiceEnabled(on) {
 }
 
 function puckIcon(deg) {
-  const d = Number.isFinite(deg) ? deg : 0;
+  const headingUp = navigating && followNav;
+  const d = headingUp ? 0 : Number.isFinite(deg) ? deg : 0;
   return L.divIcon({
     className: 'me-puck',
     html:
@@ -1076,9 +1177,16 @@ function setMe(lat, lon, fly, fromCache) {
     return;
   }
   if (fly) {
-    map.invalidateSize();
-    const z = Math.max(16, map.getZoom() || 0);
-    map.flyTo(here, z, { duration: 0.35 });
+    if (navigating && followNav) {
+      applyNavCamera(lat, lon, false);
+    } else if (document.body.classList.contains('routing') && lastDest) {
+      ensureAbMarkers();
+      fitRouteBounds();
+    } else {
+      map.invalidateSize();
+      const z = Math.max(16, map.getZoom() || 0);
+      map.flyTo(here, z, { duration: 0.35 });
+    }
   }
   if (moved >= 40 || !lastRoadPos) void refreshRoad(lat, lon);
 }
@@ -1235,8 +1343,12 @@ function fmtStep(step) {
   return 'Continuez tout droit';
 }
 
+function stepStreet(step) {
+  return String(step?.name || '').trim();
+}
+
 function destShort() {
-  return (lastDest?.label || 'destination').split(',')[0];
+  return (lastDest?.title || lastDest?.label || 'destination').split(',')[0];
 }
 
 function stepPoint(step) {
@@ -1501,6 +1613,7 @@ async function motisPlan(from, to, signal) {
 
 function overpassEndpoints() {
   return [
+    'https://maps.hubera.cloud/overpass',
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
   ];
@@ -1759,34 +1872,170 @@ function drawChoices(selectedId) {
     bounds = bounds ? bounds.extend(b) : b;
   }
   if (me) {
-    if (!originMarker) originMarker = L.marker([me.lat, me.lon], { icon: abIcon('A'), zIndexOffset: 700 }).addTo(map);
-    else originMarker.setLatLng([me.lat, me.lon]);
-    if (bounds) bounds.extend([me.lat, me.lon]);
+    const origin = lastOrigin && Number.isFinite(lastOrigin.lat) ? lastOrigin : me;
+    const oTitle = pinTitle(lastOrigin) || pinTitle(origin) || '';
+    if (!originMarker) originMarker = L.marker([origin.lat, origin.lon], { icon: endpointIcon('origin', oTitle), zIndexOffset: 700 }).addTo(map);
+    else {
+      originMarker.setLatLng([origin.lat, origin.lon]);
+      originMarker.setIcon(endpointIcon('origin', oTitle));
+    }
+    if (bounds) bounds.extend([origin.lat, origin.lon]);
   }
   if (lastDest && Number.isFinite(lastDest.lat)) {
+    const dTitle = pinTitle(lastDest);
+    if (!destMarker) destMarker = L.marker([lastDest.lat, lastDest.lon], { icon: endpointIcon('dest', dTitle), zIndexOffset: 720 }).addTo(map);
+    else {
+      destMarker.setLatLng([lastDest.lat, lastDest.lon]);
+      destMarker.setIcon(endpointIcon('dest', dTitle));
+    }
     if (bounds) bounds.extend([lastDest.lat, lastDest.lon]);
+    else bounds = L.latLngBounds([lastDest.lat, lastDest.lon], me ? [me.lat, me.lon] : [lastDest.lat, lastDest.lon]);
   }
-  fitRouteBounds(bounds);
+  ensureAbMarkers();
+  fitRouteBounds();
+}
+
+function overlayEdgePad(el, side) {
+  if (!el || el.hidden) return 0;
+  const st = getComputedStyle(el);
+  if (st.display === 'none' || st.visibility === 'hidden') return 0;
+  const r = el.getBoundingClientRect();
+  if (r.width < 8 || r.height < 8) return 0;
+  const vh = window.innerHeight || 1;
+  const vw = window.innerWidth || 1;
+  if (side === 'top') return Math.max(0, Math.ceil(r.bottom));
+  if (side === 'bottom') return Math.max(0, Math.ceil(vh - r.top));
+  if (side === 'right') return Math.max(0, Math.ceil(vw - r.left));
+  if (side === 'left') return Math.max(0, Math.ceil(r.right));
+  return 0;
 }
 
 function routeFitPadding() {
-  const top = document.getElementById('topChrome');
-  const topH = top ? Math.ceil(top.getBoundingClientRect().height) : 120;
-  const bottom = parseInt(getComputedStyle(document.body).getPropertyValue('--chrome'), 10) || 168;
-  return [Math.max(88, topH + 8), 28, Math.max(88, bottom + 12), 28];
+  try {
+    map.invalidateSize({ animate: false });
+  } catch {
+    /* */
+  }
+  const size = map.getSize ? map.getSize() : { x: window.innerWidth || 360, y: window.innerHeight || 640 };
+  const mw = Math.max(160, size.x || window.innerWidth || 360);
+  const mh = Math.max(240, size.y || window.innerHeight || 640);
+  const gap = 22;
+  let top =
+    Math.max(
+      overlayEdgePad(document.getElementById('topChrome'), 'top'),
+      overlayEdgePad(document.getElementById('routeCard'), 'top'),
+      overlayEdgePad(document.getElementById('alts'), 'top'),
+    ) + gap;
+  let bottom =
+    Math.max(
+      overlayEdgePad(document.getElementById('chrome'), 'bottom'),
+      overlayEdgePad(document.getElementById('fuelPeek'), 'bottom'),
+      overlayEdgePad(document.getElementById('fuel'), 'bottom'),
+    ) + gap;
+  let right =
+    Math.max(
+      overlayEdgePad(document.getElementById('btnHere'), 'right'),
+      overlayEdgePad(document.querySelector('.road-sign'), 'right'),
+    ) + gap;
+  let left = 22;
+  const minH = 260;
+  const minW = 180;
+  if (top + bottom > mh - minH) {
+    const overflow = top + bottom - (mh - minH);
+    const sum = Math.max(1, top + bottom);
+    top = Math.max(72, Math.floor(top - (overflow * top) / sum));
+    bottom = Math.max(56, Math.floor(bottom - (overflow * bottom) / sum));
+  }
+  if (left + right > mw - minW) {
+    right = Math.max(16, mw - minW - left);
+  }
+  /* Leaflet Point = (x, y) = (horizontal, vertical), pas [top, left] CSS. */
+  return {
+    paddingTopLeft: [left, top],
+    paddingBottomRight: [right, bottom],
+  };
 }
 
-function fitRouteBounds(bounds) {
-  if (!bounds) return;
+function ensureAbMarkers() {
+  const origin = lastOrigin && Number.isFinite(lastOrigin.lat) ? lastOrigin : me;
+  if (origin && Number.isFinite(origin.lat)) {
+    const title = pinTitle(lastOrigin) || pinTitle(origin) || '';
+    if (!originMarker) originMarker = L.marker([origin.lat, origin.lon], { icon: endpointIcon('origin', title), zIndexOffset: 700 }).addTo(map);
+    else {
+      originMarker.setLatLng([origin.lat, origin.lon]);
+      originMarker.setIcon(endpointIcon('origin', title));
+    }
+  }
+  if (lastDest && Number.isFinite(lastDest.lat)) {
+    const dTitle = pinTitle(lastDest);
+    if (!destMarker) destMarker = L.marker([lastDest.lat, lastDest.lon], { icon: endpointIcon('dest', dTitle), zIndexOffset: 720 }).addTo(map);
+    else {
+      destMarker.setLatLng([lastDest.lat, lastDest.lon]);
+      destMarker.setIcon(endpointIcon('dest', dTitle));
+    }
+  }
+}
+
+function abRouteBounds() {
+  let bounds = null;
+  const add = (lat, lon) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const ll = L.latLng(lat, lon);
+    bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+  };
+  if (lastOrigin) add(lastOrigin.lat, lastOrigin.lon);
+  else if (me) add(me.lat, me.lon);
+  if (lastDest) add(lastDest.lat, lastDest.lon);
+  try {
+    if (originMarker) add(originMarker.getLatLng().lat, originMarker.getLatLng().lng);
+  } catch {
+    /* */
+  }
+  try {
+    if (destMarker) add(destMarker.getLatLng().lat, destMarker.getLatLng().lng);
+  } catch {
+    /* */
+  }
+  return bounds && bounds.isValid && bounds.isValid() ? bounds : null;
+}
+
+function fitRouteBounds() {
+  const raw = abRouteBounds();
+  if (!raw) return;
   const run = () => {
     try {
-      map.fitBounds(bounds, { padding: routeFitPadding(), maxZoom: 15, animate: false });
+      map.invalidateSize({ animate: false });
+      const pad = routeFitPadding();
+      const sw = raw.getSouthWest();
+      const ne = raw.getNorthEast();
+      const same = Math.abs(sw.lat - ne.lat) < 1e-5 && Math.abs(sw.lng - ne.lng) < 1e-5;
+      if (same) {
+        map.setView(raw.getCenter(), 13, { animate: false });
+        return;
+      }
+      let b = raw;
+      try {
+        b = raw.pad(0.18);
+      } catch {
+        /* leaflet pad */
+      }
+      map.fitBounds(b, { ...pad, maxZoom: 14, animate: false });
+      const vis = map.getBounds();
+      const hidden =
+        (me && !vis.contains([me.lat, me.lon])) ||
+        (lastDest && !vis.contains([lastDest.lat, lastDest.lon]));
+      if (hidden) {
+        map.fitBounds(b, { padding: [36, 36], maxZoom: 14, animate: false });
+      }
     } catch {
       /* ignore */
     }
   };
   run();
+  requestAnimationFrame(run);
   window.setTimeout(run, 80);
+  window.setTimeout(run, 280);
+  window.setTimeout(run, 700);
 }
 
 function modeLabel() {
@@ -1819,14 +2068,30 @@ function bindModeButtons(root) {
   });
 }
 
-function showAltsShell(label, extraHtml) {
-  const html =
-    `<div class="route-head">` +
-    `<h3>${esc(label)}</h3>` +
-    `<button type="button" class="route-close" id="btnDismissRoute" aria-label="Masquer l’itinéraire">✕</button>` +
+function endsRowHtml() {
+  const o = lastOrigin || {};
+  const d = lastDest || {};
+  const oTitle = o.title || 'Ma position';
+  const oAddr = o.address && o.address !== oTitle ? o.address : o.label && o.label !== oTitle ? o.label : '';
+  const dTitle = d.title || shortNameFromLabel(d.label) || 'Arrivée';
+  const dAddr = d.address && d.address !== dTitle ? d.address : d.label && d.label !== dTitle ? d.label : '';
+  return (
+    `<div class="route-io">` +
+    `<div class="route-io-fields">` +
+    `<button type="button" class="route-end" id="btnEditOrigin">` +
+    `<span class="ab-dot origin"></span><span class="txt"><strong>${esc(oTitle)}</strong>${oAddr ? `<em>${esc(oAddr)}</em>` : ''}</span></button>` +
+    `<button type="button" class="route-end" id="btnEditDest">` +
+    `<span class="ab-dot dest"></span><span class="txt"><strong>${esc(dTitle)}</strong>${dAddr ? `<em>${esc(dAddr)}</em>` : ''}</span></button>` +
     `</div>` +
-    modesRowHtml() +
-    (extraHtml || '');
+    `<div class="route-io-side">` +
+    `<button type="button" class="route-close" id="btnDismissRoute" aria-label="Masquer l’itinéraire">✕</button>` +
+    `<button type="button" class="route-swap" id="btnSwapEnds" title="Inverser" aria-label="Inverser départ et arrivée">⇅</button>` +
+    `</div></div>`
+  );
+}
+
+function showAltsShell(extraHtml) {
+  const html = endsRowHtml() + modesRowHtml() + (extraHtml || '');
   if (routeCardEl) {
     routeCardEl.hidden = false;
     routeCardEl.innerHTML = html;
@@ -1837,8 +2102,13 @@ function showAltsShell(label, extraHtml) {
     altsEl.innerHTML = '';
   }
   if (chipsEl) chipsEl.hidden = true;
+  if (pendingEnd) searchForm.hidden = false;
+  else searchForm.hidden = true;
   document.body.classList.add('routing');
   bindRouteCard();
+  ensureAbMarkers();
+  fitRouteBounds();
+  paintPlacePins();
 }
 
 function dismissRoutePreview() {
@@ -1853,6 +2123,10 @@ function dismissRoutePreview() {
   routeChoices = [];
   selectedRouteId = null;
   lastDest = null;
+  lastOrigin = null;
+  pendingEnd = null;
+  qEl.placeholder = 'Rechercher ici';
+  searchForm.hidden = false;
   if (routeCardEl) {
     routeCardEl.hidden = true;
     routeCardEl.innerHTML = '';
@@ -1876,7 +2150,8 @@ function setTravelMode(mode) {
   localStorage.setItem(MODE_KEY, mode);
   paintModes();
   if (navigating) return;
-  if (lastDest && me) void routeTo(lastDest.lat, lastDest.lon, lastDest.label);
+  if (lastDest && lastOrigin) void routeFromTo(lastOrigin, lastDest);
+  else if (lastDest) void routeTo(lastDest.lat, lastDest.lon, lastDest.label);
 }
 
 function bindRouteCard() {
@@ -1896,6 +2171,21 @@ function bindRouteCard() {
       dismissRoutePreview();
       return;
     }
+    if (e.target.closest('#btnSwapEnds')) {
+      e.preventDefault();
+      void swapRouteEnds();
+      return;
+    }
+    if (e.target.closest('#btnEditOrigin')) {
+      e.preventDefault();
+      startEditEnd('origin');
+      return;
+    }
+    if (e.target.closest('#btnEditDest')) {
+      e.preventDefault();
+      startEditEnd('dest');
+      return;
+    }
     const mode = e.target.closest('.mode');
     if (mode) {
       setTravelMode(mode.dataset.mode);
@@ -1913,6 +2203,53 @@ function bindRouteCard() {
   });
 }
 
+function placeHasPoint(p) {
+  return p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon));
+}
+
+function startEditEnd(which) {
+  pendingEnd = which === 'origin' ? 'origin' : 'dest';
+  qEl.value = '';
+  qEl.placeholder = pendingEnd === 'origin' ? 'Choisir un départ' : 'Choisir une arrivée';
+  searchForm.hidden = false;
+  syncClear();
+  try {
+    qEl.focus();
+  } catch {
+    /* */
+  }
+}
+
+async function pickRoutePlace(item) {
+  const place = await enrichPlace(asPlace(item.lat, item.lon, item.label));
+  const end = pendingEnd;
+  pendingEnd = null;
+  qEl.placeholder = 'Rechercher ici';
+  qEl.value = '';
+  searchForm.hidden = true;
+  syncClear();
+  if (end === 'origin') lastOrigin = place;
+  else lastDest = place;
+  if (!placeHasPoint(lastOrigin)) lastOrigin = await hereAsPlace();
+  if (!placeHasPoint(lastDest)) return;
+  await routeFromTo(lastOrigin, lastDest);
+}
+
+async function swapRouteEnds() {
+  pendingEnd = null;
+  qEl.placeholder = 'Rechercher ici';
+  qEl.value = '';
+  searchForm.hidden = true;
+  if (!placeHasPoint(lastDest)) return;
+  if (!placeHasPoint(lastOrigin)) lastOrigin = await hereAsPlace();
+  if (!placeHasPoint(lastOrigin) || !placeHasPoint(lastDest)) return;
+  const a = lastOrigin;
+  const b = lastDest;
+  lastOrigin = b;
+  lastDest = a;
+  await routeFromTo(lastOrigin, lastDest);
+}
+
 function renderAlts() {
   bindRouteCard();
   if (!routeChoices.length) {
@@ -1926,13 +2263,12 @@ function renderAlts() {
     }
     return;
   }
-  const dest = lastDest?.label || 'Destination';
+  const dest = lastDest?.title || lastDest?.label || 'Destination';
   const worksN = routeChoices.reduce((m, r) => Math.max(m, Number(r.worksHit) || 0), 0);
   const worksNote = worksN
     ? `<p class="works-note">Travaux / déviations OSM : ${worksN} sur le trajet. Un itinéraire « Évite travaux » est proposé quand c’est possible.</p>`
     : '';
   showAltsShell(
-    dest,
     `<div class="picks">` +
       routeChoices
         .map(
@@ -1987,9 +2323,9 @@ function paintHud(choice) {
     const km = liveFuelKm();
     const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '0 min';
     if (distEl) distEl.textContent = km > 0.05 ? `${km.toFixed(1)} km` : 'GPS';
-    if (iconEl) iconEl.textContent = paused ? '⏸' : '⛽';
-    if (titleEl) titleEl.textContent = paused ? 'Trajet en pause' : 'Trajet Fuel';
-    if (subEl) subEl.textContent = Number(fuelTrip) > 0 ? `trajet ${fuelTrip}` : 'GPS';
+    if (iconEl) iconEl.textContent = paused ? '⏸' : '⬆';
+    if (titleEl) titleEl.textContent = paused ? 'En pause' : 'Tout droit';
+    if (subEl) subEl.textContent = '';
     if (thenEl) {
       thenEl.hidden = true;
       thenEl.textContent = '';
@@ -2004,15 +2340,17 @@ function paintHud(choice) {
   }
   if (distEl) distEl.textContent = step ? fmtDist(toManeuver) : '—';
   if (iconEl) iconEl.textContent = maneuverIcon(step?.maneuver?.type, step?.maneuver?.modifier);
-  if (titleEl) titleEl.textContent = step ? fmtStep(step) : navigating ? 'Trajet Fuel' : 'Guidage';
-  if (subEl) {
-    const road = (step?.name || '').trim();
-    subEl.textContent = road && !fmtStep(step).includes(road) ? road : '';
+  if (titleEl) {
+    const street = stepStreet(step);
+    titleEl.textContent = street || (step ? fmtStep(step) : navigating ? 'Guidage' : 'Guidage');
   }
+  if (subEl) subEl.textContent = '';
   if (thenEl) {
     if (then && (then.maneuver?.type || '') !== 'arrive') {
+      const thenName = stepStreet(then) || fmtStep(then);
+      const ic = maneuverIcon(then.maneuver?.type, then.maneuver?.modifier);
       thenEl.hidden = false;
-      thenEl.textContent = `Puis : ${fmtStep(then)}`;
+      thenEl.innerHTML = `<span class="then-k">Puis</span>${ic} ${esc(thenName)}`;
     } else {
       thenEl.hidden = true;
       thenEl.textContent = '';
@@ -2032,11 +2370,46 @@ function paintHud(choice) {
   }
 }
 
-function showFuelBar(title) {
-  fuelEl.hidden = false;
-  if (title) fuelTitle.textContent = title;
-  document.getElementById('btnPause').textContent = paused ? 'Reprendre' : 'Pause';
+function fuelLogoOn() {
+  return localStorage.getItem(FUEL_LOGO_KEY) !== '0';
+}
+
+function setFuelLogo(on) {
+  localStorage.setItem(FUEL_LOGO_KEY, on ? '1' : '0');
+  syncFuelChrome();
+}
+
+function syncFuelChrome() {
+  const live = !!(mapsStartedFuel || Number(fuelTrip) > 0);
+  const logo = fuelLogoOn();
+  document.body.classList.toggle('fuel-logo', logo);
+  document.body.classList.toggle('fuel-live', live);
+  const fab = document.getElementById('fuelFab');
+  const radial = document.getElementById('fuelRadial');
+  if (logo) {
+    fuelEl.hidden = true;
+    if (fab) fab.hidden = false;
+  } else if (live && (navigating || hudCollapsed)) {
+    fuelEl.hidden = false;
+    if (fab) fab.hidden = true;
+    if (radial) {
+      radial.hidden = true;
+      radial.classList.remove('open');
+    }
+  } else {
+    if (!live) fuelEl.hidden = true;
+    if (fab) fab.hidden = true;
+  }
+  const pauseRad = radial && radial.querySelector('[data-rad="pause"]');
+  if (pauseRad) pauseRad.textContent = paused ? 'Reprendre' : 'Pause';
   paintFuelStats();
+}
+
+function showFuelBar(title) {
+  if (title) fuelTitle.textContent = title;
+  const pauseBtn = document.getElementById('btnPause');
+  if (pauseBtn) pauseBtn.textContent = paused ? 'Reprendre' : 'Pause';
+  syncFuelChrome();
 }
 
 function enterFreeHud(tripId) {
@@ -2063,6 +2436,7 @@ function enterFreeHud(tripId) {
   if (speedEl) speedEl.hidden = false;
   startNavWatch(applyNavFix);
   startFuelPoll();
+  if (me) applyNavCamera(me.lat, me.lon, true);
 }
 
 function startFuelTrip() {
@@ -2111,7 +2485,13 @@ function enterNavUi() {
     showFuelBar(Number(fuelTrip) > 0 ? `Trajet Fuel · ${fuelTrip}` : 'Trajet Fuel');
   } else {
     fuelEl.hidden = true;
+    syncFuelChrome();
   }
+  if (originMarker) {
+    try { map.removeLayer(originMarker); } catch { /* ignore */ }
+    originMarker = null;
+  }
+  if (me) applyNavCamera(me.lat, me.lon, true);
 }
 
 function stopNavWatch() {
@@ -2155,13 +2535,13 @@ function pingIdleGeo() {
   navigator.geolocation.getCurrentPosition(
     (pos) => setMe(pos.coords.latitude, pos.coords.longitude, false),
     () => {},
-    geoOpts({ accurate: false, freshMs: 30000, timeout: 6000 }),
+    geoOpts({ accurate: false, freshMs: 45000, timeout: 6000 }),
   );
 }
 
 function startIdleGeo() {
   stopIdleGeo();
-  idleGeoTimer = window.setInterval(pingIdleGeo, 55000);
+  idleGeoTimer = window.setInterval(pingIdleGeo, 90000);
 }
 
 function bootLocate() {
@@ -2205,16 +2585,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function collapseNavHud() {
-  hudCollapsed = true;
-  document.body.classList.remove('nav');
-  searchForm.hidden = false;
-  navBar.hidden = true;
-  chipsEl.hidden = false;
-  const speedEl = document.getElementById('hudSpeed');
-  if (speedEl) speedEl.hidden = true;
   if (mapsStartedFuel) {
-    showFuelBar();
-    toast('Guidage fermé — le suivi Fuel continue. Arrêter pour clôturer le trajet.');
+    fuelStopTracking();
     return;
   }
   stopNavigation({ stopFuel: false });
@@ -2226,6 +2598,7 @@ function stopNavigation(opts) {
   hudCollapsed = false;
   lastSpeedKmh = 0;
   lastSpoken = '';
+  document.body.style.removeProperty('--nav-rot');
   try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
   try { window.HuberaTts?.stop?.(); } catch { /* ignore */ }
   setFollowNav(true);
@@ -2247,6 +2620,12 @@ function stopNavigation(opts) {
   if (!fromFuel) {
     fuelEl.hidden = true;
   }
+  const radial = document.getElementById('fuelRadial');
+  if (radial) {
+    radial.hidden = true;
+    radial.classList.remove('open');
+  }
+  syncFuelChrome();
 }
 
 function startNavigation() {
@@ -2267,6 +2646,7 @@ function startNavigation() {
     toast('Guidage démarré');
   }
   startNavWatch(applyNavFix);
+  if (me) applyNavCamera(me.lat, me.lon, true);
 }
 
 const FR_SPEED = {
@@ -2337,29 +2717,52 @@ function taggedSpeed(tags) {
   return null;
 }
 
+function zoneFromTags(tags) {
+  if (!tags) return false;
+  const blob = [
+    tags['zone:maxspeed'],
+    tags['maxspeed:type'],
+    tags.maxspeed,
+    tags['source:maxspeed'],
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return /zone/.test(blob);
+}
+
 let lastPaintedLimit = null;
 
-function paintSpeedLimit(kmh) {
+function paintSpeedLimit(kmh, zone) {
   if (!roadNameEl) return;
   if (roadSignEl) roadSignEl.hidden = false;
+  const signs = document.getElementById('navSigns');
+  if (signs) signs.hidden = false;
   if (kmh == null) return;
   lastPaintedLimit = kmh;
   roadNameEl.textContent = String(kmh);
+  const isZone = !!zone || kmh === 20 || kmh === 30;
+  if (roadSignEl) roadSignEl.classList.toggle('is-zone', isZone);
+  const zoneEl = document.getElementById('roadZone');
+  if (zoneEl) {
+    zoneEl.hidden = !isZone;
+    zoneEl.textContent = kmh <= 20 ? 'ZONE 20' : kmh <= 30 ? 'ZONE 30' : 'ZONE';
+  }
 }
 
-window.__huberaSpeedLimit = function (kmh) {
+window.__huberaSpeedLimit = function (kmh, zone) {
   const n = Number(kmh);
   if (!Number.isFinite(n) || n < 5) return;
   lastRoadPos = me || lastRoadPos;
-  paintSpeedLimit(Math.round(n));
+  paintSpeedLimit(Math.round(n), !!zone);
 };
 
 async function refreshRoad(lat, lon) {
   const now = Date.now();
   const here = { lat, lon };
   const haveLimit = roadNameEl && roadNameEl.textContent && roadNameEl.textContent !== '—';
-  if (lastRoadPos && metersBetween(lastRoadPos, here) < 35 && now - lastRoadAt < 20000 && haveLimit) return;
-  if (now - lastRoadAt < 8000) return;
+  if (lastRoadPos && metersBetween(lastRoadPos, here) < 50 && now - lastRoadAt < 24000 && haveLimit) return;
+  if (now - lastRoadAt < 12000) return;
   lastRoadAt = now;
   if (typeof HuberaSpeed !== 'undefined' && HuberaSpeed.lookup) {
     try {
@@ -2368,7 +2771,12 @@ async function refreshRoad(lat, lon) {
       /* proxy JS ci-dessous */
     }
   }
-  const query = `[out:json][timeout:8];way(around:200,${lat.toFixed(5)},${lon.toFixed(5)})[highway];out center tags 40;`;
+  const query =
+    `[out:json][timeout:8];(` +
+    `way(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway];` +
+    `way(around:160,${lat.toFixed(5)},${lon.toFixed(5)})["zone:maxspeed"];` +
+    `way(around:160,${lat.toFixed(5)},${lon.toFixed(5)})["maxspeed:type"];` +
+    `);out center tags 50;`;
   const urls = [
     'https://maps.hubera.cloud/overpass',
     'https://overpass-api.de/api/interpreter',
@@ -2387,29 +2795,32 @@ async function refreshRoad(lat, lon) {
       const rows = [];
       for (const el of data.elements || []) {
         const tags = el.tags || {};
-        if (skipPedestrianHighway(tags.highway)) continue;
+        if (tags.highway && skipPedestrianHighway(tags.highway)) continue;
         const c = el.center;
         const dist = c && Number.isFinite(c.lat) ? metersBetween(here, { lat: c.lat, lon: c.lon }) : 999;
         const tagged = taggedSpeed(tags);
         const implied = impliedSpeedFromHighway(tags.highway);
         if (tagged == null && implied == null) continue;
         const urban = tags.highway === 'residential' || tags.highway === 'living_street' || tags.highway === 'unclassified';
-        rows.push({ dist, tagged, implied, urban });
+        rows.push({ dist, tagged, implied, urban, zone: zoneFromTags(tags) });
       }
       rows.sort((a, b) => a.dist - b.dist);
       const closest = rows[0];
       if (!closest) continue;
       let speed = closest.tagged;
+      let zone = closest.zone;
       if (speed == null) {
         const zone30 = rows
           .filter((r) => r.dist <= 220 && r.urban && r.tagged != null && r.tagged <= 30)
           .map((r) => r.tagged);
-        if (zone30.length && (closest.implied == null || closest.implied === 50)) speed = Math.min(...zone30);
-        else speed = closest.implied;
+        if (zone30.length && (closest.implied == null || closest.implied === 50)) {
+          speed = Math.min(...zone30);
+          zone = true;
+        } else speed = closest.implied;
       }
       if (speed != null) {
         lastRoadPos = here;
-        paintSpeedLimit(speed);
+        paintSpeedLimit(speed, zone);
         return;
       }
     } catch {
@@ -2419,18 +2830,128 @@ async function refreshRoad(lat, lon) {
 }
 
 async function reverseLabel(lat, lon) {
+  const p = await reversePlace(lat, lon);
+  return p.full;
+}
+
+async function reversePlace(lat, lon) {
+  let street = '';
+  let city = '';
+  let full = '';
   try {
     const url = `https://photon.komoot.io/reverse?lon=${lon}&lat=${lat}&lang=fr`;
     const res = await fetch(url);
     const data = await res.json();
     const p = data.features?.[0]?.properties || {};
-    return (
-      [p.name || p.street, p.city || p.state].filter(Boolean).join(', ') ||
-      `${lat.toFixed(5)}, ${lon.toFixed(5)}`
-    );
+    street = [p.housenumber, p.street || p.name].filter(Boolean).join(' ').trim();
+    city = p.city || p.town || p.village || p.state || '';
+    full = [street, city].filter(Boolean).join(', ');
   } catch {
-    return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    /* photon */
   }
+  return { street: street || '', city, full: full || `${lat.toFixed(5)}, ${lon.toFixed(5)}` };
+}
+
+function shortNameFromLabel(label) {
+  const first = String(label || '').split(',')[0].trim();
+  return first || 'Lieu';
+}
+
+function matchSavedPlace(lat, lon) {
+  const p = loadPlaces();
+  if (p.home && placeNear(lat, lon, p.home, 90)) {
+    return {
+      kind: 'home',
+      title: 'Domicile',
+      address: p.home.label || '',
+      label: p.home.label || 'Domicile',
+      lat: p.home.lat,
+      lon: p.home.lon,
+    };
+  }
+  if (p.work && placeNear(lat, lon, p.work, 90)) {
+    return {
+      kind: 'work',
+      title: 'Travail',
+      address: p.work.label || '',
+      label: p.work.label || 'Travail',
+      lat: p.work.lat,
+      lon: p.work.lon,
+    };
+  }
+  return null;
+}
+
+function asPlace(lat, lon, label, extra) {
+  const saved = matchSavedPlace(lat, lon);
+  if (saved) return Object.assign({ lat, lon }, saved, extra || {});
+  const raw = String(label || '').trim();
+  const title = shortNameFromLabel(raw);
+  const comma = raw.indexOf(',');
+  const address = comma > 0 ? raw.slice(comma + 1).trim() : raw;
+  return Object.assign({
+    kind: 'place',
+    title: title || 'Lieu',
+    address: address && address !== title ? address : '',
+    label: raw || title || 'Lieu',
+    lat,
+    lon,
+  }, extra || {});
+}
+
+async function enrichPlace(place) {
+  if (!placeHasPoint(place)) return place;
+  const saved = matchSavedPlace(place.lat, place.lon);
+  if (saved) return Object.assign({}, place, saved, { lat: place.lat, lon: place.lon });
+  if (place.kind === 'home' || place.kind === 'work' || place.kind === 'here') return place;
+  const hasAddr = (place.address || '').trim() && place.address !== place.title;
+  const generic = /^(Lieu|Destination|Arrivée)$/i.test(place.title || '');
+  if (hasAddr && !generic) return place;
+  const rev = await reversePlace(place.lat, place.lon);
+  const poi = !generic && place.title && !/^\d/.test(place.title) ? place.title : '';
+  const title = poi || rev.street || shortNameFromLabel(rev.full) || place.title || 'Lieu';
+  const address = poi
+    ? [rev.street, rev.city].filter(Boolean).join(', ') || rev.full
+    : (rev.city && rev.city !== title ? rev.city : (rev.full !== title ? rev.full : ''));
+  return Object.assign({}, place, {
+    title,
+    address: address === title ? (rev.city && rev.city !== title ? rev.city : '') : address,
+    label: place.label && String(place.label).length > String(rev.full || '').length ? place.label : (rev.full || place.label || title),
+  });
+}
+
+async function hereAsPlace() {
+  let here = me;
+  if (!here) {
+    try {
+      here = await getHere();
+    } catch {
+      here = null;
+    }
+  }
+  if (!here) {
+    return { kind: 'here', title: 'Ma position', address: '', label: 'Ma position', lat: NaN, lon: NaN, fromHere: true };
+  }
+  const saved = matchSavedPlace(here.lat, here.lon);
+  if (saved) return Object.assign({}, saved, { lat: here.lat, lon: here.lon, fromHere: true });
+  const rev = await reversePlace(here.lat, here.lon);
+  const title = rev.street || shortNameFromLabel(rev.full) || 'Ma position';
+  return {
+    kind: 'here',
+    title,
+    address: rev.city || (rev.full !== title ? rev.full : ''),
+    label: rev.full || title,
+    lat: here.lat,
+    lon: here.lon,
+    fromHere: true,
+  };
+}
+
+function pinTitle(place) {
+  if (!place) return '';
+  if (place.kind === 'home') return 'Domicile';
+  if (place.kind === 'work') return 'Travail';
+  return place.title || shortNameFromLabel(place.label);
 }
 
 function getHere() {
@@ -2518,13 +3039,6 @@ async function definePlace(kind) {
 }
 
 async function routeTo(lat, lon, label) {
-  lastDest = { lat, lon, label };
-  rememberRecent({ lat, lon, label });
-  stopNavigation();
-  const gen = ++routeGen;
-  if (routeAbort) routeAbort.abort();
-  routeAbort = new AbortController();
-  const signal = routeAbort.signal;
   if (pendingAssign) {
     const p = loadPlaces();
     p[pendingAssign] = { lat, lon, label };
@@ -2536,45 +3050,64 @@ async function routeTo(lat, lon, label) {
     toast(`${kind === 'home' ? 'Maison' : 'Travail'} enregistré : ${label}`);
     qEl.placeholder = 'Rechercher ici';
   }
-  if (!me) {
-    destMarker = L.marker([lat, lon], { icon: abIcon('B'), zIndexOffset: 720 }).addTo(map).bindPopup(label);
-    map.setView([lat, lon], 14);
-    sheetEl.hidden = true;
+  if (pendingEnd) {
+    await pickRoutePlace({ lat, lon, label });
+    return;
+  }
+  lastDest = await enrichPlace(asPlace(lat, lon, label));
+  rememberRecent({ lat, lon, label: lastDest.label || label });
+  lastOrigin = await hereAsPlace();
+  await routeFromTo(lastOrigin, lastDest);
+}
+
+async function routeFromTo(origin, dest) {
+  if (!placeHasPoint(dest)) return;
+  lastDest = dest;
+  lastOrigin = origin && origin.kind ? origin : origin && placeHasPoint(origin) ? asPlace(origin.lat, origin.lon, origin.label || origin.title) : origin;
+  if (navigating) stopNavigation();
+  const gen = ++routeGen;
+  if (routeAbort) routeAbort.abort();
+  routeAbort = new AbortController();
+  const signal = routeAbort.signal;
+  sheetEl.hidden = true;
+  qEl.value = '';
+  syncClear();
+  const originOk = placeHasPoint(lastOrigin);
+  if (!originOk) {
+    clearRoute();
+    ensureAbMarkers();
     showAltsShell(
-      label,
-      `<p style="color:#94a3b8;margin:0 0 8px">Activez « ma position » puis relancez.</p>` +
-        `<button type="button" id="btnGo" style="margin-top:8px;width:100%;border:0;border-radius:999px;padding:10px;background:#e94560;color:#fff;font-weight:700;cursor:pointer;font-size:15px">Ma position</button>` +
-        `<button type="button" class="go" id="btnDismissRoute" style="margin-top:8px;background:#16213e;color:#f1f5f9">Fermer</button>`,
+      `<p style="color:#94a3b8;margin:0 0 8px">Activez « ma position » pour calculer le trajet.</p>` +
+        `<button type="button" id="btnGo" style="margin-top:8px;width:100%;border:0;border-radius:999px;padding:10px;background:#e94560;color:#fff;font-weight:700;cursor:pointer;font-size:15px">Ma position</button>`,
     );
     const go = document.getElementById('btnGo');
     if (go) {
       go.onclick = () => {
         document.getElementById('btnHere').click();
-        setTimeout(() => void routeTo(lat, lon, label), 700);
+        setTimeout(() => void (async () => {
+          lastOrigin = await hereAsPlace();
+          await routeFromTo(lastOrigin, lastDest);
+        })(), 700);
       };
     }
+    if (placeHasPoint(lastDest)) map.setView([lastDest.lat, lastDest.lon], 14);
     return;
   }
-  if (haversineKm(me, { lat, lon }) < 0.12) {
+  if (haversineKm(lastOrigin, lastDest) < 0.12) {
     clearRoute();
-    destMarker = L.marker([lat, lon], { icon: abIcon('B'), zIndexOffset: 720 }).addTo(map).bindPopup(label);
-    map.setView([lat, lon], 16);
-    sheetEl.hidden = true;
-    showAltsShell(
-      label,
-      `<p style="color:#94a3b8;margin:0 0 10px">Tu es déjà ici — pas besoin de guidage.</p>` +
-        `<button type="button" class="go" id="btnDismissRoute">Fermer</button>`,
-    );
+    ensureAbMarkers();
+    map.setView([lastDest.lat, lastDest.lon], 16);
+    showAltsShell(`<p style="color:#94a3b8;margin:0 0 10px">Tu es déjà ici — pas besoin de guidage.</p>`);
     return;
   }
   clearRoute();
-  destMarker = L.marker([lat, lon], { icon: abIcon('B'), zIndexOffset: 720 }).addTo(map).bindPopup(label);
-  sheetEl.hidden = true;
-  toast(`Itinéraire vers ${label.split(',')[0]}…`);
-  showAltsShell(label, `<p style="color:#94a3b8;margin:0">Calcul…</p>`);
+  ensureAbMarkers();
+  toast(`Itinéraire vers ${pinTitle(lastDest) || 'destination'}…`);
+  showAltsShell(`<p style="color:#94a3b8;margin:0">Calcul…</p>`);
+  fitRouteBounds();
   let choices = [];
   try {
-    choices = await collectRoutes(me, { lat, lon }, signal);
+    choices = await collectRoutes(lastOrigin, lastDest, signal);
   } catch (err) {
     if (err && err.name === 'AbortError') return;
     choices = [];
@@ -2586,7 +3119,7 @@ async function routeTo(lat, lon, label) {
       travelMode === 'transit'
         ? 'Pas de transport en commun trouvé sur ce trajet.'
         : `Aucun itinéraire ${modeLabel().toLowerCase()}.`;
-    showAltsShell(label, `<p style="color:#94a3b8">${esc(none)}</p>`);
+    showAltsShell(`<p style="color:#94a3b8">${esc(none)}</p>`);
     return;
   }
   selectedRouteId = routeChoices[0].id;
@@ -2595,7 +3128,7 @@ async function routeTo(lat, lon, label) {
   if (travelMode === 'car' && routeChoices.length) {
     void (async () => {
       try {
-        const enriched = await enrichRoutesWithWorks(me, { lat, lon }, routeChoices, signal);
+        const enriched = await enrichRoutesWithWorks(lastOrigin, lastDest, routeChoices, signal);
         if (gen !== routeGen) return;
         if (!enriched || !enriched.length) return;
         const keep = selectedRouteId;
@@ -2689,6 +3222,254 @@ async function showNearby(kind) {
   }
 }
 
+function scheduleMapPlaces() {
+  if (navigating && followNav) {
+    if (mapPlacesTimer) return;
+    mapPlacesTimer = window.setTimeout(() => {
+      mapPlacesTimer = 0;
+      lastPlacesKey = '';
+      void refreshMapPlaces();
+    }, 45000);
+    return;
+  }
+  if (mapPlacesTimer) clearTimeout(mapPlacesTimer);
+  mapPlacesTimer = window.setTimeout(() => {
+    mapPlacesTimer = 0;
+    void refreshMapPlaces();
+  }, 700);
+}
+
+function placesCacheRead() {
+  try {
+    return JSON.parse(localStorage.getItem(PLACES_CACHE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function placesCacheWrite(store) {
+  try {
+    const keys = Object.keys(store);
+    if (keys.length > 48) {
+      keys
+        .sort((a, b) => (store[a].at || 0) - (store[b].at || 0))
+        .slice(0, keys.length - 48)
+        .forEach((k) => delete store[k]);
+    }
+    localStorage.setItem(PLACES_CACHE_KEY, JSON.stringify(store));
+  } catch {
+    /* quota */
+  }
+}
+
+async function overpassJson(query) {
+  const body = `data=${encodeURIComponent(query)}`;
+  for (const endpoint of overpassEndpoints()) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+        body,
+      });
+      if (!res.ok) continue;
+      return await res.json();
+    } catch {
+      /* suivant */
+    }
+  }
+  return null;
+}
+
+function poiKindOf(tags) {
+  if (!tags) return null;
+  if (tags.amenity === 'fuel' || tags.highway === 'services') return 'fuel';
+  if (tags.amenity === 'pharmacy') return 'pharm';
+  if (tags.amenity === 'atm' || tags.amenity === 'bank') return 'atm';
+  if (tags.shop === 'supermarket' || tags.shop === 'convenience' || tags.shop === 'mall') return 'shop';
+  return null;
+}
+
+function poiLabelOf(kind) {
+  if (kind === 'fuel') return 'Station';
+  if (kind === 'pharm') return 'Pharmacie';
+  if (kind === 'atm') return 'Distributeur';
+  if (kind === 'shop') return 'Supermarché';
+  return 'Lieu';
+}
+
+function poiIconOf(kind) {
+  if (kind === 'fuel') return '⛽';
+  if (kind === 'pharm') return '✚';
+  if (kind === 'atm') return '€';
+  return '🛒';
+}
+
+function poiMeta(tags, kind) {
+  const bits = [];
+  if (tags.brand && tags.brand !== tags.name) bits.push(tags.brand);
+  if (tags.opening_hours) bits.push(tags.opening_hours);
+  if (kind === 'fuel') {
+    const diesel = tags['fuel:diesel'] || tags.diesel;
+    const sp95 = tags['fuel:octane_95'] || tags['fuel:e10'];
+    if (diesel && diesel !== 'yes') bits.push(`Diesel ${diesel}`);
+    if (sp95 && sp95 !== 'yes') bits.push(`SP95 ${sp95}`);
+    if (!diesel && !sp95 && tags.amenity === 'fuel') bits.push('Carburant OSM');
+  }
+  if (tags['addr:street']) bits.push(tags['addr:street']);
+  return bits.join(' · ') || 'Horaires et tarifs OSM, cache local 18 min.';
+}
+
+function openPoiCard(item) {
+  selectedPoi = item;
+  const card = document.getElementById('poiCard');
+  if (!card) return;
+  document.getElementById('poiCardKind').textContent = poiLabelOf(item.kind);
+  document.getElementById('poiCardTitle').textContent = item.name;
+  document.getElementById('poiCardMeta').textContent = item.meta || '';
+  card.hidden = false;
+}
+
+function closePoiCard() {
+  selectedPoi = null;
+  const card = document.getElementById('poiCard');
+  if (card) card.hidden = true;
+}
+
+function paintLivePois(items) {
+  if (livePoiLayer) {
+    map.removeLayer(livePoiLayer);
+    livePoiLayer = null;
+  }
+  if (!items.length) return;
+  livePoiLayer = L.layerGroup();
+  for (const it of items) {
+    const mark = L.marker([it.lat, it.lon], {
+      pane: 'poiPane',
+      keyboard: false,
+      icon: L.divIcon({
+        className: 'poi-pin',
+        html: `<div class="poi-dot ${it.kind}">${poiIconOf(it.kind)}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      }),
+    });
+    mark.on('click', () => openPoiCard(it));
+    mark.addTo(livePoiLayer);
+  }
+  livePoiLayer.addTo(map);
+}
+
+function paintPlaceLabels(items) {
+  if (placeLabelLayer) {
+    map.removeLayer(placeLabelLayer);
+    placeLabelLayer = null;
+  }
+  const z = map.getZoom() || 0;
+  if (z >= 16) return;
+  const vis = items.filter((p) => {
+    if (p.rank === 'city') return z >= 6;
+    if (p.rank === 'town') return z >= 9;
+    return z >= 12;
+  });
+  if (!vis.length) return;
+  placeLabelLayer = L.layerGroup();
+  for (const p of vis) {
+    L.marker([p.lat, p.lon], {
+      pane: 'labelsPane',
+      interactive: false,
+      keyboard: false,
+      icon: L.divIcon({
+        className: 'city-lab',
+        html: `<div class="city-lab rank-${p.rank}">${esc(p.name)}</div>`,
+        iconSize: [8, 8],
+        iconAnchor: [4, 4],
+      }),
+    }).addTo(placeLabelLayer);
+  }
+  placeLabelLayer.addTo(map);
+}
+
+async function refreshMapPlaces() {
+  if (activeTab !== 'maps' && activeTab !== 'trips') return;
+  let b;
+  try {
+    b = map.getBounds();
+  } catch {
+    return;
+  }
+  const z = map.getZoom() || 0;
+  if (z < 6) {
+    paintPlaceLabels([]);
+    paintLivePois([]);
+    return;
+  }
+  const key = [
+    z >= 14 ? Math.round(z) : z >= 9 ? 9 : 6,
+    b.getSouth().toFixed(2),
+    b.getWest().toFixed(2),
+    b.getNorth().toFixed(2),
+    b.getEast().toFixed(2),
+  ].join('|');
+  if (key === lastPlacesKey) return;
+  const store = placesCacheRead();
+  const hit = store[key];
+  if (hit && Date.now() - hit.at < 18 * 60 * 1000) {
+    lastPlacesKey = key;
+    paintPlaceLabels(hit.cities || []);
+    paintLivePois(hit.pois || []);
+    return;
+  }
+  const s = b.getSouth().toFixed(4);
+  const w = b.getWest().toFixed(4);
+  const n = b.getNorth().toFixed(4);
+  const e = b.getEast().toFixed(4);
+  const wantPoi = z >= 14;
+  const q =
+    `[out:json][timeout:8];(` +
+    `node(${s},${w},${n},${e})[place~"^(city|town|village)$"];` +
+    (wantPoi
+      ? `node(${s},${w},${n},${e})[amenity=fuel];` +
+        `node(${s},${w},${n},${e})[amenity=pharmacy];` +
+        (z >= 15 ? `node(${s},${w},${n},${e})[shop=supermarket];` : '') +
+        (z >= 16 ? `node(${s},${w},${n},${e})[amenity=atm];` : '')
+      : '') +
+    `);out body 80;`;
+  const data = await overpassJson(q);
+  if (!data) return;
+  const cities = [];
+  const pois = [];
+  for (const el of data.elements || []) {
+    if (!Number.isFinite(el.lat) || !Number.isFinite(el.lon)) continue;
+    const tags = el.tags || {};
+    const name = tags.name || tags.brand;
+    if (!name) continue;
+    if (tags.place === 'city' || tags.place === 'town' || tags.place === 'village') {
+      cities.push({ name, lat: el.lat, lon: el.lon, rank: tags.place });
+      continue;
+    }
+    const kind = poiKindOf(tags);
+    if (!kind) continue;
+    pois.push({
+      name,
+      lat: el.lat,
+      lon: el.lon,
+      kind,
+      meta: poiMeta(tags, kind),
+    });
+  }
+  cities.sort((a, b) => {
+    const r = { city: 0, town: 1, village: 2 };
+    return (r[a.rank] || 9) - (r[b.rank] || 9);
+  });
+  const slimCities = cities.slice(0, 40);
+  const slimPois = pois.slice(0, 60);
+  store[key] = { at: Date.now(), cities: slimCities, pois: slimPois };
+  placesCacheWrite(store);
+  lastPlacesKey = key;
+  paintPlaceLabels(slimCities);
+  paintLivePois(slimPois);
+}
+
 function renderChips() {
   const p = loadPlaces();
   const bits = [
@@ -2752,7 +3533,7 @@ function appVersionLabel() {
   } catch {
     /* web */
   }
-  return '0.1.58';
+  return '0.1.64';
 }
 
 const FUEL_UX_OPTS = [
@@ -2989,7 +3770,7 @@ function renderFuelHome() {
   const openApp = document.getElementById('fuelHomeOpenApp');
   if (start) start.onclick = () => startFuelTrip();
   if (pause) pause.onclick = () => document.getElementById('btnPause')?.click();
-  if (stop) stop.onclick = () => document.getElementById('btnStop')?.click();
+  if (stop) stop.onclick = () => fuelStopTracking();
   if (fill) fill.onclick = () => openFillSheet();
   if (openApp) openApp.onclick = () => openFuelApp();
   home.querySelectorAll('[data-vid]').forEach((b) => {
@@ -3132,6 +3913,9 @@ function renderSettings() {
     `<div class="set-row"><div><div class="lab">Barre Music</div><div class="hint">Dock en bas de l’écran</div></div>` +
     `<div class="seg"><button type="button" class="choice${dock ? ' on' : ''}" data-set="dock" data-val="1">On</button>` +
     `<button type="button" class="choice${dock ? '' : ' on'}" data-set="dock" data-val="0">Off</button></div></div>` +
+    `<div class="set-row"><div><div class="lab">Logo Fuel</div><div class="hint">En bas de la carte : Pause, Arrêter, Plein</div></div>` +
+    `<div class="seg"><button type="button" class="choice${fuelLogoOn() ? ' on' : ''}" data-set="fuellogo" data-val="1">On</button>` +
+    `<button type="button" class="choice${fuelLogoOn() ? '' : ' on'}" data-set="fuellogo" data-val="0">Off</button></div></div>` +
     `<div class="set-row"><div><div class="lab">Mise à jour</div><div class="hint">Installer depuis Maps, sans Chrome</div></div>` +
     `<div class="seg"><button type="button" class="choice" data-set="update">Vérifier</button></div></div>` +
     `<div class="set-row"><div><div class="lab">Comparer Fuel</div><div class="hint">Pistes UX (onglet Fuel intégré par défaut)</div></div>` +
@@ -3152,6 +3936,9 @@ function applySetting(set, val) {
     setTravelMode(val);
   } else if (set === 'dock') {
     setMusicDock(val === '1');
+  } else if (set === 'fuellogo') {
+    setFuelLogo(val === '1');
+    toast(val === '1' ? 'Logo Fuel en bas de carte' : 'Barre Fuel classique');
   } else if (set === 'update') {
     try {
       if (typeof HuberaUpdate !== 'undefined' && HuberaUpdate.check) HuberaUpdate.check();
@@ -3292,6 +4079,8 @@ function setTab(id) {
   const overlay = id === 'saved' || id === 'settings' || id === 'offline' || id === 'fuelux';
   topChrome.style.visibility = overlay ? 'hidden' : '';
   roadSignEl.hidden = overlay;
+  const signs = document.getElementById('navSigns');
+  if (signs) signs.hidden = overlay;
   btnHere.hidden = id !== 'maps' && id !== 'trips';
   if (id !== 'maps' && id !== 'trips') {
     sheetEl.hidden = true;
@@ -3665,10 +4454,25 @@ if (fuelFab && fuelRadial) {
     fuelRadial.classList.remove('open');
     const a = b.dataset.rad;
     if (a === 'start') startFuelTrip();
+    else if (a === 'pause') {
+      if (mapsStartedFuel) document.getElementById('btnPause')?.click();
+      else startFuelTrip();
+    }
+    else if (a === 'stop') fuelStopTracking();
     else if (a === 'fill') {
       const fillSheet = document.getElementById('fillSheet');
       if (fillSheet) fillSheet.hidden = false;
     } else if (a === 'history' || a === 'sheet') openFuelSheet();
+  });
+}
+const poiCardClose = document.getElementById('poiCardClose');
+if (poiCardClose) poiCardClose.addEventListener('click', closePoiCard);
+const poiCardGo = document.getElementById('poiCardGo');
+if (poiCardGo) {
+  poiCardGo.addEventListener('click', () => {
+    const it = selectedPoi;
+    closePoiCard();
+    if (it) void routeTo(it.lat, it.lon, it.name);
   });
 }
 document.addEventListener('click', (e) => {
@@ -3793,9 +4597,10 @@ function saveFillFromSheet() {
     if (pauseBtn) pauseBtn.textContent = 'Reprendre';
     stopNavWatch();
   }
-  fuelControl('fill', extra);
+  savePendingFuelFill(extra);
+  const ok = fuelControl('fill', extra);
   closeFillSheet();
-  toast('Plein envoyé — tu restes dans Maps.');
+  toast(ok ? 'Plein mémorisé — tu restes dans Maps.' : 'Plein mémorisé. Ouvre Hubera Fuel connecté pour le cloud.');
 }
 
 window.__mapsFuelEvent = function (raw) {
@@ -3813,6 +4618,18 @@ window.__mapsFuelEvent = function (raw) {
         lastFuelSnapAt = Date.now();
         paintFuelPeek();
         if (activeTab === 'trips') renderFuelHome();
+        const pending = loadPendingFuelFill();
+        if (pending) {
+          const wantL = Number(String(pending.liters || '').replace(',', '.'));
+          const wantE = Number(String(pending.total || '').replace(',', '.'));
+          const match = (parsed.fills || []).some((f) => {
+            const fL = Number(f.liters || 0);
+            const fE = Number(f.cost || 0);
+            return (wantL > 0 && Math.abs(fL - wantL) < 0.2) || (wantE > 0 && Math.abs(fE - wantE) < 0.08);
+          });
+          if (match) clearPendingFuelFill();
+          else setTimeout(retryPendingFuelFill, 1800);
+        }
       }
     }
     const ok = q.get('ok') !== '0';
@@ -3864,6 +4681,7 @@ function fuelStopTracking() {
   fuelLiveKm = 0;
   paintFuelStats();
   fuelEl.hidden = true;
+  syncFuelChrome();
 }
 
 document.getElementById('btnPause').addEventListener('click', () => {
@@ -3913,6 +4731,8 @@ fetch('contacts-seed.json')
 renderChips();
 renderSaved();
 applyFuelUx();
+syncFuelChrome();
+scheduleMapPlaces();
 syncClear();
 
 const nativeMusic = typeof HuberaMusic !== 'undefined';
@@ -4006,7 +4826,7 @@ if (nativeMusic) {
     } catch {
       /* ignore */
     }
-  }, 800);
+  }, 2000);
 }
 
 (function hideBootFail() {

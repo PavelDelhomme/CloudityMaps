@@ -5,12 +5,18 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <queries>
+        <package android:name="cloud.hubera.music" />
         <package android:name="ovh.delhomme.ytmusic" />
+        <package android:name="cloud.hubera.fuel" />
         <package android:name="com.gasoiltracking.app" />
+        <package android:name="cloud.hubera.contacts" />
         <package android:name="fr.cloudity.cloudity_contacts" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="gasoiltracking" />
+        </intent>
+        <intent>
+            <action android:name="com.gasoiltracking.app.MAPS_CONTROL" />
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
