@@ -13,3 +13,6 @@ apk/build/
 apk/local.properties
 
 
+
+*.idsig
+docs/*.png
