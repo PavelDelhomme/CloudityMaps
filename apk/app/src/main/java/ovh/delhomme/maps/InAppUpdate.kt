@@ -131,6 +131,26 @@ class InAppUpdate(private val activity: Activity) {
                 dest.outputStream().use { outs -> ins.copyTo(outs) }
             }
             conn.disconnect()
+            if (dest.length() < 10_000L) {
+                dest.delete()
+                main.post {
+                    Toast.makeText(activity, "APK invalide (fichier trop petit).", Toast.LENGTH_LONG).show()
+                }
+                return
+            }
+            val magic = ByteArray(4)
+            var zipOk = false
+            dest.inputStream().use { ins ->
+                val n = ins.read(magic)
+                zipOk = n >= 2 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte()
+            }
+            if (!zipOk) {
+                dest.delete()
+                main.post {
+                    Toast.makeText(activity, "APK invalide (pas un fichier Android).", Toast.LENGTH_LONG).show()
+                }
+                return
+            }
             if (expectedSha.isNotBlank()) {
                 val got = sha256(dest)
                 if (!got.equals(expectedSha, ignoreCase = true)) {
