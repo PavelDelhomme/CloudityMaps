@@ -1,5 +1,12 @@
 # Hubera Maps — versions
 
+## 0.1.69 (5 oct. 2026)
+- Fuel idle : bouton sombre, menu **Démarrer / Plein / Garage** (plus « Arrêter » rose sans trajet).
+- Garage : retry snapshot + Fuel legacy si le garage reste vide.
+- Maison/Travail : enregistrer ferme la recherche ; redéfinir sans lancer d’itinéraire ; petit nom + suppression.
+- Points orange = travaux OSM, cliquables.
+- Dock Music : play/pause calé sur `isPlaying` réel (plus le rose « pause » à l’ouverture).
+
 ## 0.1.68 (1er oct. 2026)
 - **Ouvrir Hubera Fuel** : pastille rouge Hubera (plus le bouton ghost gris). Lance `cloud.hubera.fuel` en priorité (plus l’ancien package si les deux sont installés).
 - Garage Maps : nom du véhicule du compte, chips sélectionnables, véhicule **actif Fuel** pré-sélectionné. Snapshot forcé à l’ouverture de l’onglet.

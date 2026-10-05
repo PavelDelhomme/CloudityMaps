@@ -239,6 +239,7 @@ function fuelControl(action, extra) {
     total: extra.total || '',
     station: extra.station || '',
     vehicleId: extra.vehicleId ? String(extra.vehicleId) : '',
+    preferLegacy: extra.preferLegacy ? '1' : '',
   });
   try {
     if (window.HuberaFuel && typeof window.HuberaFuel.control === 'function') {
@@ -934,7 +935,7 @@ function paintPlacePins() {
       keyboard: false,
     })
       .addTo(contactLayer)
-      .on('click', () => void routeTo(places.home.lat, places.home.lon, places.home.label || 'Maison'));
+      .on('click', () => openPlaceActions('home', places.home));
   }
   if (places.work && Number.isFinite(places.work.lat) && Number.isFinite(places.work.lon)
       && !hideSavedPlaceBecauseHere(places.work) && !hideSavedBecauseRoute(places.work)) {
@@ -944,7 +945,7 @@ function paintPlacePins() {
       keyboard: false,
     })
       .addTo(contactLayer)
-      .on('click', () => void routeTo(places.work.lat, places.work.lon, places.work.label || 'Travail'));
+      .on('click', () => openPlaceActions('work', places.work));
   }
   syncPinLabels();
 }
@@ -1688,6 +1689,15 @@ function paintWorks(works) {
       fillOpacity: 0.95,
     })
       .bindTooltip(w.name || 'Travaux', { direction: 'top' })
+      .on('click', () => {
+        openPoiCard({
+          kind: 'works',
+          name: w.name || 'Travaux / fermeture',
+          lat: w.lat,
+          lon: w.lon,
+          meta: 'Point orange = travaux OSM autour de toi. Tu peux lancer un itinéraire ou fermer.',
+        });
+      })
       .addTo(worksLayer);
   }
   worksLayer.addTo(map);
@@ -2403,7 +2413,13 @@ function syncFuelChrome() {
   const radial = document.getElementById('fuelRadial');
   if (logo) {
     fuelEl.hidden = true;
-    if (fab) fab.hidden = false;
+    if (fab) {
+      fab.hidden = false;
+      fab.classList.toggle('live', live);
+      fab.classList.toggle('idle', !live);
+      fab.setAttribute('aria-label', live ? 'Fuel — trajet en cours' : 'Fuel');
+      fab.title = live ? 'Pause, arrêter, plein' : 'Démarrer, plein, garage';
+    }
   } else if (live && (navigating || hudCollapsed)) {
     fuelEl.hidden = false;
     if (fab) fab.hidden = true;
@@ -2415,9 +2431,25 @@ function syncFuelChrome() {
     if (!live) fuelEl.hidden = true;
     if (fab) fab.hidden = true;
   }
-  const pauseRad = radial && radial.querySelector('[data-rad="pause"]');
-  if (pauseRad) pauseRad.textContent = paused ? 'Reprendre' : 'Pause';
+  paintFuelRadial();
   paintFuelStats();
+}
+
+function paintFuelRadial() {
+  const radial = document.getElementById('fuelRadial');
+  if (!radial) return;
+  const live = !!(mapsStartedFuel || Number(fuelTrip) > 0);
+  if (live) {
+    radial.innerHTML =
+      `<button type="button" data-rad="pause">${paused ? 'Reprendre' : 'Pause'}</button>` +
+      `<button type="button" data-rad="stop" class="stop">Arrêter</button>` +
+      `<button type="button" data-rad="fill">Plein</button>`;
+  } else {
+    radial.innerHTML =
+      `<button type="button" data-rad="start" class="go-start">Démarrer</button>` +
+      `<button type="button" data-rad="fill">Plein</button>` +
+      `<button type="button" data-rad="sheet">Garage</button>`;
+  }
 }
 
 function showFuelBar(title) {
@@ -2998,15 +3030,118 @@ function getHere() {
   });
 }
 
+function placeNick(place, fallback) {
+  if (place && place.nick) return String(place.nick);
+  return fallback || (place && place.label ? String(place.label).split(',')[0] : '');
+}
+
+function finishAssignPlace(kind, lat, lon, label) {
+  const p = loadPlaces();
+  const prev = kind === 'home' || kind === 'work' ? p[kind] : null;
+  const nick =
+    (prev && prev.nick) ||
+    (kind === 'home' ? 'Maison' : kind === 'work' ? 'Travail' : '');
+  const rec = { lat, lon, label, nick };
+  if (kind === 'home' || kind === 'work') p[kind] = rec;
+  else {
+    const rest = Array.isArray(p.saved) ? p.saved.slice() : [];
+    const i = rest.findIndex((x) => x && Math.abs(x.lat - lat) < 1e-5 && Math.abs(x.lon - lon) < 1e-5);
+    if (i >= 0) rest[i] = { ...rest[i], ...rec };
+    else rest.unshift(rec);
+    p.saved = rest.slice(0, 24);
+  }
+  savePlaces(p);
+  pendingAssign = null;
+  showHits([]);
+  qEl.value = '';
+  qEl.placeholder = 'Rechercher ici';
+  syncClear();
+  chipsEl.hidden = false;
+  renderChips();
+  renderSaved();
+  closePoiCard();
+  const shown = nick || label;
+  toast(`${shown} enregistré`);
+}
+
 function startAssign(kind) {
   pendingAssign = kind;
-  const title = kind === 'home' ? 'Maison' : 'Travail';
-  qEl.value = '';
-  qEl.placeholder = `${title} : nom ou adresse`;
+  const p = loadPlaces();
+  const cur = kind === 'home' || kind === 'work' ? p[kind] : null;
+  const title = kind === 'home' ? 'Maison' : kind === 'work' ? 'Travail' : 'Lieu';
+  qEl.value = cur && cur.label ? cur.label : '';
+  qEl.placeholder = cur
+    ? `${title} actuel — cherche une nouvelle adresse`
+    : `${title} : adresse ou ma position`;
   syncClear();
   setTab('maps');
   qEl.focus();
-  void showSuggestHits('');
+  void showSuggestHits(qEl.value);
+}
+
+function openPlaceActions(kind, place) {
+  if (!place) {
+    startAssign(kind);
+    return;
+  }
+  const title = placeNick(place, kind === 'home' ? 'Maison' : kind === 'work' ? 'Travail' : 'Lieu');
+  sheetEl.hidden = false;
+  sheetEl.innerHTML =
+    `<strong>${esc(title)}</strong>` +
+    `<span>${esc(place.label || '')}</span>` +
+    `<button type="button" class="go" id="paGo">Itinéraire</button>` +
+    `<button type="button" class="go" id="paEdit" style="margin-top:8px;background:#16213e">Modifier l’adresse</button>` +
+    `<button type="button" class="go" id="paNick" style="margin-top:8px;background:#16213e">Petit nom</button>` +
+    `<button type="button" class="go" id="paDel" style="margin-top:8px;background:#3f1d2e;color:#e94560">Supprimer</button>`;
+  const go = document.getElementById('paGo');
+  const edit = document.getElementById('paEdit');
+  const nickBtn = document.getElementById('paNick');
+  const del = document.getElementById('paDel');
+  if (go) {
+    go.onclick = () => {
+      sheetEl.hidden = true;
+      void routeTo(place.lat, place.lon, place.label || title);
+    };
+  }
+  if (edit) {
+    edit.onclick = () => {
+      sheetEl.hidden = true;
+      startAssign(kind);
+    };
+  }
+  if (nickBtn) {
+    nickBtn.onclick = () => {
+      const next = window.prompt('Petit nom (Maison, Travail, Maman…)', title);
+      if (next == null) return;
+      const p = loadPlaces();
+      if (kind === 'home' || kind === 'work') {
+        if (p[kind]) p[kind] = { ...p[kind], nick: next.trim() || title };
+      } else if (kind === 'saved') {
+        const i = Number(place._i);
+        if (Array.isArray(p.saved) && p.saved[i]) p.saved[i] = { ...p.saved[i], nick: next.trim() };
+      }
+      savePlaces(p);
+      renderChips();
+      renderSaved();
+      sheetEl.hidden = true;
+      toast('Petit nom enregistré');
+    };
+  }
+  if (del) {
+    del.onclick = () => {
+      const p = loadPlaces();
+      if (kind === 'home') p.home = null;
+      else if (kind === 'work') p.work = null;
+      else if (kind === 'saved' && Array.isArray(p.saved)) {
+        p.saved = p.saved.filter((_, i) => i !== Number(place._i));
+      }
+      savePlaces(p);
+      renderChips();
+      renderSaved();
+      sheetEl.hidden = true;
+      toast('Adresse supprimée');
+    };
+  }
 }
 
 async function showSuggestHits(q) {
@@ -3040,6 +3175,14 @@ async function showSuggestHits(q) {
       here: true,
     });
     const p = loadPlaces();
+    if (pendingAssign && p[pendingAssign] && p[pendingAssign].label) {
+      items.push({
+        lat: p[pendingAssign].lat,
+        lon: p[pendingAssign].lon,
+        label: p[pendingAssign].label,
+        hint: `${title} actuel — garder ou cherche plus bas`,
+      });
+    }
     for (const r of p.recents.slice(0, 4)) {
       items.push({ ...r, hint: 'Récent' });
     }
@@ -3062,15 +3205,8 @@ async function definePlace(kind) {
 
 async function routeTo(lat, lon, label) {
   if (pendingAssign) {
-    const p = loadPlaces();
-    p[pendingAssign] = { lat, lon, label };
-    savePlaces(p);
-    const kind = pendingAssign;
-    pendingAssign = null;
-    renderChips();
-    renderSaved();
-    toast(`${kind === 'home' ? 'Maison' : 'Travail'} enregistré : ${label}`);
-    qEl.placeholder = 'Rechercher ici';
+    finishAssignPlace(pendingAssign, lat, lon, label);
+    return;
   }
   if (pendingEnd) {
     await pickRoutePlace({ lat, lon, label });
@@ -3316,6 +3452,7 @@ function poiLabelOf(kind) {
   if (kind === 'pharm') return 'Pharmacie';
   if (kind === 'atm') return 'Distributeur';
   if (kind === 'shop') return 'Supermarché';
+  if (kind === 'works') return 'Travaux';
   return 'Lieu';
 }
 
@@ -3494,9 +3631,11 @@ async function refreshMapPlaces() {
 
 function renderChips() {
   const p = loadPlaces();
+  const homeName = p.home ? placeNick(p.home, 'Maison') : '';
+  const workName = p.work ? placeNick(p.work, 'Travail') : '';
   const bits = [
-    `<button type="button" class="chip" data-chip="home">${p.home ? `Maison` : `+ Maison`}${p.home ? ` <span class="sub">· ${esc(p.home.label.split(',')[0])}</span>` : ''}</button>`,
-    `<button type="button" class="chip" data-chip="work">${p.work ? `Travail` : `+ Travail`}${p.work ? ` <span class="sub">· ${esc(p.work.label.split(',')[0])}</span>` : ''}</button>`,
+    `<button type="button" class="chip" data-chip="home">${p.home ? esc(homeName) : `+ Maison`}${p.home ? ` <span class="sub">· ${esc((p.home.label || '').split(',')[0])}</span>` : ''}</button>`,
+    `<button type="button" class="chip" data-chip="work">${p.work ? esc(workName) : `+ Travail`}${p.work ? ` <span class="sub">· ${esc((p.work.label || '').split(',')[0])}</span>` : ''}</button>`,
     `<button type="button" class="chip" data-chip="fuel">Stations</button>`,
     `<button type="button" class="chip" data-chip="parking">Parkings</button>`,
   ];
@@ -3519,15 +3658,30 @@ function renderSaved() {
       );
       return;
     }
+    const shown = placeNick(place, title);
     rows.push(
-      `<div class="place-line"><button type="button" class="place-edit" data-assign="${key}" aria-label="Modifier ${esc(title)}">✎</button>` +
-        `<button type="button" class="place-row" data-lat="${place.lat}" data-lon="${place.lon}" data-label="${esc(place.label)}"><strong>${esc(title)}</strong> · ${esc(place.label)}</button></div>`,
+      `<div class="place-line"><button type="button" class="place-edit" data-assign="${key}" aria-label="Modifier ${esc(shown)}">✎</button>` +
+        `<button type="button" class="place-del" data-del="${key}" aria-label="Supprimer ${esc(shown)}">✕</button>` +
+        `<button type="button" class="place-row" data-place="${key}"><strong>${esc(shown)}</strong> · ${esc(place.label)}</button></div>`,
     );
   };
   add('home', 'Maison', p.home);
   add('work', 'Travail', p.work);
-  const rest = p.saved.concat(p.recents);
-  const seen = new Set([p.home?.label, p.work?.label].filter(Boolean));
+  (p.saved || []).forEach((r, i) => {
+    if (!r) return;
+    const shown = placeNick(r, (r.label || '').split(',')[0] || 'Lieu');
+    rows.push(
+      `<div class="place-line"><button type="button" class="place-edit" data-saved-edit="${i}" aria-label="Modifier ${esc(shown)}">✎</button>` +
+        `<button type="button" class="place-del" data-saved-del="${i}" aria-label="Supprimer ${esc(shown)}">✕</button>` +
+        `<button type="button" class="place-row" data-saved="${i}"><strong>${esc(shown)}</strong> · ${esc(r.label || '')}</button></div>`,
+    );
+  });
+  const rest = p.recents;
+  const seen = new Set(
+    [p.home?.label, p.work?.label]
+      .concat((p.saved || []).map((s) => s && s.label))
+      .filter(Boolean),
+  );
   for (const r of rest) {
     if (seen.has(r.label)) continue;
     seen.add(r.label);
@@ -3555,7 +3709,7 @@ function appVersionLabel() {
   } catch {
     /* web */
   }
-  return '0.1.64';
+  return '0.1.69';
 }
 
 const FUEL_UX_OPTS = [
@@ -3696,13 +3850,31 @@ function activeFuelVehicle() {
 }
 
 let lastFuelSnapAt = 0;
+let fuelSnapTries = 0;
 
 function requestFuelSnapshot(force) {
   const cached = loadFuelSnap();
   const hasVeh = (cached.vehicles || []).length > 0;
   if (!force && hasVeh && Date.now() - lastFuelSnapAt < 45000) return;
   lastFuelSnapAt = Date.now();
-  fuelControl('snapshot');
+  const ok = fuelControl('snapshot');
+  if (!ok) {
+    renderFuelHome();
+    return;
+  }
+  window.setTimeout(() => {
+    const list = (loadFuelSnap().vehicles || []).length;
+    if (list > 0) {
+      fuelSnapTries = 0;
+      return;
+    }
+    if (fuelSnapTries < 3) {
+      fuelSnapTries += 1;
+      const extra = fuelSnapTries >= 2 ? { preferLegacy: '1' } : {};
+      fuelControl('snapshot', extra);
+      renderFuelHome();
+    }
+  }, 1800);
 }
 
 function fuelAppInstalled() {
@@ -3779,6 +3951,12 @@ function renderFuelHome() {
   const live = mapsStartedFuel || Number(fuelTrip) > 0;
   const pct = veh && veh.pct >= 0 ? veh.pct : null;
   const chips = vehicleChipsHtml();
+  const emptyGarage =
+    `<p class="page-hint">${fuelSnapTries ? 'Garage encore vide — Fuel n’a pas renvoyé de véhicule.' : 'Chargement du garage Fuel…'}</p>` +
+    `<div class="fuel-actions">` +
+    `<button type="button" class="primary" id="fuelHomeRetry">Réessayer</button>` +
+    `<button type="button" class="ghost" id="fuelHomeOpenEmpty">Ouvrir Hubera Fuel</button>` +
+    `</div>`;
   const gaugeLabel = pct != null ? `${pct} %` : '—';
   const gaugeSub = veh
     ? pct != null
@@ -3804,7 +3982,7 @@ function renderFuelHome() {
   }
   home.innerHTML =
     `<div class="fuel-panel">` +
-    (chips || `<p class="page-hint">Véhicule du compte Fuel — snapshot en cours.</p>`) +
+    (chips || emptyGarage) +
     `<div class="fuel-gauge-card">` +
     `<div class="lab">${esc(veh ? veh.name : 'Véhicule')}</div>` +
     `<div class="pct">${esc(gaugeLabel)}</div>` +
@@ -3825,11 +4003,15 @@ function renderFuelHome() {
   const stop = document.getElementById('fuelHomeStop');
   const fill = document.getElementById('fuelHomeFill');
   const openApp = document.getElementById('fuelHomeOpenApp');
+  const retry = document.getElementById('fuelHomeRetry');
+  const openEmpty = document.getElementById('fuelHomeOpenEmpty');
   if (start) start.onclick = () => startFuelTrip();
   if (pause) pause.onclick = () => document.getElementById('btnPause')?.click();
   if (stop) stop.onclick = () => fuelStopTracking();
   if (fill) fill.onclick = () => openFillSheet();
   if (openApp) openApp.onclick = () => openFuelApp();
+  if (retry) retry.onclick = () => requestFuelSnapshot(true);
+  if (openEmpty) openEmpty.onclick = () => openFuelApp();
   bindFuelVehicleChips(home);
 }
 
@@ -4308,7 +4490,7 @@ chipsEl.addEventListener('click', (e) => {
   const p = loadPlaces();
   const place = p[kind];
   if (place) {
-    void routeTo(place.lat, place.lon, place.label);
+    openPlaceActions(kind, place);
     return;
   }
   startAssign(kind);
@@ -4435,6 +4617,30 @@ savedList.addEventListener('click', (e) => {
     startAssign(edit.dataset.assign);
     return;
   }
+  if (edit && edit.dataset.savedEdit != null) {
+    const p = loadPlaces();
+    const rec = (p.saved || [])[Number(edit.dataset.savedEdit)];
+    if (rec) openPlaceActions('saved', { ...rec, _i: Number(edit.dataset.savedEdit) });
+    return;
+  }
+  const del = e.target.closest('.place-del');
+  if (del && del.dataset.del) {
+    const p = loadPlaces();
+    p[del.dataset.del] = null;
+    savePlaces(p);
+    renderChips();
+    renderSaved();
+    toast('Adresse supprimée');
+    return;
+  }
+  if (del && del.dataset.savedDel != null) {
+    const p = loadPlaces();
+    p.saved = (p.saved || []).filter((_, i) => i !== Number(del.dataset.savedDel));
+    savePlaces(p);
+    renderSaved();
+    toast('Adresse supprimée');
+    return;
+  }
   const row = e.target.closest('.place-row');
   if (!row) return;
   if (row.dataset.openContacts === '1') {
@@ -4444,6 +4650,17 @@ savedList.addEventListener('click', (e) => {
   }
   if (row.dataset.assign) {
     startAssign(row.dataset.assign);
+    return;
+  }
+  if (row.dataset.place) {
+    const p = loadPlaces();
+    openPlaceActions(row.dataset.place, p[row.dataset.place]);
+    return;
+  }
+  if (row.dataset.saved != null) {
+    const p = loadPlaces();
+    const rec = (p.saved || [])[Number(row.dataset.saved)];
+    if (rec) openPlaceActions('saved', { ...rec, _i: Number(row.dataset.saved) });
     return;
   }
   if (row.dataset.query) {
@@ -4533,6 +4750,21 @@ if (poiCardGo) {
     const it = selectedPoi;
     closePoiCard();
     if (it) void routeTo(it.lat, it.lon, it.name);
+  });
+}
+const poiCardSave = document.getElementById('poiCardSave');
+if (poiCardSave) {
+  poiCardSave.addEventListener('click', () => {
+    const it = selectedPoi;
+    if (!it || !Number.isFinite(it.lat) || !Number.isFinite(it.lon)) return;
+    const nick = window.prompt('Petit nom pour ce lieu', it.name || 'Lieu');
+    if (nick == null) return;
+    finishAssignPlace('saved', it.lat, it.lon, it.name || nick);
+    const p = loadPlaces();
+    if (p.saved && p.saved[0]) p.saved[0] = { ...p.saved[0], nick: nick.trim() || it.name };
+    savePlaces(p);
+    renderSaved();
+    closePoiCard();
   });
 }
 document.addEventListener('click', (e) => {
@@ -4810,22 +5042,36 @@ function musicEmptyArtist(s) {
 function applyMusicState(s) {
   if (!s || typeof s !== 'object') return;
   lastMusicState = s;
-  if (s.playing && document.body.classList.contains('music-off')) {
+  const reallyPlaying = !!(s.playing && s.title);
+  if (reallyPlaying && document.body.classList.contains('music-off')) {
     setMusicDock(true);
   }
   const glyph = s.playing ? '❚❚' : '▶';
+  const label = s.playing ? 'Pause' : 'Lecture';
   const title = document.getElementById('musicTitle');
   const artist = document.getElementById('musicArtist');
   const play = document.getElementById('musicPlay');
   if (title) title.textContent = musicEmptyTitle(s);
   if (artist) artist.textContent = s.title ? (s.artist || '') : '';
-  if (play) play.textContent = glyph;
+  if (play) {
+    play.textContent = glyph;
+    play.classList.toggle('is-playing', !!s.playing);
+    play.classList.toggle('is-paused', !s.playing);
+    play.setAttribute('aria-label', label);
+    play.title = label;
+  }
   const st = document.getElementById('musicSheetTitle');
   const sa = document.getElementById('musicSheetArtist');
   const sp = document.getElementById('musicSheetPlay');
   if (st) st.textContent = musicEmptyTitle(s);
   if (sa) sa.textContent = musicEmptyArtist(s);
-  if (sp) sp.textContent = glyph;
+  if (sp) {
+    sp.textContent = glyph;
+    sp.classList.toggle('is-playing', !!s.playing);
+    sp.classList.toggle('is-paused', !s.playing);
+    sp.setAttribute('aria-label', label);
+    sp.title = label;
+  }
 }
 
 function openMusicSheet() {
@@ -4886,7 +5132,7 @@ if (nativeMusic) {
     } catch {
       /* ignore */
     }
-  }, 2000);
+  }, 700);
 }
 
 (function hideBootFail() {

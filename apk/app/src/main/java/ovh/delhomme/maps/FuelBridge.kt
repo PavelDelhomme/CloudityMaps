@@ -79,6 +79,7 @@ class FuelBridge(private val context: Context) {
             cancelBringBack()
             val extra = runCatching { JSONObject(payloadJson) }.getOrElse { JSONObject() }
             val act = action.lowercase(Locale.ROOT)
+            val preferNew = extra.optString("preferLegacy") != "1"
             val extras = Bundle().apply {
                 putString("action", act)
                 putString("silent", "1")
@@ -87,7 +88,8 @@ class FuelBridge(private val context: Context) {
                     if (v.isNotBlank()) putString(key, v)
                 }
             }
-            val targets = listOfNotNull(installedFuelPkg(preferNew = true)).ifEmpty { FUEL_PKGS }
+            val chosen = installedFuelPkg(preferNew = preferNew)
+            val targets = listOfNotNull(chosen).ifEmpty { FUEL_PKGS.take(1) }
             for (pkg in targets) {
                 val bcast = Intent(ACTION_MAPS_CONTROL).apply {
                     setPackage(pkg)

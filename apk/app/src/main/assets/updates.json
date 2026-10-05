@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.68",
-  "versionCode": 69,
+  "version": "0.1.69",
+  "versionCode": 70,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -11,7 +11,7 @@
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Fuel : bouton Hubera, v\u00e9hicule du compte, ouverture cloud.hubera.fuel. Music : next/prev session (pas de double skip). MAJ jamais forc\u00e9e.",
-  "published_at": "2026-10-01T20:05:00Z",
-  "sha256": "df1e3f9e756e3ed2cfb4e96ff47de65782266a38cef3837f5e758b22c2f21534"
+  "notes": "Fuel : menu Démarrer (plus Arrêter rose à vide). Maison/Travail : enregistrer ferme la recherche, petit nom, suppression. Travaux orange cliquables. Music play/pause réel. MAJ jamais forcée.",
+  "published_at": "2026-10-05T20:30:00Z",
+  "sha256": "44886190ef1faf3d73905df4f5e5692a775d95fa3da0b0fc97949f5ff89a0e15"
 }

@@ -284,6 +284,10 @@
       background: transparent; color: #94a3b8; font-size: 16px; cursor: pointer;
     }
     .place-edit:active { background: #16213e; color: #e94560; }
+    .place-del {
+      width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px;
+      background: transparent; color: #e94560; font-size: 16px; cursor: pointer;
+    }
     .place-line .place-row { border-bottom: 0; flex: 1; min-width: 0; }
     .hit { display: block; width: 100%; text-align: left; padding: 12px 14px; border: 0; background: #1a1a2e; color: #f1f5f9; cursor: pointer; border-bottom: 1px solid #2d2d44; font-size: 15px; }
     .hit.here { background: #16213e; }
@@ -422,10 +426,12 @@
     .fuel-fab {
       display: none; position: absolute; z-index: 1300; left: 14px; right: auto;
       bottom: calc(var(--chrome) + 10px);
-      width: 52px; height: 52px; border-radius: 16px; border: 0; background: #e94560; color: #fff;
+      width: 52px; height: 52px; border-radius: 16px; border: 0; background: #16213e; color: #fff;
       place-items: center; font-size: 22px; cursor: pointer;
       box-shadow: 0 2px 8px rgba(0,0,0,.45); padding: 0;
     }
+    .fuel-fab.live { background: #e94560; }
+    .fuel-fab.idle { background: #16213e; }
     body.fuel-logo .fuel-fab, body.fux-6 .fuel-fab { display: grid; }
     .fuel-fab svg { display: block; }
     .fuel-radial {
@@ -439,6 +445,7 @@
       box-shadow: 0 2px 8px rgba(0,0,0,.4);
     }
     .fuel-radial button.stop { background: #3f1d2e; color: #e94560; }
+    .fuel-radial button.go-start { background: #16302a; color: #34d399; }
     body.fux-8 #map { bottom: 42%; }
     body.fux-8 .fuel-split {
       display: block; position: absolute; left: 0; right: 0; top: 58%; bottom: var(--chrome);
@@ -524,6 +531,7 @@
       color: #f1f5f9; font-size: 18px; cursor: pointer;
     }
     .music .ctrls button.play { width: 56px; height: 56px; background: #e94560; color: #fff; font-size: 18px; }
+    .music .ctrls button.play.is-playing { background: #16213e; color: #fff; }
     .music .hide {
       width: 36px; height: 36px; border: 0; border-radius: 18px; background: transparent;
       color: #94a3b8; font-size: 18px; cursor: pointer; flex-shrink: 0;
@@ -562,6 +570,7 @@
       color: #f1f5f9; font-size: 22px; cursor: pointer;
     }
     .music-sheet .ms-transport button.play { width: 68px; height: 68px; border-radius: 34px; background: #e94560; color: #fff; font-size: 24px; }
+    .music-sheet .ms-transport button.play.is-playing { background: #16213e; }
     .tabs {
       display: flex; justify-content: space-around; padding: 4px 4px 0; color: #94a3b8;
     }
@@ -836,9 +845,9 @@
     </svg>
   </button>
   <div class="fuel-radial" id="fuelRadial" hidden>
-    <button type="button" data-rad="pause">Pause</button>
-    <button type="button" data-rad="stop" class="stop">Arrêter</button>
+    <button type="button" data-rad="start" class="go-start">Démarrer</button>
     <button type="button" data-rad="fill">Plein</button>
+    <button type="button" data-rad="sheet">Garage</button>
   </div>
   <div class="poi-card" id="poiCard" hidden>
     <div class="k" id="poiCardKind">Lieu</div>
@@ -846,6 +855,7 @@
     <div class="m" id="poiCardMeta"></div>
     <div class="row">
       <button type="button" class="ghost" id="poiCardClose">Fermer</button>
+      <button type="button" class="ghost" id="poiCardSave">Enregistrer</button>
       <button type="button" class="go" id="poiCardGo">Itinéraire</button>
     </div>
   </div>

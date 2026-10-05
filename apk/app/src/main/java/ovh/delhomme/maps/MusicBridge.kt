@@ -38,7 +38,7 @@ class MusicBridge(
                 refreshCache()
                 pushToWeb()
             }
-            main.postDelayed(this, 4000)
+            main.postDelayed(this, 1200)
         }
     }
 
@@ -85,6 +85,14 @@ class MusicBridge(
                         connectTries = 0
                         c.addListener(object : Player.Listener {
                             override fun onEvents(player: Player, events: Player.Events) {
+                                refreshCache()
+                                pushToWeb()
+                            }
+                            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                                refreshCache()
+                                pushToWeb()
+                            }
+                            override fun onPlaybackStateChanged(playbackState: Int) {
                                 refreshCache()
                                 pushToWeb()
                             }
@@ -233,8 +241,7 @@ class MusicBridge(
         val meta = c?.mediaMetadata
         val title = meta?.title?.toString()?.trim().orEmpty()
         val artist = meta?.artist?.toString()?.trim().orEmpty()
-        val playing = (c != null && (c.isPlaying || c.playWhenReady)) ||
-            (c == null && (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager).isMusicActive)
+        val playing = c != null && c.isPlaying
         val empty = title.isEmpty()
         return JSONObject()
             .put("connected", c != null)
