@@ -2,4 +2,5 @@
 <resources>
     <color name="hubera_navy">#1A1A2E</color>
     <color name="hubera_accent">#E94560</color>
+    <color name="iconBackground">#FF0033</color>
 </resources>

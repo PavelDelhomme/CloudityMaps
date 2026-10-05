@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.69",
-  "versionCode": 70,
+  "version": "0.1.70",
+  "versionCode": 71,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -13,5 +13,5 @@
   "mandatory": false,
   "notes": "Fuel : menu Démarrer (plus Arrêter rose à vide). Maison/Travail : enregistrer ferme la recherche, petit nom, suppression. Travaux orange cliquables. Music play/pause réel. MAJ jamais forcée.",
   "published_at": "2026-10-05T20:30:00Z",
-  "sha256": "44886190ef1faf3d73905df4f5e5692a775d95fa3da0b0fc97949f5ff89a0e15"
+  "sha256": "3526d72ffd0793eea4aebb1e7c58fba49641cf8fb20d4a91127276ebd3ccfb82"
 }
