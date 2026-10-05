@@ -116,12 +116,17 @@
     .chip:active { background: #16213e; }
     .chip .sub { color: #94a3b8; font-weight: 500; }
     .nav-signs {
-      position: absolute; z-index: 1100; right: 12px;
-      top: calc(12px + env(safe-area-inset-top));
+      position: relative; z-index: 1090; right: auto; top: auto;
+      margin: 10px 0 0 auto;
       display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
       pointer-events: none;
     }
-    body.nav .nav-signs { top: calc(108px + env(safe-area-inset-top)); }
+    /* Guidage : le panneau reste à droite du HUD, pas collé à la recherche. */
+    body.nav .nav-signs {
+      position: absolute; right: 12px;
+      top: calc(108px + env(safe-area-inset-top));
+      margin: 0;
+    }
     .hud-speed {
       width: 52px; padding: 7px 4px;
       background: rgba(15,15,26,.92); border: 1px solid #2d2d44; border-radius: 14px; text-align: center;
@@ -641,17 +646,6 @@
 </head>
 <body>
   <div id="map"></div>
-  <div class="nav-signs" id="navSigns">
-    <div class="hud-speed" id="hudSpeed" hidden>
-      <div class="v" id="hudSpeedVal">0</div>
-      <div class="u">km/h</div>
-    </div>
-    <div class="road-sign" id="roadSign" hidden aria-live="polite" title="Limitation de vitesse">
-      <div class="kind">LIMITE</div>
-      <div class="name" id="roadName">—</div>
-      <div class="zone" id="roadZone" hidden>ZONE</div>
-    </div>
-  </div>
   <div class="top" id="topChrome">
     <form class="search-bar" id="searchForm">
       <button type="button" class="ico" id="btnMenu" title="Menu" aria-label="Ouvrir le menu">
@@ -684,6 +678,17 @@
       <button type="button" class="ico" id="btnStopNav" title="Arrêter le guidage et Fuel" aria-label="Arrêter le guidage">✕</button>
     </div>
     <div class="chips" id="chips"></div>
+    <div class="nav-signs" id="navSigns">
+      <div class="hud-speed" id="hudSpeed" hidden>
+        <div class="v" id="hudSpeedVal">0</div>
+        <div class="u">km/h</div>
+      </div>
+      <div class="road-sign" id="roadSign" hidden aria-live="polite" title="Limitation de vitesse">
+        <div class="kind">LIMITE</div>
+        <div class="name" id="roadName">—</div>
+        <div class="zone" id="roadZone" hidden>ZONE</div>
+      </div>
+    </div>
     <div class="hits" id="hits" hidden></div>
     <div class="route-card" id="routeCard" hidden></div>
   </div>
