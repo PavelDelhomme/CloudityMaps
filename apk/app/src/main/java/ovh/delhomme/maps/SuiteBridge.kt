@@ -24,9 +24,12 @@ class SuiteBridge(
     private val prefs = context.getSharedPreferences("hubera_suite", Context.MODE_PRIVATE)
     @Volatile
     private var pendingContacts = "[]"
+    @Volatile
+    private var pendingFuel = "{}"
 
     init {
         pendingContacts = prefs.getString("contacts_cache", "[]") ?: "[]"
+        pendingFuel = prefs.getString("fuel_cache", "{}") ?: "{}"
     }
 
     fun ingest(data: Uri?) {
@@ -40,7 +43,10 @@ class SuiteBridge(
         if (!email.isNullOrBlank()) {
             prefs.edit().putString("email", email.trim()).apply()
         }
-        if (!token.isNullOrBlank() || data.host == "auth") refreshContacts()
+        if (!token.isNullOrBlank() || data.host == "auth") {
+            refreshContacts()
+            refreshFuel()
+        }
     }
 
     @JavascriptInterface
@@ -79,6 +85,28 @@ class SuiteBridge(
     fun takeContacts(): String = pendingContacts
 
     @JavascriptInterface
+    fun refreshFuel() {
+        io.execute {
+            val body = fetchFuel()
+            if (!body.isNullOrBlank() && body.startsWith("{")) {
+                pendingFuel = body
+                prefs.edit().putString("fuel_cache", body).apply()
+            } else if (pendingFuel == "{}") {
+                pendingFuel = prefs.getString("fuel_cache", "{}") ?: "{}"
+            }
+            main.post {
+                web()?.evaluateJavascript(
+                    "window.__mapsFuelReady&&window.__mapsFuelReady()",
+                    null,
+                )
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun takeFuelSnap(): String = pendingFuel
+
+    @JavascriptInterface
     fun openContacts() {
         main.post {
             val pkg = CONTACTS_PKGS.firstOrNull { p ->
@@ -107,6 +135,16 @@ class SuiteBridge(
         return "[]"
     }
 
+    private fun fetchFuel(): String? {
+        val token = token()
+        if (token.isBlank()) return "{}"
+        for (url in FUEL_URLS) {
+            val body = getJson(url, token) ?: continue
+            if (body.startsWith("{") && body.contains("vehicles")) return body
+        }
+        return "{}"
+    }
+
     private fun getJson(url: String, token: String): String? {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -115,7 +153,7 @@ class SuiteBridge(
             instanceFollowRedirects = true
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.42")
+            setRequestProperty("User-Agent", "HuberaMaps/0.1.72")
         }
         return try {
             val code = conn.responseCode
@@ -138,6 +176,10 @@ class SuiteBridge(
             "https://api.cloudity.delhomme.ovh/contacts",
             "https://contacts.hubera.cloud/contacts",
             "http://192.168.1.134:6002/contacts",
+        )
+        val FUEL_URLS = listOf(
+            "https://fuel.hubera.cloud/api/maps/vehicles",
+            "https://gasoil-tracking.hubera.cloud/api/maps/vehicles",
         )
     }
 }

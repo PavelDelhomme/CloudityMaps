@@ -28,6 +28,7 @@ function setSelectedFuelVehicle(id) {
   }
 }
 let fuelSelectedVehicleId = loadSelectedFuelVehicleId();
+let fuelUserPickedVehicle = false;
 function readLastMe() {
   try {
     const p = JSON.parse(localStorage.getItem(LAST_ME_KEY) || 'null');
@@ -601,7 +602,10 @@ function syncChromeHeight() {
 }
 
 function syncClear() {
-  btnClear.hidden = !qEl.value;
+  const q = String(qEl && qEl.value ? qEl.value : '').trim();
+  const searching =
+    document.activeElement === qEl || document.body.classList.contains('kb');
+  btnClear.hidden = !(searching && q.length > 0);
 }
 
 function clearPoi() {
@@ -1045,6 +1049,9 @@ window.__mapsApplyAuth = function (q) {
     paintId();
     if (typeof HuberaSuite !== 'undefined' && HuberaSuite.refreshContacts) {
       HuberaSuite.refreshContacts();
+    }
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.refreshFuel) {
+      HuberaSuite.refreshFuel();
     }
     toast(email ? `Connecté · ${email}` : 'Compte Hubera ID à jour');
   } catch {
@@ -3709,7 +3716,7 @@ function appVersionLabel() {
   } catch {
     /* web */
   }
-  return '0.1.69';
+  return '0.1.72';
 }
 
 const FUEL_UX_OPTS = [
@@ -3858,24 +3865,150 @@ function requestFuelSnapshot(force) {
   if (!force && hasVeh && Date.now() - lastFuelSnapAt < 45000) return;
   lastFuelSnapAt = Date.now();
   const ok = fuelControl('snapshot');
-  if (!ok) {
-    renderFuelHome();
-    return;
-  }
+  void fetchFuelViaHuberaId();
   window.setTimeout(() => {
     const list = (loadFuelSnap().vehicles || []).length;
     if (list > 0) {
       fuelSnapTries = 0;
       return;
     }
-    if (fuelSnapTries < 3) {
+    void fetchFuelViaHuberaId();
+    if (ok && fuelSnapTries < 3) {
       fuelSnapTries += 1;
       const extra = fuelSnapTries >= 2 ? { preferLegacy: '1' } : {};
       fuelControl('snapshot', extra);
       renderFuelHome();
     }
-  }, 1800);
+  }, 1600);
 }
+
+function suiteToken() {
+  try {
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.token) {
+      return String(HuberaSuite.token() || '').trim();
+    }
+  } catch {
+    /* native absent */
+  }
+  return '';
+}
+
+function mergeFuelPlaces(places) {
+  if (!Array.isArray(places) || !places.length) return;
+  const p = loadPlaces();
+  let changed = false;
+  for (const pl of places) {
+    const lat = Number(pl.latitude != null ? pl.latitude : pl.lat);
+    const lon = Number(pl.longitude != null ? pl.longitude : pl.lon);
+    const addr = String(pl.address || pl.name || '').trim();
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !addr) continue;
+    const kind = String(pl.type || pl.kind || '').toLowerCase();
+    const row = { label: addr, lat, lon };
+    if ((kind === 'home' || kind === 'maison') && !p.home) {
+      p.home = { ...row, nick: pl.name || 'Maison' };
+      changed = true;
+      continue;
+    }
+    if ((kind === 'work' || kind === 'travail') && !p.work) {
+      p.work = { ...row, nick: pl.name || 'Travail' };
+      changed = true;
+      continue;
+    }
+    const exists = (p.saved || []).some(
+      (s) => s && Math.abs(s.lat - lat) < 1e-4 && Math.abs(s.lon - lon) < 1e-4,
+    );
+    if (!exists) {
+      p.saved = p.saved || [];
+      p.saved.push({
+        label: pl.name && pl.name !== addr ? `${pl.name} · ${addr}` : addr,
+        lat,
+        lon,
+      });
+      changed = true;
+    }
+  }
+  if (changed) {
+    savePlaces(p);
+    renderSaved();
+  }
+}
+
+function applyFuelHttpSnap(data) {
+  if (!data || !Array.isArray(data.vehicles) || !data.vehicles.length) return false;
+  const snap = {
+    vehicles: data.vehicles
+      .map((v) => ({
+        id: Number(v.id),
+        name: v.name || `Véhicule ${v.id}`,
+        pct: Number.isFinite(Number(v.pct)) ? Number(v.pct) : -1,
+        active: Boolean(v.isActive || v.isDefault || v.id === data.activeVehicleId),
+      }))
+      .filter((v) => Number.isFinite(v.id) && v.id > 0),
+    fills: Array.isArray(data.fills)
+      ? data.fills.map((f) => ({
+          date: f.date || '',
+          liters: Number(f.liters) || 0,
+          cost: Number(f.cost) || 0,
+          station: f.station || '',
+        }))
+      : loadFuelSnap().fills || [],
+    budget: data.budget && typeof data.budget === 'object' ? data.budget : loadFuelSnap().budget,
+  };
+  if (!snap.vehicles.length) return false;
+  saveFuelSnap(snap);
+  applyFuelSnapDefaultVehicle(snap);
+  mergeFuelPlaces(data.places);
+  fuelSnapTries = 0;
+  lastFuelSnapAt = Date.now();
+  renderFuelHome();
+  try {
+    paintFuelSheetBody();
+    paintFuelPeek();
+  } catch {
+    /* panneaux absents */
+  }
+  return true;
+}
+
+async function fetchFuelViaHuberaId() {
+  try {
+    if (typeof HuberaSuite !== 'undefined' && HuberaSuite.refreshFuel) {
+      HuberaSuite.refreshFuel();
+    }
+  } catch {
+    /* native */
+  }
+  const token = suiteToken();
+  if (!token) return false;
+  const urls = [
+    'https://fuel.hubera.cloud/api/maps/vehicles',
+    'https://gasoil-tracking.hubera.cloud/api/maps/vehicles',
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      });
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (applyFuelHttpSnap(j)) return true;
+    } catch {
+      /* hôte suivant */
+    }
+  }
+  return false;
+}
+
+window.__mapsFuelReady = function () {
+  try {
+    if (typeof HuberaSuite === 'undefined' || !HuberaSuite.takeFuelSnap) return;
+    const raw = HuberaSuite.takeFuelSnap() || '';
+    if (!raw) return;
+    applyFuelHttpSnap(JSON.parse(raw));
+  } catch {
+    /* ignore */
+  }
+};
 
 function fuelAppInstalled() {
   try {
@@ -3907,7 +4040,9 @@ function openFuelApp() {
 
 function applyFuelSnapDefaultVehicle(parsed) {
   const list = (parsed && parsed.vehicles) || [];
-  if (fuelSelectedVehicleId && list.some((v) => v.id === fuelSelectedVehicleId)) return;
+  if (fuelUserPickedVehicle && fuelSelectedVehicleId && list.some((v) => v.id === fuelSelectedVehicleId)) {
+    return;
+  }
   const act = list.find((v) => v.active) || list[0];
   if (act) setSelectedFuelVehicle(act.id);
 }
@@ -3936,6 +4071,7 @@ function bindFuelVehicleChips(root) {
       const id = Number(b.dataset.vid);
       if (!Number.isFinite(id) || id <= 0) return;
       setSelectedFuelVehicle(id);
+      fuelUserPickedVehicle = true;
       fuelControl('select', { vehicleId: id });
       renderFuelHome();
       paintFuelSheetBody();
@@ -4407,11 +4543,13 @@ qEl.addEventListener('input', () => {
 
 qEl.addEventListener('focus', () => {
   document.body.classList.add('kb');
+  syncClear();
   if (!qEl.value.trim()) void showSuggestHits('');
 });
 qEl.addEventListener('blur', () => {
   window.setTimeout(() => {
     if (document.activeElement !== qEl) document.body.classList.remove('kb');
+    syncClear();
   }, 180);
 });
 

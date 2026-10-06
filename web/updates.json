@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.71",
-  "versionCode": 72,
+  "version": "0.1.72",
+  "versionCode": 73,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -11,7 +11,7 @@
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "Panneau limitation sous Maison/Travail/Station, plus sous la recherche. Music overlay. MAJ jamais forcée.",
-  "published_at": "2026-10-05T20:38:56Z",
-  "sha256": "5e66f7eb3534a3ccf2994dc76f24f510ceede6266b0e1860fab973973caaeef4"
+  "notes": "Garage Fuel via Hubera ID, croix de recherche seulement en saisie. MAJ jamais forc\u00e9e.",
+  "published_at": "2026-10-06T14:17:00Z",
+  "sha256": "353b7820d2b531950e5dbfbf71539de1639ca2bd9b8b408a7f500adcc1f1d29b"
 }
