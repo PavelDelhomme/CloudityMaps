@@ -153,7 +153,7 @@ class SuiteBridge(
             instanceFollowRedirects = true
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.72")
+            setRequestProperty("User-Agent", "HuberaMaps/0.1.75")
         }
         return try {
             val code = conn.responseCode

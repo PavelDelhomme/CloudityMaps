@@ -1,5 +1,13 @@
 # Hubera Maps — versions
 
+## 0.1.75 (7 oct. 2026)
+- À l’arrêt : compteur **0 km/h** (plus le 1–3 km/h du bruit GPS).
+- Voix GPS coupée tant qu’on ne roule pas ; HUD **À l’arrêt** / **En pause**.
+- Les **47 km · 57 min** sont le **reste** d’itinéraire, pas un trajet déjà fait.
+- Fuel ne démarre plus au tap « Démarrer » : seulement après quelques secondes réellement en mouvement (ou via Fuel toi-même).
+- Horloge Fuel figée à l’arrêt / en pause. Tracé GPS : plus de km fantômes.
+- MAJ jamais forcée.
+
 ## 0.1.69 (5 oct. 2026)
 - Fuel idle : bouton sombre, menu **Démarrer / Plein / Garage** (plus « Arrêter » rose sans trajet).
 - Garage : retry snapshot + Fuel legacy si le garage reste vide.

@@ -89,16 +89,17 @@ function makeBaseTiles(idx) {
   const spec = TILE_SOURCES[Math.max(0, Math.min(idx, TILE_SOURCES.length - 1))];
   const opts = Object.assign({
     maxZoom: 19,
-    updateWhenIdle: true,
-    updateWhenZooming: false,
-    keepBuffer: 1,
+    updateWhenIdle: false,
+    updateWhenZooming: true,
+    keepBuffer: 8,
     detectRetina: false,
     attribution: '&copy; OpenStreetMap',
   }, spec.opts || {});
   const layer = L.tileLayer(spec.url, opts);
   layer.on('tileerror', () => {
+    if (navigating || document.body.classList.contains('routing')) return;
     tileErrorBurst += 1;
-    if (tileErrorBurst < 10 || tileSourceIdx >= TILE_SOURCES.length - 1) return;
+    if (tileErrorBurst < 28 || tileSourceIdx >= TILE_SOURCES.length - 1) return;
     tileErrorBurst = 0;
     tileSourceIdx += 1;
     try {
@@ -174,8 +175,18 @@ let navigating = false;
 let navWatch = null;
 let lastRoadAt = 0;
 let lastSpeedKmh = 0;
+let movingSince = 0;
+let fuelArmed = false;
+let fuelDriveMs = 0;
+let fuelDriveLast = 0;
 let lastNavAt = 0;
+const STILL_KMH = 5;
+const ROLL_KMH = 8;
 let lastHeadingDeg = 0;
+let smoothMe = null;
+let lastCamAt = 0;
+let lastPuckHdg = null;
+let lastWatchAt = 0;
 let lastSpoken = '';
 let lastSpokenAt = 0;
 let followNav = true;
@@ -486,12 +497,16 @@ function paintFuelStats() {
     return;
   }
   document.body.classList.add('fuel-live');
+  tickFuelDriveClock();
   const km = liveFuelKm();
-  const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '';
+  const dur = fuelDriveMs ? fmtFuelMins(fuelDriveMs) : '';
   const bits = [];
-  bits.push(km > 0.05 ? `${km.toFixed(1)} km` : 'GPS…');
+  if (paused) bits.push('pause');
+  else if (isStationary()) bits.push('à l\'arrêt');
+  bits.push(km > 0.05 ? `${km.toFixed(1)} km` : '0 km');
   if (dur) bits.push(dur);
-  if (lastSpeedKmh) bits.push(`${lastSpeedKmh} km/h`);
+  const shown = displaySpeedKmh();
+  if (shown) bits.push(`${shown} km/h`);
   const rows = loadCachedFuelTrips();
   const live = rows.find((t) => t.active) || rows[0];
   if (live) {
@@ -628,7 +643,6 @@ function setFollowNav(on) {
   followNav = !!on;
   document.body.classList.toggle('freehand', navigating && !followNav);
   if (navigating && followNav && me) applyNavCamera(me.lat, me.lon, true);
-  if (!followNav) document.body.style.removeProperty('--nav-rot');
 }
 
 function destAlong(lat, lon, bearingDeg, meters) {
@@ -651,48 +665,133 @@ function navHeading() {
   return 0;
 }
 
-function applyNavCamera(lat, lon, instant) {
-  if (!followNav || !navigating) {
-    document.body.style.removeProperty('--nav-rot');
-    return;
+function headingDelta(a, b) {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+function mixHeading(from, to, a) {
+  const x = Math.sin((from * Math.PI) / 180) * (1 - a) + Math.sin((to * Math.PI) / 180) * a;
+  const y = Math.cos((from * Math.PI) / 180) * (1 - a) + Math.cos((to * Math.PI) / 180) * a;
+  return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+}
+
+function smoothNavFix(next, accuracy) {
+  const acc = Number(accuracy);
+  if (Number.isFinite(acc) && acc > 65) return smoothMe || next;
+  if (!smoothMe) {
+    smoothMe = { lat: next.lat, lon: next.lon };
+    return smoothMe;
   }
-  const hdg = navHeading();
-  document.body.style.setProperty('--nav-rot', `${-hdg}deg`);
-  const z = lastSpeedKmh >= 95 ? 16 : lastSpeedKmh >= 50 ? 17 : 18;
-  const ahead = lastSpeedKmh >= 80 ? 150 : lastSpeedKmh >= 40 ? 85 : 46;
-  const look = destAlong(lat, lon, hdg, ahead);
+  const jump = metersBetween(smoothMe, next);
+  if (jump > 95 && (!Number.isFinite(acc) || acc > 18 || jump > 220)) return smoothMe;
+  const alpha = jump < 10 ? 0.16 : jump < 35 ? 0.32 : 0.5;
+  smoothMe = {
+    lat: smoothMe.lat * (1 - alpha) + next.lat * alpha,
+    lon: smoothMe.lon * (1 - alpha) + next.lon * alpha,
+  };
+  return smoothMe;
+}
+
+function applyNavCamera(lat, lon, instant) {
+  if (!followNav || !navigating) return;
+  const now = Date.now();
+  const here = L.latLng(lat, lon);
+  const z = lastSpeedKmh >= 110 ? 16 : 17;
+  let moved = 999;
   try {
-    map.setView([look.lat, look.lon], z, instant ? { animate: false } : { animate: true, duration: 0.28 });
+    const c = map.getCenter();
+    if (c) moved = map.distance(c, here);
+  } catch {
+    /* */
+  }
+  const zoom = map.getZoom ? map.getZoom() : z;
+  if (!instant && now - lastCamAt < 1100 && moved < 24 && Math.abs(zoom - z) < 0.45) return;
+  lastCamAt = now;
+  try {
+    map.setView(here, z, { animate: false });
   } catch {
     /* carte pas prête */
   }
 }
 
+function displaySpeedKmh() {
+  return lastSpeedKmh >= STILL_KMH ? lastSpeedKmh : 0;
+}
+
+function isStationary() {
+  return paused || displaySpeedKmh() < STILL_KMH;
+}
+
+function isRolling() {
+  return !paused && lastSpeedKmh >= ROLL_KMH && movingSince > 0 && Date.now() - movingSince >= 2500;
+}
+
+function tickFuelDriveClock() {
+  const now = Date.now();
+  if (paused || lastSpeedKmh < STILL_KMH || !mapsStartedFuel) {
+    fuelDriveLast = 0;
+    return;
+  }
+  if (fuelDriveLast) fuelDriveMs += now - fuelDriveLast;
+  fuelDriveLast = now;
+}
+
+function maybeStartFuelOnMove() {
+  if (!fuelArmed || mapsStartedFuel || paused || !isCarMode()) return;
+  if (!isRolling()) return;
+  fuelArmed = false;
+  mapsStartedFuel = true;
+  if (!fuelHudStartedAt) fuelHudStartedAt = Date.now();
+  fuelDriveMs = 0;
+  fuelDriveLast = Date.now();
+  const ok = fuelControl('start', { dest: destShort() });
+  startFuelPoll();
+  startFuelHudTick();
+  toast(ok ? 'Fuel démarré — tu roules.' : 'Tu roules — Fuel non joignable');
+}
+
 function updateSpeed(coords, next) {
+  if (paused) {
+    lastSpeedKmh = 0;
+    movingSince = 0;
+    lastNavAt = Date.now();
+    return;
+  }
+  const acc = Number(coords && coords.accuracy);
+  const accM = Number.isFinite(acc) && acc > 0 ? acc : 15;
   let mps = Number(coords && coords.speed);
   if (!Number.isFinite(mps) || mps < 0) {
+    mps = 0;
     if (me && lastNavAt) {
       const dt = (Date.now() - lastNavAt) / 1000;
-      if (dt > 0.35) mps = metersBetween(me, next) / dt;
-    } else {
-      mps = 0;
+      const dist = metersBetween(me, next);
+      if (dt >= 1.5 && dist >= Math.max(15, accM * 1.4)) mps = dist / dt;
     }
   }
   lastNavAt = Date.now();
-  if (Number.isFinite(mps) && mps >= 0) {
-    const kmh = Math.round(mps * 3.6);
-    if (kmh >= 0 && kmh < 220) lastSpeedKmh = kmh;
+  let kmh = Number.isFinite(mps) && mps >= 0 ? Math.round(mps * 3.6) : 0;
+  if (kmh < STILL_KMH || kmh >= 220) kmh = 0;
+  lastSpeedKmh = kmh;
+  if (kmh >= ROLL_KMH) {
+    if (!movingSince) movingSince = Date.now();
+  } else {
+    movingSince = 0;
   }
   const hd = Number(coords && coords.heading);
-  if (Number.isFinite(hd) && hd >= 0) lastHeadingDeg = hd;
-  else if (me && next && metersBetween(me, next) > 6) {
-    lastHeadingDeg = bearingDeg(me, next);
+  if (Number.isFinite(hd) && hd >= 0 && lastSpeedKmh >= ROLL_KMH) {
+    lastHeadingDeg = lastHeadingDeg ? mixHeading(lastHeadingDeg, hd, 0.28) : hd;
+  } else if (me && next && metersBetween(me, next) > 12 && lastSpeedKmh >= ROLL_KMH) {
+    lastHeadingDeg = mixHeading(lastHeadingDeg || bearingDeg(me, next), bearingDeg(me, next), 0.35);
   }
 }
 
 function applyNavFix(pos) {
-  const next = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+  const raw = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+  const next = smoothNavFix(raw, pos.coords.accuracy) || raw;
   updateSpeed(pos.coords, next);
+  tickFuelDriveClock();
+  maybeStartFuelOnMove();
   setMe(next.lat, next.lon, false);
   if (followNav && navigating) applyNavCamera(next.lat, next.lon, false);
   appendTrace(next.lat, next.lon);
@@ -1107,6 +1206,7 @@ function remainAlongKm(here, geometry) {
 
 function speakNav(text, distKm) {
   if (!navigating || !text || !voiceEnabled()) return;
+  if (paused || isStationary()) return;
   if (distKm > 0.16) return;
   const now = Date.now();
   if (text === lastSpoken && now - lastSpokenAt < 22000) return;
@@ -1162,8 +1262,7 @@ function setVoiceEnabled(on) {
 }
 
 function puckIcon(deg) {
-  const headingUp = navigating && followNav;
-  const d = headingUp ? 0 : Number.isFinite(deg) ? deg : 0;
+  const d = Number.isFinite(deg) ? deg : 0;
   return L.divIcon({
     className: 'me-puck',
     html:
@@ -1189,10 +1288,14 @@ function setMe(lat, lon, fly, fromCache) {
     }).addTo(map);
   }
   if (!meMarker) {
+    lastPuckHdg = lastHeadingDeg;
     meMarker = L.marker(here, { icon: puckIcon(lastHeadingDeg), pane: 'mePane', keyboard: false, zIndexOffset: 2500 }).addTo(map);
   } else {
     meMarker.setLatLng(here);
-    meMarker.setIcon(puckIcon(lastHeadingDeg));
+    if (lastPuckHdg == null || headingDelta(lastPuckHdg, lastHeadingDeg) >= 10) {
+      lastPuckHdg = lastHeadingDeg;
+      meMarker.setIcon(puckIcon(lastHeadingDeg));
+    }
   }
   maybeRepaintPlacesForMe();
   if (meMarker && moved < 3 && !fly) {
@@ -1230,10 +1333,13 @@ function goHere() {
 }
 
 function appendTrace(lat, lon) {
-  if (paused) return;
+  if (paused || isStationary()) return;
   if (!navigating && !fuelTrip) return;
   const last = trace[trace.length - 1];
-  if (last && Math.abs(last[0] - lat) < 1e-6 && Math.abs(last[1] - lon) < 1e-6) return;
+  if (last) {
+    const d = metersBetween({ lat: last[0], lon: last[1] }, { lat, lon });
+    if (d < 12) return;
+  }
   trace.push([lat, lon]);
   if (traceLayer) map.removeLayer(traceLayer);
   if (trace.length >= 2) {
@@ -1636,9 +1742,10 @@ async function motisPlan(from, to, signal) {
 
 function overpassEndpoints() {
   return [
+    'https://overpass.osm.ch/api/interpreter',
     'https://maps.hubera.cloud/overpass',
-    'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
   ];
 }
 
@@ -2350,35 +2457,44 @@ function paintHud(choice) {
   const subEl = document.getElementById('hudSub');
   const thenEl = document.getElementById('hudThen');
   const metaEl = document.getElementById('hudMeta');
+  const shown = displaySpeedKmh();
+  const still = navigating && isStationary();
+  const remainTxt = remainKm < 1 ? fmtDist(remainKm) : `${remainKm.toFixed(1)} km`;
+  const eta = choice ? `reste ${remainTxt} · ${etaMin} min` : '';
   const freeFuel = navigating && mapsStartedFuel && !choice;
   if (freeFuel) {
+    tickFuelDriveClock();
     const km = liveFuelKm();
-    const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '0 min';
-    if (distEl) distEl.textContent = km > 0.05 ? `${km.toFixed(1)} km` : 'GPS';
-    if (iconEl) iconEl.textContent = paused ? '⏸' : '⬆';
-    if (titleEl) titleEl.textContent = paused ? 'En pause' : 'Tout droit';
+    const dur = fuelDriveMs ? fmtFuelMins(fuelDriveMs) : '0 min';
+    if (distEl) distEl.textContent = km > 0.05 ? `${km.toFixed(1)} km` : '0 km';
+    if (iconEl) iconEl.textContent = still ? '⏸' : '⬆';
+    if (titleEl) titleEl.textContent = paused ? 'En pause' : still ? 'À l\'arrêt' : 'Tout droit';
     if (subEl) subEl.textContent = '';
     if (thenEl) {
       thenEl.hidden = true;
       thenEl.textContent = '';
     }
-    if (metaEl) metaEl.textContent = `${dur} · ${lastSpeedKmh} km/h`;
+    if (metaEl) metaEl.textContent = still ? `${dur} · à l'arrêt` : `${dur} · ${shown} km/h`;
     const speedEl = document.getElementById('hudSpeed');
     const speedVal = document.getElementById('hudSpeedVal');
     if (speedEl) speedEl.hidden = false;
-    if (speedVal) speedVal.textContent = String(lastSpeedKmh);
+    if (speedVal) speedVal.textContent = String(shown);
     paintFuelStats();
     return;
   }
   if (distEl) distEl.textContent = step ? fmtDist(toManeuver) : '—';
-  if (iconEl) iconEl.textContent = maneuverIcon(step?.maneuver?.type, step?.maneuver?.modifier);
+  if (iconEl) iconEl.textContent = still ? '⏸' : maneuverIcon(step?.maneuver?.type, step?.maneuver?.modifier);
   if (titleEl) {
-    const street = stepStreet(step);
-    titleEl.textContent = street || (step ? fmtStep(step) : navigating ? 'Guidage' : 'Guidage');
+    if (still) {
+      titleEl.textContent = paused ? 'En pause' : 'À l\'arrêt';
+    } else {
+      const street = stepStreet(step);
+      titleEl.textContent = street || (step ? fmtStep(step) : 'Guidage');
+    }
   }
-  if (subEl) subEl.textContent = '';
+  if (subEl) subEl.textContent = still && step ? fmtStep(step) : '';
   if (thenEl) {
-    if (then && (then.maneuver?.type || '') !== 'arrive') {
+    if (!still && then && (then.maneuver?.type || '') !== 'arrive') {
       const thenName = stepStreet(then) || fmtStep(then);
       const ic = maneuverIcon(then.maneuver?.type, then.maneuver?.modifier);
       thenEl.hidden = false;
@@ -2388,16 +2504,13 @@ function paintHud(choice) {
       thenEl.textContent = '';
     }
   }
-  if (metaEl) {
-    const eta = choice ? `${etaMin} min · ${remainKm < 1 ? fmtDist(remainKm) : `${remainKm.toFixed(1)} km`}` : '';
-    metaEl.textContent = eta ? `vers ${short} · ${eta}` : `vers ${short}`;
-  }
+  if (metaEl) metaEl.textContent = eta ? `vers ${short} · ${eta}` : `vers ${short}`;
   const speedEl = document.getElementById('hudSpeed');
   const speedVal = document.getElementById('hudSpeedVal');
   if (speedEl) speedEl.hidden = !navigating;
-  if (speedVal) speedVal.textContent = String(lastSpeedKmh);
-  if (step && navigating) speakNav(fmtStep(step), toManeuver);
-  if (navigating && remainKm < 0.05) {
+  if (speedVal) speedVal.textContent = String(shown);
+  if (step && navigating && !still) speakNav(fmtStep(step), toManeuver);
+  if (navigating && remainKm < 0.05 && !still) {
     speakNav('Vous êtes arrivé', 0);
   }
 }
@@ -2520,6 +2633,9 @@ function startFreeTracking(vehicleId) {
   }
   clearTrace();
   fuelLiveKm = 0;
+  fuelArmed = false;
+  fuelDriveMs = 0;
+  fuelDriveLast = 0;
   fuelHudStartedAt = Date.now();
   enterFreeHud(fuelTrip);
   const extra = {};
@@ -2552,7 +2668,15 @@ function enterNavUi() {
     try { map.removeLayer(originMarker); } catch { /* ignore */ }
     originMarker = null;
   }
-  if (me) applyNavCamera(me.lat, me.lon, true);
+  if (me) {
+    applyNavCamera(me.lat, me.lon, true);
+    lastRoadAt = 0;
+    lastRoadPos = null;
+    if (roadSignEl) roadSignEl.hidden = false;
+    const signs = document.getElementById('navSigns');
+    if (signs) signs.hidden = false;
+    void refreshRoad(me.lat, me.lon);
+  }
 }
 
 function stopNavWatch() {
@@ -2569,13 +2693,18 @@ function startNavWatch(onPos) {
   navWatch = navigator.geolocation.watchPosition(
     (pos) => {
       if (!appVisible || paused) return;
+      const acc = Number(pos.coords.accuracy);
+      if (Number.isFinite(acc) && acc > 70) return;
       const next = { lat: pos.coords.latitude, lon: pos.coords.longitude };
       const now = Date.now();
-      if (now - lastFixAt < 2200 && me && metersBetween(me, next) < 8) {
+      if (now - lastWatchAt < 1600 && me && metersBetween(me, next) < 14) {
         updateSpeed(pos.coords, next);
+        tickFuelDriveClock();
+        maybeStartFuelOnMove();
         paintHud(currentChoice());
         return;
       }
+      lastWatchAt = now;
       onPos(pos);
     },
     () => {},
@@ -2657,7 +2786,12 @@ function stopNavigation(opts) {
   const stopFuel = !!(opts && opts.stopFuel);
   navigating = false;
   hudCollapsed = false;
+  smoothMe = null;
+  lastCamAt = 0;
+  lastWatchAt = 0;
   lastSpeedKmh = 0;
+  movingSince = 0;
+  fuelArmed = false;
   lastSpoken = '';
   document.body.style.removeProperty('--nav-rot');
   try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
@@ -2676,6 +2810,8 @@ function stopNavigation(opts) {
     fuelControl('stop');
     mapsStartedFuel = false;
     stopFuelPoll();
+    fuelDriveMs = 0;
+    fuelDriveLast = 0;
   }
   const fromFuel = Number(fuelTrip) > 0 || mapsStartedFuel;
   if (!fromFuel) {
@@ -2696,14 +2832,23 @@ function startNavigation() {
     return;
   }
   paused = false;
+  lastSpeedKmh = 0;
+  movingSince = 0;
   setFollowNav(true);
   stopIdleGeo();
   enterNavUi();
   if (isCarMode()) {
-    mapsStartedFuel = true;
-    const ok = fuelControl('start', { dest: destShort() });
-    toast(ok ? 'Guidage + suivi Fuel' : 'Guidage démarré — Fuel non joignable');
+    if (mapsStartedFuel || Number(fuelTrip) > 0) {
+      startFuelPoll();
+      startFuelHudTick();
+      toast('Guidage — Fuel déjà en cours');
+    } else {
+      fuelArmed = true;
+      mapsStartedFuel = false;
+      toast('Guidage — Fuel se lance dès que tu roules.');
+    }
   } else {
+    fuelArmed = false;
     toast('Guidage démarré');
   }
   startNavWatch(applyNavFix);
@@ -2780,16 +2925,21 @@ function taggedSpeed(tags) {
 
 function zoneFromTags(tags) {
   if (!tags) return false;
-  const blob = [
-    tags['zone:maxspeed'],
-    tags['maxspeed:type'],
-    tags.maxspeed,
-    tags['source:maxspeed'],
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return /zone/.test(blob);
+  if (tags['zone:maxspeed']) return true;
+  const type = String(tags['maxspeed:type'] || '').toLowerCase();
+  if (type.includes('zone')) return true;
+  const src = String(tags['source:maxspeed'] || '').toLowerCase();
+  return src.includes('zone');
+}
+
+function pickSpeedRow(rows) {
+  if (!rows.length) return null;
+  const near = rows.slice().sort((a, b) => a.dist - b.dist);
+  const zoneHit = near.find((r) => r.zone && r.tagged != null && r.dist <= 90);
+  if (zoneHit) return zoneHit;
+  const tagged = near.find((r) => r.tagged != null && r.dist <= 55);
+  if (tagged) return tagged;
+  return near[0];
 }
 
 let lastPaintedLimit = null;
@@ -2802,7 +2952,7 @@ function paintSpeedLimit(kmh, zone) {
   if (kmh == null) return;
   lastPaintedLimit = kmh;
   roadNameEl.textContent = String(kmh);
-  const isZone = !!zone || kmh === 20 || kmh === 30;
+  const isZone = !!zone;
   if (roadSignEl) roadSignEl.classList.toggle('is-zone', isZone);
   const zoneEl = document.getElementById('roadZone');
   if (zoneEl) {
@@ -2822,8 +2972,11 @@ async function refreshRoad(lat, lon) {
   const now = Date.now();
   const here = { lat, lon };
   const haveLimit = roadNameEl && roadNameEl.textContent && roadNameEl.textContent !== '—';
-  if (lastRoadPos && metersBetween(lastRoadPos, here) < 50 && now - lastRoadAt < 24000 && haveLimit) return;
-  if (now - lastRoadAt < 12000) return;
+  const minMove = navigating ? 22 : 50;
+  const stickMs = navigating ? 14000 : 24000;
+  const gapMs = navigating ? 5500 : 12000;
+  if (lastRoadPos && metersBetween(lastRoadPos, here) < minMove && now - lastRoadAt < stickMs && haveLimit) return;
+  if (now - lastRoadAt < gapMs) return;
   lastRoadAt = now;
   if (typeof HuberaSpeed !== 'undefined' && HuberaSpeed.lookup) {
     try {
@@ -2834,16 +2987,11 @@ async function refreshRoad(lat, lon) {
   }
   const query =
     `[out:json][timeout:8];(` +
-    `way(around:80,${lat.toFixed(5)},${lon.toFixed(5)})[highway];` +
-    `way(around:160,${lat.toFixed(5)},${lon.toFixed(5)})["zone:maxspeed"];` +
-    `way(around:160,${lat.toFixed(5)},${lon.toFixed(5)})["maxspeed:type"];` +
+    `way(around:28,${lat.toFixed(5)},${lon.toFixed(5)})[highway];` +
+    `way(around:90,${lat.toFixed(5)},${lon.toFixed(5)})["zone:maxspeed"];` +
+    `way(around:90,${lat.toFixed(5)},${lon.toFixed(5)})["maxspeed:type"~"zone"];` +
     `);out center tags 50;`;
-  const urls = [
-    'https://maps.hubera.cloud/overpass',
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.osm.ch/api/interpreter',
-  ];
+  const urls = overpassEndpoints();
   for (const endpoint of urls) {
     try {
       const res = await fetch(endpoint, {
@@ -2865,23 +3013,12 @@ async function refreshRoad(lat, lon) {
         const urban = tags.highway === 'residential' || tags.highway === 'living_street' || tags.highway === 'unclassified';
         rows.push({ dist, tagged, implied, urban, zone: zoneFromTags(tags) });
       }
-      rows.sort((a, b) => a.dist - b.dist);
-      const closest = rows[0];
-      if (!closest) continue;
-      let speed = closest.tagged;
-      let zone = closest.zone;
-      if (speed == null) {
-        const zone30 = rows
-          .filter((r) => r.dist <= 220 && r.urban && r.tagged != null && r.tagged <= 30)
-          .map((r) => r.tagged);
-        if (zone30.length && (closest.implied == null || closest.implied === 50)) {
-          speed = Math.min(...zone30);
-          zone = true;
-        } else speed = closest.implied;
-      }
+      const picked = pickSpeedRow(rows);
+      if (!picked) continue;
+      const speed = picked.tagged != null ? picked.tagged : picked.implied;
       if (speed != null) {
         lastRoadPos = here;
-        paintSpeedLimit(speed, zone);
+        paintSpeedLimit(speed, !!picked.zone);
         return;
       }
     } catch {
@@ -3716,7 +3853,7 @@ function appVersionLabel() {
   } catch {
     /* web */
   }
-  return '0.1.72';
+  return '0.1.75';
 }
 
 const FUEL_UX_OPTS = [
@@ -5023,9 +5160,13 @@ function saveFillFromSheet() {
   if (veh) extra.vehicleId = veh.id;
   if (mapsStartedFuel) {
     paused = true;
+    lastSpeedKmh = 0;
+    movingSince = 0;
+    fuelDriveLast = 0;
     const pauseBtn = document.getElementById('btnPause');
     if (pauseBtn) pauseBtn.textContent = 'Reprendre';
     stopNavWatch();
+    try { window.HuberaTts?.stop?.(); } catch { /* ignore */ }
   }
   savePendingFuelFill(extra);
   const ok = fuelControl('fill', extra);
@@ -5093,9 +5234,13 @@ window.__mapsFuelEvent = function (raw) {
 
 function fuelStopTracking() {
   const km = liveFuelKm();
-  const dur = fuelHudStartedAt ? fmtFuelMins(Date.now() - fuelHudStartedAt) : '';
+  tickFuelDriveClock();
+  const dur = fuelDriveMs ? fmtFuelMins(fuelDriveMs) : '';
   fuelControl('stop');
   mapsStartedFuel = false;
+  fuelArmed = false;
+  fuelDriveMs = 0;
+  fuelDriveLast = 0;
   stopFuelPoll();
   fuelTrip = null;
   paused = false;
@@ -5117,9 +5262,19 @@ function fuelStopTracking() {
 document.getElementById('btnPause').addEventListener('click', () => {
   paused = !paused;
   document.getElementById('btnPause').textContent = paused ? 'Reprendre' : 'Pause';
-  if (paused) stopNavWatch();
-  else if (navigating && navWatchFn) startNavWatch(navWatchFn);
+  if (paused) {
+    lastSpeedKmh = 0;
+    movingSince = 0;
+    fuelDriveLast = 0;
+    stopNavWatch();
+    try { window.HuberaTts?.stop?.(); } catch { /* ignore */ }
+    try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+  } else if (navigating && navWatchFn) {
+    startNavWatch(navWatchFn);
+  }
   fuelControl(paused ? 'pause' : 'resume');
+  paintHud(currentChoice());
+  paintFuelStats();
   toast(paused ? 'Pause — guidage et Fuel.' : 'Reprise.');
 });
 document.getElementById('btnStop').addEventListener('click', fuelStopTracking);

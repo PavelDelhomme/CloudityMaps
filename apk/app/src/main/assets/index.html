@@ -22,7 +22,10 @@
     }
     body { --chrome: 168px; }
     body.music-off { --chrome: 58px; }
-    #map { position: absolute; inset: 0; }
+    #map { position: absolute; inset: 0; background: #d4dde3; }
+    .leaflet-container, .leaflet-pane, .leaflet-tile-pane, .leaflet-map-pane {
+      background: #d4dde3 !important;
+    }
     .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
     .top {
       position: absolute; z-index: 1100; left: 12px; right: 12px;
@@ -60,11 +63,26 @@
     .hud-then .then-k { color: #94a3b8; font-weight: 700; margin-right: 6px; }
     .hud-meta { color: #94a3b8; font-size: 12px; margin-top: 8px; font-weight: 650; }
     body.nav.freehand .fab { border-color: #e94560; color: #e94560; }
+    /* Guidage type Google : carte à plat, pas de 3D CSS (coins noirs + la carte « qui change »). */
+    body.nav #map,
     body.nav:not(.freehand) #map {
-      transform-origin: 50% 78%;
-      transform: perspective(920px) rotateX(48deg) scale(1.38) rotate(var(--nav-rot, 0deg));
-      background: #0b1220;
+      transform: none;
+      background: #dce4ea;
     }
+    body.nav .leaflet-container { background: #dce4ea; }
+    body.nav .hud {
+      background: #fff; color: #0f172a; border: 0;
+      box-shadow: 0 8px 28px rgba(15, 23, 42, .22);
+    }
+    body.nav .hud .ico { color: #0f172a; }
+    body.nav .hud .ico:active { background: #e2e8f0; }
+    body.nav .hud-sub, body.nav .hud-meta, body.nav .hud-then .then-k { color: #64748b; }
+    body.nav .hud-then { color: #334155; }
+    body.nav .hud-speed {
+      background: #fff; border: 1px solid #e2e8f0;
+    }
+    body.nav .hud-speed .v { color: #0f172a; }
+    body.nav .hud-speed .u { color: #64748b; }
     .me-puck { background: none !important; border: 0 !important; overflow: visible !important; }
     .puck-wrap { width: 56px; height: 56px; position: relative; }
     .puck-halo {
@@ -81,10 +99,16 @@
       border-left: 4px solid transparent; border-right: 4px solid transparent;
       border-bottom: 10px solid #1a73e8;
     }
-    body.night .search-bar, body.night .hud { background: #12121c; }
-    body.night .leaflet-tile-pane {
+    body.night .search-bar { background: #12121c; }
+    body.night:not(.nav) .hud { background: #12121c; }
+    /* Négatif OSM = taches noires. Jamais d’invert en itinéraire / guidage. */
+    body.night:not(.nav):not(.routing) .leaflet-tile-pane {
       filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.92) saturate(0.8);
     }
+    body.nav .leaflet-tile-pane,
+    body.routing .leaflet-tile-pane,
+    body.nav.night .leaflet-tile-pane,
+    body.routing.night .leaflet-tile-pane { filter: none !important; }
     .sheet input {
       width: 100%; margin-top: 8px; border: 1px solid #2d2d44; border-radius: 12px;
       background: #16213e; color: #f1f5f9; font-size: 16px; padding: 12px 14px;
