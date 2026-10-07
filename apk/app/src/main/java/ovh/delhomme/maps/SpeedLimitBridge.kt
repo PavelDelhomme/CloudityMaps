@@ -72,14 +72,25 @@ class SpeedLimitBridge(
         val body = "data=" + java.net.URLEncoder.encode(query, Charsets.UTF_8.name())
         val winner = AtomicReference<SpeedHit?>(null)
         val latch = CountDownLatch(1)
-        val pool = Executors.newFixedThreadPool(ENDPOINTS.size.coerceAtMost(4))
+        val pool = Executors.newFixedThreadPool(ENDPOINTS.size.coerceAtMost(4)) { r ->
+            Thread(r, "HuberaOverpass").apply {
+                isDaemon = true
+                uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { _, t ->
+                    Log.w(TAG, "overpass thread: ${t.message}")
+                }
+            }
+        }
         try {
             for (endpoint in ENDPOINTS) {
                 pool.execute {
-                    if (winner.get() != null) return@execute
-                    val raw = post(endpoint, body) ?: return@execute
-                    val parsed = parse(raw, lat, lon) ?: return@execute
-                    if (winner.compareAndSet(null, parsed)) latch.countDown()
+                    runCatching {
+                        if (winner.get() != null) return@runCatching
+                        val raw = post(endpoint, body) ?: return@runCatching
+                        val parsed = parse(raw, lat, lon) ?: return@runCatching
+                        if (winner.compareAndSet(null, parsed)) latch.countDown()
+                    }.onFailure { t ->
+                        Log.w(TAG, "overpass worker $endpoint: ${t.message}")
+                    }
                 }
             }
             latch.await(7, TimeUnit.SECONDS)
@@ -97,12 +108,17 @@ class SpeedLimitBridge(
             doOutput = true
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.75 (https://maps.hubera.cloud)")
+            setRequestProperty("User-Agent", "HuberaMaps/0.1.76 (https://maps.hubera.cloud)")
         }
         return try {
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             if (conn.responseCode !in 200..299) return null
-            conn.inputStream.bufferedReader().use { it.readText() }
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            if (!looksLikeJson(text)) {
+                Log.w(TAG, "overpass html/xml $endpoint")
+                return null
+            }
+            text
         } catch (t: Throwable) {
             Log.w(TAG, "overpass fail $endpoint: ${t.message}")
             null
@@ -112,6 +128,16 @@ class SpeedLimitBridge(
     }
 
     private fun parse(raw: String, lat: Double, lon: Double): SpeedHit? {
+        if (!looksLikeJson(raw)) {
+            Log.w(TAG, "overpass skip non-json ${raw.trimStart().take(32)}")
+            return null
+        }
+        return runCatching { parseJson(raw.trimStart().removePrefix("\uFEFF").trimStart(), lat, lon) }
+            .onFailure { t -> Log.w(TAG, "overpass parse: ${t.message}") }
+            .getOrNull()
+    }
+
+    private fun parseJson(raw: String, lat: Double, lon: Double): SpeedHit? {
         val root = JSONObject(raw)
         val elements = root.optJSONArray("elements") ?: return null
         data class Cand(val dist: Double, val tagged: Int?, val implied: Int?, val urban: Boolean, val zone: Boolean)
@@ -168,6 +194,11 @@ class SpeedLimitBridge(
                 "footway", "cycleway", "path", "steps", "pedestrian", "bridleway",
                 "construction", "proposed", "elevator", "corridor", "platform", "track",
             )
+
+        private fun looksLikeJson(raw: String): Boolean {
+            val t = raw.trimStart().removePrefix("\uFEFF").trimStart()
+            return t.startsWith("{") || t.startsWith("[")
+        }
 
         private fun skipPedestrian(hw: String) = hw.isBlank() || hw in SKIP
 

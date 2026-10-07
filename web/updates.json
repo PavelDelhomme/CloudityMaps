@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.75",
-  "versionCode": 76,
+  "version": "0.1.76",
+  "versionCode": 77,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -11,7 +11,7 @@
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "install": "https://maps.hubera.cloud/install",
   "mandatory": false,
-  "notes": "À l'arrêt : 0 km/h, plus de voix GPS ni de trajet Fuel fantôme. Le 47 km / 57 min est le reste d'itinéraire. MAJ jamais forcée.",
-  "published_at": "2026-10-07T13:39:00Z",
-  "sha256": "204141d8c8a56c76f99ce55880ffbcad7394af8429f6de7f261d3d8c7ae6101b"
+  "notes": "Ouverture : un Overpass HTML/XML ne plante plus l'app. Limitation de vitesse : on passe à l'endpoint suivant. MAJ jamais forcée.",
+  "published_at": "2026-10-07T15:05:00Z",
+  "sha256": "7eca83f0b872d835143036d79c38c9eb76093fd374d60b3a37d50e60a07df46f"
 }

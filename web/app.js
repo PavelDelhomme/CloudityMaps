@@ -1749,6 +1749,33 @@ function overpassEndpoints() {
   ];
 }
 
+function overpassLooksJson(raw) {
+  const t = String(raw || '')
+    .replace(/^\uFEFF/, '')
+    .trimStart();
+  return t.startsWith('{') || t.startsWith('[');
+}
+
+async function overpassPost(endpoint, query, extra) {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      Accept: 'application/json',
+    },
+    body: 'data=' + encodeURIComponent(query),
+    ...(extra || {}),
+  });
+  if (!res.ok) return null;
+  const text = await res.text();
+  if (!overpassLooksJson(text)) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 function unionRouteBbox(routes) {
   let s = 90;
   let w = 180;
@@ -1832,17 +1859,8 @@ async function fetchOsmWorks(bbox, signal) {
     const timer = setTimeout(() => ctrl.abort(), 13000);
     if (signal) signal.addEventListener('abort', () => ctrl.abort(), { once: true });
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-          Accept: 'application/json',
-        },
-        body: 'data=' + encodeURIComponent(query),
-        signal: ctrl.signal,
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
+      const data = await overpassPost(endpoint, query, { signal: ctrl.signal });
+      if (!data) continue;
       const out = [];
       for (const el of data.elements || []) {
         const c = el.center || el;
@@ -2994,13 +3012,8 @@ async function refreshRoad(lat, lon) {
   const urls = overpassEndpoints();
   for (const endpoint of urls) {
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
-        body: `data=${encodeURIComponent(query)}`,
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
+      const data = await overpassPost(endpoint, query);
+      if (!data) continue;
       const rows = [];
       for (const el of data.elements || []) {
         const tags = el.tags || {};
@@ -3475,13 +3488,8 @@ async function showNearby(kind) {
   const around = amenity === 'fuel' ? 6000 : 2500;
   const query = `[out:json][timeout:15];node["amenity"="${amenity}"](around:${around},${me.lat},${me.lon});out 40;`;
   try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
-      body: 'data=' + encodeURIComponent(query),
-    });
-    if (!res.ok) throw new Error('overpass');
-    const data = await res.json();
+    const data = await overpassJson(query);
+    if (!data) throw new Error('overpass');
     const items = (data.elements || [])
       .filter((n) => Number.isFinite(n.lat) && Number.isFinite(n.lon))
       .map((n) => {
@@ -3565,16 +3573,10 @@ function placesCacheWrite(store) {
 }
 
 async function overpassJson(query) {
-  const body = `data=${encodeURIComponent(query)}`;
   for (const endpoint of overpassEndpoints()) {
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
-        body,
-      });
-      if (!res.ok) continue;
-      return await res.json();
+      const data = await overpassPost(endpoint, query);
+      if (data) return data;
     } catch {
       /* suivant */
     }
@@ -3853,7 +3855,7 @@ function appVersionLabel() {
   } catch {
     /* web */
   }
-  return '0.1.75';
+  return '0.1.76';
 }
 
 const FUEL_UX_OPTS = [
