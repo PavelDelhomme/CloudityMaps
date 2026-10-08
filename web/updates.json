@@ -14,17 +14,17 @@
   "apkAvailable": true,
   "mandatory": false,
   "forceUpdate": false,
-  "notes": "0.1.82 : UI WebView d’avant le chrome 0.1.80 (HUD / recherche / onglets). Cold start 0.1.79 conservé : carte d’abord, SSO hors UI, Overpass skip non-JSON, hubera-maps:// unique. MAJ jamais forcée.",
-  "published_at": "2026-10-08T19:05:00Z",
-  "sha256": "94e4017326833c5bc5779fcf485f9c43051abe8ac2364716add7a09dc7097395",
+  "notes": "0.1.82 : UI WebView d’avant le chrome natif (HUD/recherche). Cold start conservé, Calendar, Fuel sans chooser. MAJ jamais forcée.",
+  "published_at": "2026-10-08T19:10:00Z",
+  "sha256": "1245e4714dfe9889c98dfed8e6495617077569f0269acd1110084bf3c2f2fcc0",
   "canonical": {
     "package": "cloud.hubera.maps",
     "version": "0.1.82",
     "versionCode": 83,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
-    "sha256": "94e4017326833c5bc5779fcf485f9c43051abe8ac2364716add7a09dc7097395",
-    "notes": "0.1.82 : UI WebView d’avant le chrome 0.1.80 (HUD / recherche / onglets). Cold start 0.1.79 conservé : carte d’abord, SSO hors UI, Overpass skip non-JSON, hubera-maps:// unique. MAJ jamais forcée."
+    "sha256": "1245e4714dfe9889c98dfed8e6495617077569f0269acd1110084bf3c2f2fcc0",
+    "notes": "0.1.82 : UI WebView d’avant le chrome natif (HUD/recherche). Cold start conservé, Calendar, Fuel sans chooser. MAJ jamais forcée."
   },
   "legacy": {
     "package": "ovh.delhomme.maps",
@@ -32,7 +32,7 @@
     "versionCode": 83,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
-    "sha256": "5157b907cbfc971720da9446d00d0c8f8a8742cbbd6e2fb3f1ba76b427e09b80",
+    "sha256": "d7f48bcf6d4457d11b9cfb5da6c7222afd43defaf295edc20c36ce415fa2b03d",
     "notes": "Même build 0.1.82, paquet historique. Schéma cloudity-maps:// seulement."
   }
 }
