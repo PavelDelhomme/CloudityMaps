@@ -7,6 +7,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
@@ -98,7 +101,7 @@ class InAppUpdate(private val activity: Activity) {
             .setMessage("$notes\n\nVous pouvez continuer sans installer. La mise à jour n’est pas obligatoire.")
             .setCancelable(true)
             .setPositiveButton("Installer") { _, _ ->
-                Thread { downloadAndInstall(apkUrl, sha, version) }.start()
+                Thread { downloadAndInstall(apkUrl, sha, version, notes) }.start()
             }
             .setNegativeButton("Continuer") { _, _ ->
                 prefs.edit()
@@ -120,9 +123,45 @@ class InAppUpdate(private val activity: Activity) {
             .show()
     }
 
-    private fun downloadAndInstall(apkUrl: String, expectedSha: String, version: String) {
+    private fun downloadAndInstall(
+        apkUrl: String,
+        expectedSha: String,
+        version: String,
+        notes: String,
+    ) {
+        val progressDlg = java.util.concurrent.atomic.AtomicReference<AlertDialog?>(null)
         main.post {
-            Toast.makeText(activity, "Téléchargement de Maps $version…", Toast.LENGTH_SHORT).show()
+            if (activity.isFinishing) return@post
+            val density = activity.resources.displayMetrics.density
+            val pad = (20 * density).toInt()
+            val wrap = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(pad, pad / 2, pad, pad)
+                addView(
+                    TextView(activity).apply {
+                        text = notes.ifBlank { "Nouveautés de la $version." }
+                        textSize = 15f
+                    },
+                )
+                addView(
+                    ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
+                        isIndeterminate = true
+                        val lp = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                        lp.topMargin = (12 * density).toInt()
+                        layoutParams = lp
+                    },
+                )
+            }
+            progressDlg.set(
+                AlertDialog.Builder(activity)
+                    .setTitle("Téléchargement $version")
+                    .setView(wrap)
+                    .setCancelable(false)
+                    .show(),
+            )
         }
         val dir = File(activity.cacheDir, "apk").apply { mkdirs() }
         val dest = File(dir, "hubera-maps.apk")
@@ -140,6 +179,7 @@ class InAppUpdate(private val activity: Activity) {
             if (dest.length() < 10_000L) {
                 dest.delete()
                 main.post {
+                    progressDlg.get()?.dismiss()
                     Toast.makeText(activity, "APK invalide (fichier trop petit).", Toast.LENGTH_LONG).show()
                 }
                 return
@@ -153,6 +193,7 @@ class InAppUpdate(private val activity: Activity) {
             if (!zipOk) {
                 dest.delete()
                 main.post {
+                    progressDlg.get()?.dismiss()
                     Toast.makeText(activity, "APK invalide (pas un fichier Android).", Toast.LENGTH_LONG).show()
                 }
                 return
@@ -162,15 +203,20 @@ class InAppUpdate(private val activity: Activity) {
                 if (!got.equals(expectedSha, ignoreCase = true)) {
                     dest.delete()
                     main.post {
+                        progressDlg.get()?.dismiss()
                         Toast.makeText(activity, "APK corrompue (sha256).", Toast.LENGTH_LONG).show()
                     }
                     return
                 }
             }
-            main.post { installApk(dest) }
+            main.post {
+                progressDlg.get()?.dismiss()
+                installApk(dest)
+            }
         } catch (t: Throwable) {
             dest.delete()
             main.post {
+                progressDlg.get()?.dismiss()
                 Toast.makeText(
                     activity,
                     "Téléchargement impossible — ouverture du site d’install.",

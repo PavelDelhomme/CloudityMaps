@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.82",
-  "versionCode": 83,
+  "version": "0.1.83",
+  "versionCode": 84,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -14,25 +14,25 @@
   "apkAvailable": true,
   "mandatory": false,
   "forceUpdate": false,
-  "notes": "0.1.82 : UI WebView d’avant le chrome natif (HUD/recherche). Cold start conservé, Calendar, Fuel sans chooser. MAJ jamais forcée.",
-  "published_at": "2026-10-08T19:10:00Z",
-  "sha256": "1245e4714dfe9889c98dfed8e6495617077569f0269acd1110084bf3c2f2fcc0",
+  "notes": "0.1.83 : les barres du haut et du bas restent hors des boutons Retour / Accueil / récents et sous les notifications. La recherche n’est plus collée ni décalée. Pendant le téléchargement, tu vois les nouveautés de cette version. Mise à jour proposée, pas forcée.",
+  "published_at": "2026-10-08T19:45:00Z",
+  "sha256": "f3296fc58bf2a06f412dc3e258c679b7267f15c9df8900452f1d783337844422",
   "canonical": {
     "package": "cloud.hubera.maps",
-    "version": "0.1.82",
-    "versionCode": 83,
+    "version": "0.1.83",
+    "versionCode": 84,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
-    "sha256": "1245e4714dfe9889c98dfed8e6495617077569f0269acd1110084bf3c2f2fcc0",
-    "notes": "0.1.82 : UI WebView d’avant le chrome natif (HUD/recherche). Cold start conservé, Calendar, Fuel sans chooser. MAJ jamais forcée."
+    "sha256": "f3296fc58bf2a06f412dc3e258c679b7267f15c9df8900452f1d783337844422",
+    "notes": "0.1.83 : les barres du haut et du bas restent hors des boutons Retour / Accueil / récents et sous les notifications. La recherche n’est plus collée ni décalée. Pendant le téléchargement, tu vois les nouveautés de cette version. Mise à jour proposée, pas forcée."
   },
   "legacy": {
     "package": "ovh.delhomme.maps",
-    "version": "0.1.82",
-    "versionCode": 83,
+    "version": "0.1.83",
+    "versionCode": 84,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
-    "sha256": "d7f48bcf6d4457d11b9cfb5da6c7222afd43defaf295edc20c36ce415fa2b03d",
-    "notes": "Même build 0.1.82, paquet historique. Schéma cloudity-maps:// seulement."
+    "sha256": "33d89119c83dacc45d19c859ae296581b49b080517af2d66072bfa2de1a42e20",
+    "notes": "Même build 0.1.83, paquet historique. Schéma cloudity-maps:// seulement."
   }
 }

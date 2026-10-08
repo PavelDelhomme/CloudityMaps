@@ -8,6 +8,10 @@
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; font-family: "Segoe UI", system-ui, sans-serif; background: #0f0f1a; color: #f1f5f9; }
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
     .boot-fail {
       position: absolute; z-index: 3000; inset: 0;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -29,15 +33,16 @@
     .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
     .top {
       position: absolute; z-index: 1100; left: 12px; right: 12px;
-      top: calc(10px + env(safe-area-inset-top));
+      top: calc(12px + var(--safe-top));
     }
     .search-bar, .nav-bar {
       display: flex; align-items: center; gap: 4px;
-      background: #1a1a2e; border-radius: 28px; padding: 4px 6px 4px 4px; min-height: 52px;
+      background: #1a1a2e; border-radius: 28px; padding: 4px 8px 4px 6px; min-height: 52px;
       box-shadow: 0 2px 8px rgba(0,0,0,.45); border: 1px solid #2d2d44; color: #f1f5f9;
     }
     .search-bar input {
-      flex: 1; border: 0; outline: 0; font-size: 16px; background: transparent; color: #f1f5f9; min-width: 0;
+      flex: 1; border: 0; outline: 0; font-size: 16px; line-height: 44px; height: 44px;
+      background: transparent; color: #f1f5f9; min-width: 0; padding: 0 8px; align-self: center;
     }
     .search-bar input::placeholder { color: #94a3b8; }
     .ico.clear {
@@ -148,7 +153,7 @@
     /* Guidage : le panneau reste à droite du HUD, pas collé à la recherche. */
     body.nav .nav-signs {
       position: absolute; right: 12px;
-      top: calc(108px + env(safe-area-inset-top));
+      top: calc(108px + var(--safe-top));
       margin: 0;
     }
     .hud-speed {
@@ -370,7 +375,7 @@
     }
     .sheet { left: 12px; right: 12px; bottom: calc(var(--chrome) + 16px); border-radius: 16px; padding: 14px; width: auto; z-index: 1210; }
     #fillSheet {
-      z-index: 4000; top: calc(56px + env(safe-area-inset-top, 0px)); bottom: auto;
+      z-index: 4000; top: calc(56px + var(--safe-top)); bottom: auto;
       max-height: 72vh; overflow-y: auto;
       background: #1a1a2e;
     }
@@ -564,7 +569,7 @@
     }
     .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], .route-card[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden], .music-sheet[hidden], .poi-card[hidden], .nav-signs[hidden], .hud-speed[hidden], .trip-info[hidden], .trip-info-panel[hidden] { display: none !important; }
     .chrome {
-      padding: 0 0 calc(6px + env(safe-area-inset-bottom));
+      padding: 0 0 calc(8px + var(--safe-bottom));
       border-top: 1px solid #2d2d44;
       z-index: 1800;
       transform: none !important;
@@ -664,7 +669,7 @@
     }
     .page-head {
       display: flex; align-items: center; gap: 4px;
-      padding: calc(10px + env(safe-area-inset-top)) 8px 10px;
+      padding: calc(10px + var(--safe-top)) 8px 10px;
       border-bottom: 1px solid #2d2d44;
     }
     .page-head h1 { margin: 0; font-size: 18px; flex: 1; }
@@ -677,7 +682,7 @@
     }
     .drawer {
       position: absolute; z-index: 2001; top: 0; bottom: 0; left: 0; width: min(86vw, 320px);
-      background: #1a1a2e; color: #f1f5f9; padding: calc(18px + env(safe-area-inset-top)) 0 16px;
+      background: #1a1a2e; color: #f1f5f9; padding: calc(18px + var(--safe-top)) 0 16px;
       box-shadow: 4px 0 16px rgba(0,0,0,.4); transform: translateX(-105%); transition: transform .2s ease;
     }
     .drawer.open { transform: translateX(0); }

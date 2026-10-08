@@ -20,7 +20,9 @@ import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 
 /**
  * UI WebView d’avant le chrome natif 0.1.80 (HUD / search / tabs HTML).
@@ -41,7 +43,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         try {
             bootUi()
         } catch (t: Throwable) {
@@ -55,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         web = WebView(this)
         setContentView(web)
         bindWeb(web)
+        bindSafeArea(web)
         web.loadUrl(urlFromIntent(intent))
         // Carte d’abord. SSO / GPS / OTA après le premier paint — jamais bloquer le thread UI.
         main.post {
@@ -151,6 +154,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                view?.requestApplyInsets()
                 runCatching { if (this@MainActivity::music.isInitialized) music.startWatch() }
                 runCatching { if (this@MainActivity::suite.isInitialized) suite.refreshContacts() }
             }
@@ -179,6 +183,7 @@ class MainActivity : AppCompatActivity() {
             web = WebView(this)
             setContentView(web)
             runCatching { bindWeb(web) }
+            bindSafeArea(web)
         }
         runCatching { web.loadUrl("file:///android_asset/index.html") }
     }
@@ -307,6 +312,19 @@ class MainActivity : AppCompatActivity() {
             if (web.canGoBack()) web.goBack()
             else super.onBackPressed()
         }
+    }
+
+    /** Android 15 : env(safe-area-inset-*) est souvent 0 dans la WebView. */
+    private fun bindSafeArea(target: WebView) {
+        ViewCompat.setOnApplyWindowInsetsListener(target) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val js =
+                "document.documentElement.style.setProperty('--safe-top','${bars.top}px');" +
+                    "document.documentElement.style.setProperty('--safe-bottom','${bars.bottom}px');"
+            target.evaluateJavascript(js, null)
+            insets
+        }
+        ViewCompat.requestApplyInsets(target)
     }
 
     private fun urlFromIntent(intent: Intent?): String {
