@@ -17,14 +17,15 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.ImageButton
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
-import androidx.drawerlayout.widget.DrawerLayout
 
+/**
+ * UI WebView d’avant le chrome natif 0.1.80 (HUD / search / tabs HTML).
+ * Cold start 0.1.79 : carte d’abord, adoptHuberaId hors UI, GPS après le paint.
+ */
 class MainActivity : AppCompatActivity() {
     private lateinit var web: WebView
     private lateinit var music: MusicBridge
@@ -51,40 +52,56 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun bootUi() {
-        setContentView(R.layout.activity_chrome)
-        web = findViewById(R.id.map_web)
-        bindNativeChrome()
+        web = WebView(this)
+        setContentView(web)
+        bindWeb(web)
+        web.loadUrl(urlFromIntent(intent))
+        // Carte d’abord. SSO / GPS / OTA après le premier paint — jamais bloquer le thread UI.
+        main.post {
+            runCatching { if (this::suite.isInitialized) suite.ingest(intent?.data) }
+        }
+        main.postDelayed({
+            runCatching { if (this::suite.isInitialized) suite.adoptHuberaId() }
+        }, 400)
+        main.postDelayed({ askLocationIfNeeded() }, 900)
+        main.postDelayed({
+            runCatching { InAppUpdate(this).check() }
+        }, 2800)
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun bindWeb(target: WebView) {
         music = MusicBridge(this) { if (this::web.isInitialized) web else null }
-        web.settings.javaScriptEnabled = true
-        web.settings.domStorageEnabled = true
-        web.settings.databaseEnabled = true
-        web.settings.cacheMode = WebSettings.LOAD_DEFAULT
-        web.settings.setGeolocationEnabled(true)
-        web.settings.allowFileAccess = true
-        web.settings.allowContentAccess = true
-        web.settings.mediaPlaybackRequiresUserGesture = true
+        target.settings.javaScriptEnabled = true
+        target.settings.domStorageEnabled = true
+        target.settings.databaseEnabled = true
+        target.settings.cacheMode = WebSettings.LOAD_DEFAULT
+        target.settings.setGeolocationEnabled(true)
+        target.settings.allowFileAccess = true
+        target.settings.allowContentAccess = true
+        target.settings.mediaPlaybackRequiresUserGesture = true
         CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(target, true)
         @Suppress("DEPRECATION")
-        web.settings.allowUniversalAccessFromFileURLs = true
-        web.addJavascriptInterface(music, "HuberaMusic")
+        target.settings.allowUniversalAccessFromFileURLs = true
+        target.addJavascriptInterface(music, "HuberaMusic")
         fuel = FuelBridge(this)
-        web.addJavascriptInterface(fuel, "HuberaFuel")
+        target.addJavascriptInterface(fuel, "HuberaFuel")
         tts = TtsBridge(this)
-        web.addJavascriptInterface(tts, "HuberaTts")
+        target.addJavascriptInterface(tts, "HuberaTts")
         speed = SpeedLimitBridge { if (this::web.isInitialized) web else null }
-        web.addJavascriptInterface(speed, "HuberaSpeed")
+        target.addJavascriptInterface(speed, "HuberaSpeed")
         val routes = RouteBridge { if (this::web.isInitialized) web else null }
-        web.addJavascriptInterface(routes, "HuberaRoute")
+        target.addJavascriptInterface(routes, "HuberaRoute")
         suite = SuiteBridge(this) { if (this::web.isInitialized) web else null }
-        web.addJavascriptInterface(suite, "HuberaSuite")
+        target.addJavascriptInterface(suite, "HuberaSuite")
         val calendar = CalendarBridge(this) { if (this::suite.isInitialized) suite else null }
-        web.addJavascriptInterface(calendar, "HuberaCalendar")
+        target.addJavascriptInterface(calendar, "HuberaCalendar")
         offline = OfflineBridge(this) { if (this::web.isInitialized) web else null }
-        web.addJavascriptInterface(offline, "HuberaOffline")
+        target.addJavascriptInterface(offline, "HuberaOffline")
         updates = UpdateBridge(this)
-        web.addJavascriptInterface(updates, "HuberaUpdate")
-        web.webViewClient = object : WebViewClient() {
+        target.addJavascriptInterface(updates, "HuberaUpdate")
+        target.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest,
@@ -136,10 +153,9 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 runCatching { if (this@MainActivity::music.isInitialized) music.startWatch() }
                 runCatching { if (this@MainActivity::suite.isInitialized) suite.refreshContacts() }
-                injectNativeChromeJs()
             }
         }
-        web.webChromeClient = object : WebChromeClient() {
+        target.webChromeClient = object : WebChromeClient() {
             override fun onGeolocationPermissionsShowPrompt(
                 origin: String?,
                 callback: GeolocationPermissions.Callback?,
@@ -156,113 +172,15 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
         }
-        web.loadUrl(urlFromIntent(intent))
-        // Carte d’abord. SSO / GPS / OTA après le premier paint — jamais bloquer le thread UI.
-        main.post {
-            runCatching { if (this::suite.isInitialized) suite.ingest(intent?.data) }
-        }
-        main.postDelayed({
-            runCatching { if (this::suite.isInitialized) suite.adoptHuberaId() }
-        }, 400)
-        main.postDelayed({ askLocationIfNeeded() }, 900)
-        main.postDelayed({
-            runCatching { InAppUpdate(this).check() }
-        }, 2800)
     }
 
     private fun showBareMap() {
         if (!this::web.isInitialized) {
-            runCatching { setContentView(R.layout.activity_chrome) }
-            web = runCatching { findViewById<WebView>(R.id.map_web) }.getOrNull() ?: WebView(this).also {
-                setContentView(it)
-            }
-            runCatching { bindNativeChrome() }
+            web = WebView(this)
+            setContentView(web)
+            runCatching { bindWeb(web) }
         }
         runCatching { web.loadUrl("file:///android_asset/index.html") }
-    }
-
-    private fun bindNativeChrome() {
-        val drawer = findViewById<DrawerLayout>(R.id.drawer_layout)
-        findViewById<ImageButton>(R.id.btn_menu).setOnClickListener {
-            if (drawer.isDrawerOpen(android.view.Gravity.START)) drawer.closeDrawers()
-            else drawer.openDrawer(android.view.Gravity.START)
-        }
-        findViewById<ImageButton>(R.id.btn_account).setOnClickListener {
-            chromeNav("account")
-        }
-        findViewById<TextView>(R.id.nav_map).setOnClickListener { selectBottom("maps") }
-        findViewById<TextView>(R.id.nav_route).setOnClickListener { selectBottom("route") }
-        findViewById<TextView>(R.id.nav_places).setOnClickListener { selectBottom("saved") }
-        findViewById<TextView>(R.id.d_music).setOnClickListener {
-            openPkg("cloud.hubera.music", "ovh.delhomme.ytmusic", web = "https://music.hubera.cloud")
-        }
-        findViewById<TextView>(R.id.d_fuel).setOnClickListener {
-            openPkg("cloud.hubera.fuel", "com.gasoiltracking.app", web = "https://fuel.hubera.cloud")
-        }
-        findViewById<TextView>(R.id.d_docs).setOnClickListener {
-            openPkg("cloud.hubera.docs", web = "https://docs.hubera.cloud")
-        }
-        findViewById<TextView>(R.id.d_mail).setOnClickListener {
-            openPkg("cloud.hubera.mail", web = "https://mail.hubera.cloud")
-        }
-        findViewById<TextView>(R.id.d_id).setOnClickListener {
-            drawer.closeDrawers()
-            chromeNav("account")
-        }
-        findViewById<TextView>(R.id.d_version)?.text =
-            "v${runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"} — MAJ jamais forcée"
-    }
-
-    private fun selectBottom(id: String) {
-        val map = findViewById<TextView>(R.id.nav_map)
-        val route = findViewById<TextView>(R.id.nav_route)
-        val places = findViewById<TextView>(R.id.nav_places)
-        val on = 0xFF0E4D5C.toInt()
-        val off = 0xFF5A6878.toInt()
-        map.setTextColor(if (id == "maps") on else off)
-        route.setTextColor(if (id == "route") on else off)
-        places.setTextColor(if (id == "saved") on else off)
-        chromeNav(id)
-    }
-
-    private fun chromeNav(id: String) {
-        if (!this::web.isInitialized) return
-        val js = when (id) {
-            "saved" -> "window.setTab&&setTab('saved')"
-            "route" -> "window.setTab&&setTab('maps');var q=document.getElementById('q');if(q){q.placeholder='Itinéraire vers…';q.focus();}"
-            "account" -> "document.getElementById('btnUser')&&document.getElementById('btnUser').click()"
-            else -> "window.setTab&&setTab('maps')"
-        }
-        runCatching { web.evaluateJavascript(js, null) }
-    }
-
-    private fun injectNativeChromeJs() {
-        if (!this::web.isInitialized) return
-        runCatching {
-            web.evaluateJavascript(
-                """
-                (function(){
-                  var t=document.getElementById('tabs'); if(t) t.style.display='none';
-                  var m=document.getElementById('btnMenu'); if(m) m.style.display='none';
-                  var u=document.getElementById('btnUser'); if(u) u.style.display='none';
-                  var d=document.getElementById('drawer'); if(d) d.style.display='none';
-                })();
-                """.trimIndent(),
-                null,
-            )
-        }
-    }
-
-    private fun openPkg(vararg pkgs: String, web: String) {
-        findViewById<DrawerLayout>(R.id.drawer_layout).closeDrawers()
-        for (p in pkgs) {
-            val launch = packageManager.getLaunchIntentForPackage(p)
-            if (launch != null) {
-                startActivity(launch)
-                return
-            }
-        }
-        safeView(Uri.parse(web))
     }
 
     private fun askLocationIfNeeded() {

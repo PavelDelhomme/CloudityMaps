@@ -1,5 +1,10 @@
 # Hubera Maps — versions
 
+## 0.1.82 (8 oct. 2026)
+- UI WebView d’avant le chrome natif 0.1.80 : HUD, recherche, onglets HTML (plus de drawer/bottom-nav natif).
+- Cold start 0.1.79 conservé : carte d’abord, `adoptHuberaId` hors UI, GPS après le paint, Overpass skip non-JSON.
+- Pont Fuel `hubera-maps://` unique + Calendar. Dual APK vc 83. OTA `forceUpdate: false` / `mandatory: false`.
+
 ## 0.1.81 (8 oct. 2026)
 - Fusion cold-start 0.1.79 + chrome natif 0.1.80.
 - SSO `adoptHuberaId` **hors UI** ; Overpass skip non-JSON.
