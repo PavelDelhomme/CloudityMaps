@@ -18,21 +18,24 @@
     }
     .meta { font-size: .9rem; color: #cbd5e1; }
     ol { color: #94a3b8; line-height: 1.55; padding-left: 1.2rem; }
+    code { color: #e2e8f0; }
   </style>
 </head>
 <body>
   <main>
     <p class="meta">Hubera · application indépendante</p>
-    <h1>Hubera Maps 0.1.76</h1>
-    <p>Application native Android (APK) et iPhone (App Store / TestFlight, bundle <code>cloud.hubera.maps</code>, iOS 15.1 → 18). Pas un raccourci Safari.</p>
+    <h1>Hubera Maps 0.1.81</h1>
+    <p>Si l’app se ferme toute seule, <strong>n’ouvre pas Maps</strong> : télécharge l’APK ci-dessous (fichier direct), puis installe par-dessus. L’OTA in-app est inutilisable tant que le lancement crash.</p>
     <ol>
-      <li>Android : télécharger l’APK ci-dessous</li>
-      <li>iPhone : installer via TestFlight / App Store (même app Expo que Fuel)</li>
-      <li>Autoriser la localisation — même en arrière-plan pour Fuel</li>
+      <li>Télécharger l’APK (lien fichier, pas besoin d’ouvrir l’app)</li>
+      <li>Installer par-dessus (garder les données)</li>
+      <li>Ouvrir Maps ensuite — la carte s’affiche même hors-ligne / sans compte</li>
     </ol>
-    <a class="btn" href="/apk/hubera-maps.apk">Télécharger l’APK Maps</a>
+    <a class="btn" href="https://maps.hubera.cloud/apk/hubera-maps.apk">Télécharger l’APK 0.1.81</a>
+    <a class="ghost" href="https://maps.hubera.cloud/download">Raccourci /download (même fichier)</a>
+    <a class="ghost" href="https://maps.hubera.cloud/apk/hubera-maps-legacy.apk">APK legacy ovh.delhomme.maps</a>
     <a class="ghost" href="https://fuel.hubera.cloud/install">Installer aussi Hubera Fuel (app native)</a>
-    <p class="meta">Mise à jour : <a href="https://maps.hubera.cloud/updates.json" style="color:#e94560">maps.hubera.cloud/updates.json</a> (jamais forcée)</p>
+    <p class="meta">Mise à jour : <a href="https://maps.hubera.cloud/updates.json" style="color:#e94560">maps.hubera.cloud/updates.json</a> — jamais forcée (<code>forceUpdate: false</code>).</p>
   </main>
 </body>
 </html>

@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = 'HuberaMaps'
 include ':app'
+include ':hubera-id-sso'
+project(':hubera-id-sso').projectDir = file('hubera-id-sso')

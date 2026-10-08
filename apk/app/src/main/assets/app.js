@@ -12,6 +12,7 @@ const FUEL_SNAP_KEY = 'hubera-maps-fuel-snap';
 const FUEL_LOGO_KEY = 'hubera-maps-fuel-logo';
 const FUEL_VEH_KEY = 'hubera-maps-fuel-veh';
 const PLACES_CACHE_KEY = 'hubera-maps-osm-places-v1';
+const PLANNED_TRIPS_KEY = 'hubera-maps-planned-trips';
 let fuelPageTab = 'home';
 function loadSelectedFuelVehicleId() {
   const n = Number(localStorage.getItem(FUEL_VEH_KEY) || '0');
@@ -57,6 +58,8 @@ map.createPane('poiPane');
 map.getPane('poiPane').style.zIndex = 620;
 map.whenReady(() => {
   map.invalidateSize();
+  const boot = document.getElementById('bootFail');
+  if (boot) boot.hidden = true;
   setTimeout(() => map.invalidateSize(), 350);
 });
 map.on('dragstart', () => {
@@ -177,6 +180,7 @@ let lastRoadAt = 0;
 let lastSpeedKmh = 0;
 let movingSince = 0;
 let fuelArmed = false;
+let tripInfoOpen = false;
 let fuelDriveMs = 0;
 let fuelDriveLast = 0;
 let lastNavAt = 0;
@@ -2093,6 +2097,7 @@ function routeFitPadding() {
     Math.max(
       overlayEdgePad(document.getElementById('btnHere'), 'right'),
       overlayEdgePad(document.querySelector('.road-sign'), 'right'),
+      overlayEdgePad(document.getElementById('tripInfoMenu'), 'right'),
     ) + gap;
   let left = 22;
   const minH = 260;
@@ -2353,6 +2358,11 @@ function bindRouteCard() {
       selectRoute(alt.dataset.id);
       return;
     }
+    if (e.target.closest('#btnSaveTripDate')) {
+      e.preventDefault();
+      saveTripAtDate();
+      return;
+    }
     if (e.target.closest('#btnStartNav') || e.target.closest('.go')) {
       e.preventDefault();
       startNavigation();
@@ -2436,8 +2446,84 @@ function renderAlts() {
             `<div class="d">${r.km} km</div></button>`,
         )
         .join('') +
-      `</div>${worksNote}<button type="button" class="go" id="btnStartNav">Démarrer</button>`,
+      `</div>${worksNote}` +
+      `<label class="cal-when">Enregistrer à une date` +
+      `<input type="datetime-local" id="tripCalWhen" value="${esc(defaultTripWhen())}" /></label>` +
+      `<button type="button" class="go cal" id="btnSaveTripDate">Enregistrer dans Calendar</button>` +
+      `<button type="button" class="go" id="btnStartNav">Démarrer</button>`,
   );
+}
+
+function defaultTripWhen() {
+  const d = new Date(Date.now() + 15 * 60 * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function persistPlannedTrip(row) {
+  let rows = [];
+  try {
+    rows = JSON.parse(localStorage.getItem(PLANNED_TRIPS_KEY) || '[]');
+  } catch {
+    rows = [];
+  }
+  if (!Array.isArray(rows)) rows = [];
+  rows.unshift(row);
+  try {
+    localStorage.setItem(PLANNED_TRIPS_KEY, JSON.stringify(rows.slice(0, 24)));
+  } catch {
+    /* quota */
+  }
+}
+
+function saveTripAtDate() {
+  const whenEl = document.getElementById('tripCalWhen');
+  const raw = whenEl && whenEl.value;
+  if (!raw) {
+    toast('Choisis une date');
+    return;
+  }
+  const start = new Date(raw).getTime();
+  if (!Number.isFinite(start)) {
+    toast('Date invalide');
+    return;
+  }
+  const choice = currentChoice();
+  const mins = Number(choice && choice.min) || 30;
+  const end = start + mins * 60 * 1000;
+  const origin = (lastOrigin && (lastOrigin.title || lastOrigin.label)) || 'Départ';
+  const dest = (lastDest && (lastDest.title || lastDest.label)) || 'Arrivée';
+  const title = `${origin} → ${dest}`;
+  const loc = (lastDest && lastDest.label) || dest;
+  persistPlannedTrip({
+    title,
+    location: loc,
+    start,
+    end,
+    at: Date.now(),
+  });
+  try {
+    const tripId = `planned-${start}`;
+    if (typeof HuberaCalendar !== 'undefined' && HuberaCalendar.saveTripWithId) {
+      HuberaCalendar.saveTripWithId(title, loc, String(start), String(end), tripId);
+      return;
+    }
+    if (typeof HuberaCalendar !== 'undefined' && HuberaCalendar.saveTrip) {
+      HuberaCalendar.saveTrip(title, loc, String(start), String(end));
+      return;
+    }
+  } catch {
+    /* native absent */
+  }
+  const u = new URL('https://calendar.hubera.cloud/app/');
+  u.searchParams.set('from', 'maps');
+  u.searchParams.set('trip_id', `planned-${start}`);
+  u.searchParams.set('title', title);
+  u.searchParams.set('location', loc);
+  u.searchParams.set('start', new Date(start).toISOString());
+  u.searchParams.set('end', new Date(end).toISOString());
+  persistPlannedTrip({ title, location: loc, start, end, url: u.toString(), at: Date.now() });
+  window.location.href = u.toString();
 }
 
 function selectRoute(id) {
@@ -2531,6 +2617,109 @@ function paintHud(choice) {
   if (navigating && remainKm < 0.05 && !still) {
     speakNav('Vous êtes arrivé', 0);
   }
+  paintTripInfoMenu();
+}
+
+function isFreeFollow() {
+  return navigating && !currentChoice();
+}
+
+function liveFuelHud() {
+  const veh = activeFuelVehicle();
+  if (!veh) return null;
+  const tank = Number(veh.tank) || 0;
+  const l100 = Number(veh.l100) > 0 ? Number(veh.l100) : 0;
+  let liters =
+    veh.liters != null && Number(veh.liters) >= 0
+      ? Number(veh.liters)
+      : tank > 0 && veh.pct >= 0
+        ? (veh.pct / 100) * tank
+        : null;
+  if (liters != null && mapsStartedFuel && l100 > 0) {
+    const km = liveFuelKm();
+    if (km > 0.05) liters = Math.max(0, liters - (km * l100) / 100);
+  }
+  const pct =
+    liters != null && tank > 0
+      ? Math.max(0, Math.min(100, Math.round((liters / tank) * 100)))
+      : veh.pct >= 0
+        ? veh.pct
+        : null;
+  const rangeKm = liters != null && l100 > 0 ? (liters / l100) * 100 : null;
+  return { veh, tank, l100, liters, pct, rangeKm };
+}
+
+function paintTripInfoMenu() {
+  const wrap = document.getElementById('tripInfoMenu');
+  const panel = document.getElementById('tripInfoPanel');
+  const tog = document.getElementById('tripInfoToggle');
+  if (!wrap || !panel) return;
+  wrap.hidden = !navigating;
+  if (!navigating) {
+    tripInfoOpen = false;
+    panel.hidden = true;
+    if (tog) tog.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  if (tog) {
+    tog.textContent = tripInfoOpen ? '▴' : '▾';
+    tog.setAttribute('aria-expanded', tripInfoOpen ? 'true' : 'false');
+  }
+  panel.hidden = !tripInfoOpen;
+  if (!tripInfoOpen) return;
+  const fuel = liveFuelHud();
+  const choice = currentChoice();
+  const free = isFreeFollow();
+  const here = me;
+  const along = remainAlongKm(here, choice?.geometry);
+  const remainKm = choice
+    ? along != null
+      ? along
+      : here && lastDest
+        ? Math.max(0.1, haversineKm(here, lastDest))
+        : choice.km
+    : 0;
+  const etaMin = choice
+    ? Math.max(1, Math.round((choice.min * remainKm) / Math.max(choice.km, 0.1)))
+    : 0;
+  const pctLab = fuel && fuel.pct != null ? `${fuel.pct} %` : '—';
+  const Llab =
+    fuel && fuel.liters != null ? `${fuel.liters.toFixed(1)} L` : '';
+  const rangeLab =
+    fuel && fuel.rangeKm != null && fuel.rangeKm > 0 ? `~${Math.round(fuel.rangeKm)} km` : '';
+  const fillW = fuel && fuel.pct != null ? fuel.pct : 0;
+  let rows =
+    `<div class="ti-k">Jauge Fuel</div>` +
+    `<div class="ti-v">${esc(fuel ? fuel.veh.name : '—')} · ${esc(pctLab)}${Llab ? ` · ${esc(Llab)}` : ''}</div>` +
+    `<div class="ti-bar"><i style="width:${fillW}%"></i></div>`;
+  if (!free && choice) {
+    const remainTxt = remainKm < 1 ? fmtDist(remainKm) : `${remainKm.toFixed(1)} km`;
+    rows +=
+      `<div class="ti-k">Reste trajet</div>` +
+      `<div class="ti-v">${esc(remainTxt)} · ${etaMin} min</div>`;
+    if (fuel && fuel.l100 > 0) {
+      const need = (remainKm * fuel.l100) / 100;
+      rows +=
+        `<div class="ti-k">Plein / conso</div>` +
+        `<div class="ti-v">~${need.toFixed(1)} L · ${fuel.l100.toFixed(1)} L/100` +
+        (rangeLab ? ` · ${esc(rangeLab)} d’auto` : '') +
+        `</div>`;
+    }
+  } else if (fuel && (fuel.l100 > 0 || rangeLab)) {
+    rows +=
+      `<div class="ti-k">Conso / autonomie</div>` +
+      `<div class="ti-v">${fuel.l100 > 0 ? `${fuel.l100.toFixed(1)} L/100` : ''}` +
+      (rangeLab ? `${fuel.l100 > 0 ? ' · ' : ''}${esc(rangeLab)}` : '') +
+      `</div>`;
+  }
+  panel.innerHTML = rows;
+}
+
+function toggleTripInfo() {
+  if (!navigating) return;
+  tripInfoOpen = !tripInfoOpen;
+  if (tripInfoOpen) requestFuelSnapshot(false);
+  paintTripInfoMenu();
 }
 
 function fuelLogoOn() {
@@ -3855,7 +4044,7 @@ function appVersionLabel() {
   } catch {
     /* web */
   }
-  return '0.1.76';
+  return '0.1.77';
 }
 
 const FUEL_UX_OPTS = [
@@ -3960,14 +4149,20 @@ function parseFuelSnapPack(raw) {
     const body = parts[i + 1] || '';
     if (kind === 'V') {
       out.vehicles = body.split('|').map((row) => {
-        const [idRaw, name, pctRaw, act] = row.split('~');
+        const [idRaw, name, pctRaw, act, tankRaw, litersRaw, l100Raw] = row.split('~');
         const id = Number(idRaw);
         const pct = Number(pctRaw);
+        const tank = Number(tankRaw);
+        const liters = Number(litersRaw);
+        const l100 = Number(l100Raw);
         return {
           id,
           name: name || `Véhicule ${id}`,
           pct: Number.isFinite(pct) ? pct : -1,
           active: act === '1',
+          tank: Number.isFinite(tank) && tank > 0 ? tank : 0,
+          liters: Number.isFinite(liters) && liters >= 0 ? liters : -1,
+          l100: Number.isFinite(l100) && l100 > 0 ? l100 : 0,
         };
       }).filter((v) => Number.isFinite(v.id) && v.id > 0);
     } else if (kind === 'F') {
@@ -4081,6 +4276,9 @@ function applyFuelHttpSnap(data) {
         name: v.name || `Véhicule ${v.id}`,
         pct: Number.isFinite(Number(v.pct)) ? Number(v.pct) : -1,
         active: Boolean(v.isActive || v.isDefault || v.id === data.activeVehicleId),
+        tank: Number(v.tankCapacity || v.tank) || 0,
+        liters: Number.isFinite(Number(v.liters)) ? Number(v.liters) : -1,
+        l100: Number(v.l100 || v.avgConsumption || v.consumptionPer100) || 0,
       }))
       .filter((v) => Number.isFinite(v.id) && v.id > 0),
     fills: Array.isArray(data.fills)
@@ -4309,6 +4507,7 @@ function paintFuelPeek() {
         ? `Jauge réservoir ${pct} % · tap pour Fuel`
         : 'Tap : véhicules, plein, budget';
   }
+  paintTripInfoMenu();
 }
 
 function paintFuelSheetBody() {
@@ -4784,6 +4983,23 @@ document.getElementById('btnStopNav').addEventListener('click', () => {
   collapseNavHud();
   renderAlts();
 });
+const tripInfoToggle = document.getElementById('tripInfoToggle');
+if (tripInfoToggle) tripInfoToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleTripInfo();
+});
+if (roadSignEl) {
+  roadSignEl.addEventListener('click', () => {
+    if (navigating) toggleTripInfo();
+  });
+  roadSignEl.addEventListener('keydown', (e) => {
+    if (!navigating) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleTripInfo();
+    }
+  });
+}
 document.getElementById('btnVoiceNav').addEventListener('click', () => {
   const on = !voiceEnabled();
   setVoiceEnabled(on);
@@ -5397,20 +5613,24 @@ function musicCall(fn) {
   }
 }
 
-document.getElementById('musicPlay').addEventListener('click', () => musicCall('playPause'));
-document.getElementById('musicNext').addEventListener('click', () => musicCall('next'));
-document.getElementById('musicPrev').addEventListener('click', () => musicCall('prev'));
-document.getElementById('musicOpenMeta').addEventListener('click', openMusicSheet);
-document.getElementById('musicHide').addEventListener('click', () => {
+function onTap(id, fn) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('click', fn);
+}
+onTap('musicPlay', () => musicCall('playPause'));
+onTap('musicNext', () => musicCall('next'));
+onTap('musicPrev', () => musicCall('prev'));
+onTap('musicOpenMeta', openMusicSheet);
+onTap('musicHide', () => {
   closeMusicSheet();
   setMusicDock(false);
 });
-musicPeek.addEventListener('click', () => setMusicDock(true));
-document.getElementById('musicSheetClose').addEventListener('click', closeMusicSheet);
-document.getElementById('musicSheetPlay').addEventListener('click', () => musicCall('playPause'));
-document.getElementById('musicSheetNext').addEventListener('click', () => musicCall('next'));
-document.getElementById('musicSheetPrev').addEventListener('click', () => musicCall('prev'));
-document.getElementById('musicSheetOpenApp').addEventListener('click', () => musicCall('openApp'));
+if (musicPeek) musicPeek.addEventListener('click', () => setMusicDock(true));
+onTap('musicSheetClose', closeMusicSheet);
+onTap('musicSheetPlay', () => musicCall('playPause'));
+onTap('musicSheetNext', () => musicCall('next'));
+onTap('musicSheetPrev', () => musicCall('prev'));
+onTap('musicSheetOpenApp', () => musicCall('openApp'));
 
 if (nativeMusic) {
   try {

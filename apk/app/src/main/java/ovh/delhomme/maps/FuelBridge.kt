@@ -27,7 +27,8 @@ class FuelBridge(private val context: Context) {
     private fun installedFuelPkg(preferNew: Boolean): String? {
         val order = if (preferNew) FUEL_PKGS else FUEL_PKGS.reversed()
         return order.firstOrNull { pkg ->
-            context.packageManager.getLaunchIntentForPackage(pkg) != null
+            runCatching { context.packageManager.getLaunchIntentForPackage(pkg) != null }
+                .getOrDefault(false)
         }
     }
 
@@ -63,7 +64,7 @@ class FuelBridge(private val context: Context) {
 
     @JavascriptInterface
     fun isInstalled(): Boolean {
-        return installedFuelPkg(preferNew = true) != null
+        return runCatching { installedFuelPkg(preferNew = true) != null }.getOrDefault(false)
     }
 
     private fun openInstallPage() {

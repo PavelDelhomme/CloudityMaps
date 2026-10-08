@@ -19,12 +19,14 @@ class TtsBridge(context: Context) {
     private var muted = false
 
     init {
-        engine = TextToSpeech(context.applicationContext) { status ->
-            ready = status == TextToSpeech.SUCCESS
-            if (ready) {
-                engine?.language = Locale.FRANCE
+        engine = runCatching {
+            TextToSpeech(context.applicationContext) { status ->
+                ready = status == TextToSpeech.SUCCESS
+                if (ready) {
+                    runCatching { engine?.language = Locale.FRANCE }
+                }
             }
-        }
+        }.getOrNull()
     }
 
     @JavascriptInterface

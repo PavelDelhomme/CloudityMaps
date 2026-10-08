@@ -59,9 +59,13 @@ class MusicBridge(
     }
 
     fun connect() {
-        if (controller != null || connecting) return
-        connecting = true
-        tryConnect(musicPkgsInstalled(), 0)
+        runCatching {
+            if (controller != null || connecting) return
+            connecting = true
+            tryConnect(musicPkgsInstalled(), 0)
+        }.onFailure {
+            connecting = false
+        }
     }
 
     private fun tryConnect(pkgs: List<String>, index: Int) {
@@ -115,11 +119,13 @@ class MusicBridge(
     }
 
     fun startWatch() {
-        if (watching) return
-        watching = true
-        connect()
-        main.removeCallbacks(tick)
-        main.post(tick)
+        runCatching {
+            if (watching) return
+            watching = true
+            connect()
+            main.removeCallbacks(tick)
+            main.post(tick)
+        }
     }
 
     fun stopWatch() {
@@ -210,11 +216,13 @@ class MusicBridge(
             val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
             if (launch != null) {
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(launch)
+                runCatching { context.startActivity(launch) }
             } else {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW).setData(android.net.Uri.parse("https://music.hubera.cloud/")),
-                )
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW).setData(android.net.Uri.parse("https://music.hubera.cloud/")),
+                    )
+                }
             }
         }
     }

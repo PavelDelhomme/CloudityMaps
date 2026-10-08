@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import cloud.hubera.id.sso.HuberaIdAccounts
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
@@ -14,6 +15,7 @@ import java.util.concurrent.Executors
 /**
  * Hubera ID + Contacts depuis Maps (file:// n’a pas le JWT suite).
  * GET https://contacts.hubera.cloud/contacts avec le Bearer stocké.
+ * Ne jamais injecter un e-mail en dur.
  */
 class SuiteBridge(
     private val context: Context,
@@ -33,19 +35,21 @@ class SuiteBridge(
     }
 
     fun ingest(data: Uri?) {
-        if (data == null) return
-        val token =
-            data.getQueryParameter("token")
-                ?: data.getQueryParameter("access")
-                ?: data.getQueryParameter("access_token")
-        val email = data.getQueryParameter("email")
-        if (!token.isNullOrBlank()) setToken(token)
-        if (!email.isNullOrBlank()) {
-            prefs.edit().putString("email", email.trim()).apply()
-        }
-        if (!token.isNullOrBlank() || data.host == "auth") {
-            refreshContacts()
-            refreshFuel()
+        runCatching {
+            if (data == null) return
+            val token =
+                data.getQueryParameter("token")
+                    ?: data.getQueryParameter("access")
+                    ?: data.getQueryParameter("access_token")
+            val email = data.getQueryParameter("email")
+            if (!token.isNullOrBlank()) setToken(token)
+            if (!email.isNullOrBlank()) {
+                prefs.edit().putString("email", email.trim()).apply()
+            }
+            if (!token.isNullOrBlank() || data.host == "auth") {
+                refreshContacts()
+                refreshFuel()
+            }
         }
     }
 
@@ -60,7 +64,51 @@ class SuiteBridge(
     fun token(): String = prefs.getString("token", "") ?: ""
 
     @JavascriptInterface
-    fun email(): String = prefs.getString("email", "paul@delhomme.ovh") ?: "paul@delhomme.ovh"
+    fun email(): String = prefs.getString("email", "") ?: ""
+
+    /** Reprend un compte Hubera déjà sur le téléphone (Music / ID / Mail…). Hors UI thread. */
+    fun adoptHuberaId() {
+        io.execute {
+            runCatching {
+                if (token().isNotBlank() && email().isNotBlank()) return@runCatching
+                val acc = HuberaIdAccounts.listAccounts(context)
+                    .firstOrNull { it.accessToken.isNotBlank() || it.email.isNotBlank() }
+                    ?: return@runCatching
+                if (token().isBlank() && acc.accessToken.isNotBlank()) setToken(acc.accessToken)
+                if (email().isBlank() && acc.email.isNotBlank()) {
+                    prefs.edit().putString("email", acc.email.trim()).apply()
+                }
+            }.onFailure {
+                android.util.Log.w("HuberaSuite", "adoptHuberaId ${it.message}")
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun huberaEmails(): String =
+        runCatching {
+            HuberaIdAccounts.listAccounts(context).joinToString("\n") { it.email }
+        }.getOrDefault("")
+
+    @JavascriptInterface
+    fun continueWithHubera(email: String) {
+        runCatching {
+            val acc = HuberaIdAccounts.listAccounts(context)
+                .firstOrNull { it.email.equals(email.trim(), ignoreCase = true) }
+                ?: return
+            if (acc.accessToken.isNotBlank()) setToken(acc.accessToken)
+            prefs.edit().putString("email", acc.email.trim()).apply()
+            HuberaIdAccounts.saveSession(
+                context,
+                acc.email,
+                acc.accessToken,
+                acc.refreshToken,
+                issuer = "maps",
+            )
+            refreshContacts()
+            refreshFuel()
+        }
+    }
 
     @JavascriptInterface
     fun refreshContacts() {
@@ -153,13 +201,19 @@ class SuiteBridge(
             instanceFollowRedirects = true
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.76")
+            setRequestProperty("User-Agent", "HuberaMaps/0.1.81")
         }
         return try {
             val code = conn.responseCode
             android.util.Log.i("HuberaSuite", "GET $code $url")
             if (code !in 200..299) return null
-            conn.inputStream.bufferedReader().use { it.readText() }
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val t = text.trimStart().removePrefix("\uFEFF").trimStart()
+            if (!(t.startsWith("{") || t.startsWith("["))) {
+                android.util.Log.w("HuberaSuite", "non-json $url")
+                return null
+            }
+            text
         } catch (t: Throwable) {
             android.util.Log.w("HuberaSuite", "${t.javaClass.simpleName} $url ${t.message}")
             null

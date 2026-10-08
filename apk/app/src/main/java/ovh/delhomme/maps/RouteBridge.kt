@@ -99,7 +99,13 @@ class RouteBridge(
                 android.util.Log.w("HuberaRoute", "body $err")
                 return null
             }
-            conn.inputStream.bufferedReader().use { it.readText() }
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val t = text.trimStart().removePrefix("\uFEFF").trimStart()
+            if (!(t.startsWith("{") || t.startsWith("["))) {
+                android.util.Log.w("HuberaRoute", "non-json ${t.take(32)}")
+                return null
+            }
+            text
         } catch (t: Throwable) {
             android.util.Log.w("HuberaRoute", "ex ${t.javaClass.simpleName} ${t.message}")
             null

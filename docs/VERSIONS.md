@@ -1,5 +1,22 @@
 # Hubera Maps — versions
 
+## 0.1.81 (8 oct. 2026)
+- Fusion cold-start 0.1.79 + chrome natif 0.1.80.
+- SSO `adoptHuberaId` **hors UI** ; Overpass skip non-JSON.
+- Enregistrer un trajet à une date → Hubera Calendar (API) ou stub `content://` / calendar.hubera.cloud (file durable).
+- Pont Fuel `hubera-maps://` : schéma uniquement sur `cloud.hubera.maps` (plus de chooser 2 icônes). Legacy garde `cloudity-maps://`.
+- Dual APK vc 82. OTA `forceUpdate: false` / `mandatory: false`. Overlay Samsung `-r` seulement.
+
+## 0.1.80 (8 oct. 2026)
+- Chrome natif : hamburger, compte, nav Carte / Trajet / Lieux. Pas de barre search native sur la carte.
+
+## 0.1.79 (8 oct. 2026)
+- Cold start : carte d’abord, même hors-ligne / sans token. GPS après le premier paint.
+
+## 0.1.77 (8 oct. 2026)
+- Sous la limite de vitesse : petit menu d’infos trajet (jauge Fuel live, km restants **hors suivi libre**, ETA, conso / plein).
+- HUD 0.1.75/76 inchangé : `STILL_KMH=5`, `ROLL_KMH=8`, « À l’arrêt », Fuel armé seulement en roulant.
+
 ## 0.1.76 (7 oct. 2026)
 - P0 Samsung : un Overpass HTML/XML (`<?xml`, 504) ne plante plus l’app à l’ouverture.
 - `SpeedLimitBridge` ignore tout body non JSON, `runCatching` sur le pool — le process ne crash plus.

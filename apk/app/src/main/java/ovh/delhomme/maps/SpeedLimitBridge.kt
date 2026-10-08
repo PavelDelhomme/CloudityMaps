@@ -33,9 +33,11 @@ class SpeedLimitBridge(
 
     @JavascriptInterface
     fun lookup(lat: String, lon: String) {
-        val la = lat.toDoubleOrNull() ?: return
-        val lo = lon.toDoubleOrNull() ?: return
-        lookupCoords(la, lo)
+        runCatching {
+            val la = lat.toDoubleOrNull() ?: return
+            val lo = lon.toDoubleOrNull() ?: return
+            lookupCoords(la, lo)
+        }
     }
 
     private fun lookupCoords(lat: Double, lon: Double) {
@@ -108,7 +110,7 @@ class SpeedLimitBridge(
             doOutput = true
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.76 (https://maps.hubera.cloud)")
+            setRequestProperty("User-Agent", "HuberaMaps/0.1.81 (https://maps.hubera.cloud)")
         }
         return try {
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }

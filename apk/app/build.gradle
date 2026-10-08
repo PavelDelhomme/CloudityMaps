@@ -8,15 +8,19 @@ android {
     compileSdk 35
     buildFeatures { buildConfig true }
     defaultConfig {
-        applicationId project.hasProperty('legacyAppId') ? 'ovh.delhomme.maps' : 'cloud.hubera.maps'
+        def isLegacy = project.hasProperty('legacyAppId')
+        applicationId isLegacy ? 'ovh.delhomme.maps' : 'cloud.hubera.maps'
         minSdk 26
         targetSdk 35
-        versionCode 77
-        versionName '0.1.76'
+        versionCode 82
+        versionName '0.1.81'
+        // Fuel hubera-maps:// : un seul paquet (canonical) pour éviter le chooser 2 icônes.
+        manifestPlaceholders.mapsFuelScheme = isLegacy ? 'cloudity-maps' : 'hubera-maps'
     }
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.debug
         }
         debug {
             applicationIdSuffix ''
@@ -32,6 +36,8 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
     implementation 'androidx.webkit:webkit:1.12.1'
     implementation 'androidx.media3:media3-session:1.5.0'
+    implementation project(':hubera-id-sso')
 }

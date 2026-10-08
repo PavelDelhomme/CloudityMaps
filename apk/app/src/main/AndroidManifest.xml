@@ -11,6 +11,13 @@
         <package android:name="com.gasoiltracking.app" />
         <package android:name="cloud.hubera.contacts" />
         <package android:name="fr.cloudity.cloudity_contacts" />
+        <package android:name="cloud.hubera.docs" />
+        <package android:name="cloud.hubera.mail" />
+        <package android:name="cloud.hubera.id" />
+        <package android:name="cloud.hubera.pass" />
+        <package android:name="cloud.hubera.calendar" />
+        <package android:name="fr.cloudity.cloudity_calendar" />
+        <package android:name="cloud.hubera.jobs" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="gasoiltracking" />
@@ -24,6 +31,14 @@
         </intent>
         <intent>
             <action android:name="androidx.media3.session.MediaSessionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.dir/event" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:scheme="content" />
         </intent>
     </queries>
     <application
@@ -56,7 +71,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="hubera-maps" />
+                <data android:scheme="${mapsFuelScheme}" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

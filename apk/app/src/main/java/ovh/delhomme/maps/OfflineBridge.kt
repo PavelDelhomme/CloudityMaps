@@ -158,23 +158,25 @@ class OfflineBridge(
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 HuberaMaps/0.1.39"
 
         fun serveTile(context: Context, uri: Uri): WebResourceResponse? {
-            val t = matchTile(uri) ?: return null
-            val file = tileFile(context, t.first, t.second, t.third)
-            if (file.isFile && isBlockedTile(file)) {
-                file.delete()
-            }
-            if (file.isFile && file.length() > 80) {
-                return pngResponse(file.readBytes())
-            }
-            val bytes = fetchTile(t.first, t.second, t.third) ?: return null
-            if (bytes.size <= 80 || isBlockedBytes(bytes)) return null
-            runCatching {
-                file.parentFile?.mkdirs()
-                val tmp = File(file.parentFile, file.name + ".tmp")
-                tmp.writeBytes(bytes)
-                tmp.renameTo(file)
-            }
-            return pngResponse(bytes)
+            return runCatching {
+                val t = matchTile(uri) ?: return@runCatching null
+                val file = tileFile(context, t.first, t.second, t.third)
+                if (file.isFile && isBlockedTile(file)) {
+                    file.delete()
+                }
+                if (file.isFile && file.length() > 80) {
+                    return@runCatching pngResponse(file.readBytes())
+                }
+                val bytes = fetchTile(t.first, t.second, t.third) ?: return@runCatching null
+                if (bytes.size <= 80 || isBlockedBytes(bytes)) return@runCatching null
+                runCatching {
+                    file.parentFile?.mkdirs()
+                    val tmp = File(file.parentFile, file.name + ".tmp")
+                    tmp.writeBytes(bytes)
+                    tmp.renameTo(file)
+                }
+                pngResponse(bytes)
+            }.getOrNull()
         }
 
         private fun isBlockedTile(file: File): Boolean {

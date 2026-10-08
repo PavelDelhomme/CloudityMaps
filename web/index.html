@@ -174,6 +174,23 @@
       position: absolute; left: 0; right: 0; bottom: 4px;
       font-size: 8px; font-weight: 800; letter-spacing: .12em; color: #111;
     }
+    .road-sign { pointer-events: auto; cursor: pointer; }
+    .trip-info {
+      pointer-events: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+      max-width: min(176px, 46vw);
+    }
+    .trip-info-toggle {
+      width: 28px; height: 22px; border-radius: 8px; border: 1px solid #2d2d44;
+      background: rgba(15,15,26,.92); color: #f8fafc; font-size: 11px; font-weight: 800; cursor: pointer;
+    }
+    .trip-info-panel {
+      width: 168px; background: rgba(15,15,26,.94); border: 1px solid #2d2d44; border-radius: 14px;
+      padding: 10px 12px; color: #f8fafc; box-shadow: 0 2px 8px rgba(0,0,0,.45);
+    }
+    .trip-info-panel .ti-k { color: #94a3b8; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .trip-info-panel .ti-v { font-size: 13px; font-weight: 800; margin: 1px 0 7px; font-variant-numeric: tabular-nums; }
+    .trip-info-panel .ti-bar { height: 5px; background: #16213e; border-radius: 99px; overflow: hidden; margin: 4px 0 8px; }
+    .trip-info-panel .ti-bar > i { display: block; height: 100%; background: #e94560; width: 0; }
     .hits {
       margin-top: 8px; background: #1a1a2e; border-radius: 12px;
       box-shadow: 0 1px 3px rgba(0,0,0,.4); overflow: hidden; max-height: 42vh; overflow-y: auto;
@@ -223,6 +240,14 @@
     .route-close:active, .panel-close:active { background: #e94560; }
     .route-card h3 { margin: 0 0 8px; font-size: 14px; }
     .route-card .picks { display: flex; gap: 8px; overflow-x: auto; }
+    .route-card .cal-when {
+      display: block; margin-top: 10px; color: #94a3b8; font-size: 12px; font-weight: 650;
+    }
+    .route-card .cal-when input {
+      display: block; width: 100%; margin-top: 6px; border: 1px solid #2d2d44; border-radius: 12px;
+      background: #16213e; color: #f1f5f9; font-size: 16px; padding: 10px 12px;
+    }
+    .route-card .go.cal { background: #0E4D5C; margin-top: 10px; }
     .set-row {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
       padding: 14px 0; border-bottom: 1px solid #2d2d44;
@@ -537,7 +562,7 @@
       background: transparent; border: 0; border-bottom: 1px solid #2d2d44; color: #f1f5f9;
       padding: 14px 0; cursor: pointer; font-size: 15px;
     }
-    .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], .route-card[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden], .music-sheet[hidden], .poi-card[hidden], .nav-signs[hidden], .hud-speed[hidden] { display: none !important; }
+    .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], .route-card[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden], .music-sheet[hidden], .poi-card[hidden], .nav-signs[hidden], .hud-speed[hidden], .trip-info[hidden], .trip-info-panel[hidden] { display: none !important; }
     .chrome {
       padding: 0 0 calc(6px + env(safe-area-inset-bottom));
       border-top: 1px solid #2d2d44;
@@ -707,10 +732,14 @@
         <div class="v" id="hudSpeedVal">0</div>
         <div class="u">km/h</div>
       </div>
-      <div class="road-sign" id="roadSign" hidden aria-live="polite" title="Limitation de vitesse">
+      <div class="road-sign" id="roadSign" hidden aria-live="polite" title="Limitation de vitesse — infos trajet" role="button" tabindex="0">
         <div class="kind">LIMITE</div>
         <div class="name" id="roadName">—</div>
         <div class="zone" id="roadZone" hidden>ZONE</div>
+      </div>
+      <div class="trip-info" id="tripInfoMenu" hidden>
+        <button type="button" class="trip-info-toggle" id="tripInfoToggle" title="Infos trajet" aria-expanded="false" aria-controls="tripInfoPanel">▾</button>
+        <div class="trip-info-panel" id="tripInfoPanel" hidden></div>
       </div>
     </div>
     <div class="hits" id="hits" hidden></div>

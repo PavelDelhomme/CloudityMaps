@@ -26,37 +26,43 @@ class InAppUpdate(private val activity: Activity) {
 
     fun check() {
         Thread {
-            val local = runCatching {
-                activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0"
-            }.getOrElse { "0" }
-            val feed = fetchFeed() ?: return@Thread
-            val remotePkg = feed.optString("package")
-            if (remotePkg.isNotBlank() && remotePkg != activity.packageName) {
-                val canon = feed.optJSONObject("canonical")
-                if (canon != null && canon.optString("package") == activity.packageName) {
-                    val cv = canon.optString("version")
-                    if (cv.isBlank() || !isNewer(cv, local)) return@Thread
-                    val notes = canon.optString("notes").ifBlank {
-                        feed.optString("notes").ifBlank { "Nouvelle version Hubera Maps." }
-                    }
-                    val apkUrl = canon.optString("apk_url").ifBlank { canon.optString("apk") }
-                    val sha = canon.optString("sha256")
-                    if (apkUrl.isBlank()) return@Thread
-                    main.post { showDialog(cv, notes, apkUrl, sha) }
-                    return@Thread
-                }
-                return@Thread
-            }
-            val remote = feed.optString("version")
-            if (remote.isBlank() || !isNewer(remote, local)) return@Thread
-            if (snoozed(remote, local)) return@Thread
-            val notes = feed.optString("notes").ifBlank { "Nouvelle version Hubera Maps." }
-            val apkUrl = feed.optString("apk").ifBlank {
-                feed.optString("apk_url").ifBlank { APK_URL }
-            }
-            val sha = feed.optString("sha256")
-            main.post { showDialog(remote, notes, apkUrl, sha) }
+            runCatching { checkInner() }
         }.start()
+    }
+
+    private fun checkInner() {
+        val local = runCatching {
+            activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0"
+        }.getOrElse { "0" }
+        val feed = fetchFeed() ?: return
+        val localPkg = activity.packageName
+        val slot = sequenceOf(
+            feed.optJSONObject("canonical"),
+            feed.optJSONObject("legacy"),
+        ).firstOrNull { it != null && it.optString("package") == localPkg }
+        if (slot != null) {
+            val cv = slot.optString("version")
+            if (cv.isBlank() || !isNewer(cv, local)) return
+            val notes = slot.optString("notes").ifBlank {
+                feed.optString("notes").ifBlank { "Nouvelle version Hubera Maps." }
+            }
+            val apkUrl = slot.optString("apk_url").ifBlank { slot.optString("apk") }
+            val sha = slot.optString("sha256")
+            if (apkUrl.isBlank()) return
+            main.post { showDialog(cv, notes, apkUrl, sha) }
+            return
+        }
+        val remotePkg = feed.optString("package")
+        if (remotePkg.isNotBlank() && remotePkg != localPkg) return
+        val remote = feed.optString("version")
+        if (remote.isBlank() || !isNewer(remote, local)) return
+        if (snoozed(remote, local)) return
+        val notes = feed.optString("notes").ifBlank { "Nouvelle version Hubera Maps." }
+        val apkUrl = feed.optString("apk").ifBlank {
+            feed.optString("apk_url").ifBlank { APK_URL }
+        }
+        val sha = feed.optString("sha256")
+        main.post { showDialog(remote, notes, apkUrl, sha) }
     }
 
     /** Après Settings « sources inconnues » : installer l’APK déjà téléchargée, sans Chrome. */
@@ -236,7 +242,10 @@ class InAppUpdate(private val activity: Activity) {
                 conn.readTimeout = 6000
                 conn.setRequestProperty("Accept", "application/json")
                 conn.inputStream.bufferedReader().use { reader ->
-                    val obj = JSONObject(reader.readText())
+                    val raw = reader.readText()
+                    val t = raw.trimStart().removePrefix("\uFEFF").trimStart()
+                    if (!(t.startsWith("{") || t.startsWith("["))) return@use
+                    val obj = JSONObject(t)
                     if (obj.optString("version").isNotBlank()) return obj
                 }
             } catch (_: Throwable) {
@@ -279,6 +288,6 @@ class InAppUpdate(private val activity: Activity) {
         private const val SNOOZE_VERSION = "snooze_version"
         private const val PENDING_AFTER_PERM = "pending_after_perm"
         private const val SNOOZE_MS = 6L * 60 * 60 * 1000
-        private val BAD_LOCAL = setOf("0.1.36", "0.1.37")
+        private val BAD_LOCAL = setOf("0.1.36", "0.1.37", "0.1.75")
     }
 }

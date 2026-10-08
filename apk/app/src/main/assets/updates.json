@@ -2,16 +2,37 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.76",
-  "versionCode": 77,
+  "version": "0.1.81",
+  "versionCode": 82,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
   "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
   "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
+  "download": "https://maps.hubera.cloud/download",
   "install": "https://maps.hubera.cloud/install",
+  "apkAvailable": true,
   "mandatory": false,
-  "notes": "Ouverture : un Overpass HTML/XML ne plante plus l'app. Limitation de vitesse : on passe à l'endpoint suivant. MAJ jamais forcée.",
-  "published_at": "2026-10-07T15:05:00Z",
-  "sha256": "7eca83f0b872d835143036d79c38c9eb76093fd374d60b3a37d50e60a07df46f"
+  "forceUpdate": false,
+  "notes": "0.1.81 : cold start 0.1.79 + chrome natif 0.1.80. Carte d’abord, SSO hors UI, Overpass skip non-JSON. Trajet à une date → Calendar. Fuel hubera-maps:// sans chooser 2 icônes. MAJ jamais forcée.",
+  "published_at": "2026-10-08T16:05:00Z",
+  "sha256": "76befdc589a749c18af88d45be55af6b1114849fd281c16ccd2f6e0aa59fd56a",
+  "canonical": {
+    "package": "cloud.hubera.maps",
+    "version": "0.1.81",
+    "versionCode": 82,
+    "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
+    "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
+    "sha256": "76befdc589a749c18af88d45be55af6b1114849fd281c16ccd2f6e0aa59fd56a",
+    "notes": "0.1.81 : cold start 0.1.79 + chrome natif 0.1.80. Carte d’abord, SSO hors UI, Overpass skip non-JSON. Trajet à une date → Calendar. Fuel hubera-maps:// sans chooser 2 icônes. MAJ jamais forcée."
+  },
+  "legacy": {
+    "package": "ovh.delhomme.maps",
+    "version": "0.1.81",
+    "versionCode": 82,
+    "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
+    "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
+    "sha256": "241841da9577647a2d22d151bbc3f6961e357e0bc818be6187a76a0783a8c1ab",
+    "notes": "Même build 0.1.81, paquet historique. Schéma cloudity-maps:// seulement."
+  }
 }
