@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -155,6 +156,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 view?.requestApplyInsets()
+                if (lastSafeJs.isNotBlank()) view?.evaluateJavascript(lastSafeJs, null)
                 runCatching { if (this@MainActivity::music.isInitialized) music.startWatch() }
                 runCatching { if (this@MainActivity::suite.isInitialized) suite.refreshContacts() }
             }
@@ -315,14 +317,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Android 15 : env(safe-area-inset-*) est souvent 0 dans la WebView. */
+    private var lastSafeJs = ""
+
+    private fun applySafeAreaJs(target: WebView, insets: WindowInsetsCompat) {
+        val topRaw = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+        val bottomRaw = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+        // Nothing : le glyph / cutout gonfle l’inset statut → la recherche part trop bas.
+        // On n’utilise qu’une partie de l’inset (plafond 18 px) pour coller drawer + compte en haut.
+        // Samsung / autres : inset réel, plancher 24, plafond 36 (réglage 0.1.85).
+        val top =
+            if (isNothingPhone()) {
+                (topRaw / 2).coerceIn(8, 18)
+            } else {
+                maxOf(topRaw, 24).coerceAtMost(36)
+            }
+        val bottom = bottomRaw.coerceIn(0, 36)
+        lastSafeJs =
+            "document.documentElement.style.setProperty('--safe-top','${top}px');" +
+                "document.documentElement.style.setProperty('--safe-bottom','${bottom}px');"
+        target.evaluateJavascript(lastSafeJs, null)
+    }
+
     private fun bindSafeArea(target: WebView) {
         ViewCompat.setOnApplyWindowInsetsListener(target) { _, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val js =
-                "document.documentElement.style.setProperty('--safe-top','${bars.top}px');" +
-                    "document.documentElement.style.setProperty('--safe-bottom','${bars.bottom}px');"
-            target.evaluateJavascript(js, null)
-            insets
+            applySafeAreaJs(target, insets)
+            WindowInsetsCompat.CONSUMED
         }
         ViewCompat.requestApplyInsets(target)
     }
@@ -344,5 +363,19 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "HuberaMaps"
+
+        /** Phone (1)/(2)/(2a)/(3) : constructeur Nothing ou nom de code AOSP. */
+        fun isNothingPhone(): Boolean {
+            val m = Build.MANUFACTURER
+            val b = Build.BRAND
+            val d = Build.DEVICE
+            return m.equals("Nothing", ignoreCase = true) ||
+                b.equals("Nothing", ignoreCase = true) ||
+                d.startsWith("Pong", ignoreCase = true) ||
+                d.startsWith("Spacewar", ignoreCase = true) ||
+                d.startsWith("Pacman", ignoreCase = true) ||
+                d.startsWith("Tetriq", ignoreCase = true) ||
+                d.startsWith("Asteroids", ignoreCase = true)
+        }
     }
 }

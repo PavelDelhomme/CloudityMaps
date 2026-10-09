@@ -123,12 +123,54 @@ class InAppUpdate(private val activity: Activity) {
             .show()
     }
 
+    private fun hasInstallPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            activity.packageManager.canRequestPackageInstalls()
+    }
+
+    /** Permission « sources inconnues » AVANT le téléchargement. Pas de boucle Settings. */
+    private fun ensureInstallPermission(): Boolean {
+        if (hasInstallPermission()) return true
+        val last = prefs.getLong(PERM_ASKED_AT, 0L)
+        if (System.currentTimeMillis() - last < PERM_ASK_COOLDOWN_MS) {
+            main.post {
+                Toast.makeText(
+                    activity,
+                    "Autorise l’installation pour Maps dans Réglages, puis réessaie.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            return false
+        }
+        prefs.edit()
+            .putLong(PERM_ASKED_AT, System.currentTimeMillis())
+            .putBoolean(PENDING_AFTER_PERM, true)
+            .apply()
+        runCatching {
+            activity.startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${activity.packageName}"),
+                ),
+            )
+        }
+        main.post {
+            Toast.makeText(
+                activity,
+                "Autorise l’installation — Maps télécharge ensuite tout seul.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+        return false
+    }
+
     private fun downloadAndInstall(
         apkUrl: String,
         expectedSha: String,
         version: String,
         notes: String,
     ) {
+        if (!ensureInstallPermission()) return
         val progressDlg = java.util.concurrent.atomic.AtomicReference<AlertDialog?>(null)
         main.post {
             if (activity.isFinishing) return@post
@@ -232,24 +274,9 @@ class InAppUpdate(private val activity: Activity) {
     }
 
     private fun installApk(file: File) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !activity.packageManager.canRequestPackageInstalls()
-        ) {
+        if (!hasInstallPermission()) {
             prefs.edit().putBoolean(PENDING_AFTER_PERM, true).apply()
-            runCatching {
-                activity.startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:${activity.packageName}"),
-                    ),
-                )
-            }
-            Toast.makeText(
-                activity,
-                "Autorisez l’installation — Maps relance tout seul.",
-                Toast.LENGTH_LONG,
-            ).show()
-            return
+            if (!ensureInstallPermission()) return
         }
         val uri = FileProvider.getUriForFile(
             activity,
@@ -333,6 +360,8 @@ class InAppUpdate(private val activity: Activity) {
         private const val SNOOZE_UNTIL = "snooze_until"
         private const val SNOOZE_VERSION = "snooze_version"
         private const val PENDING_AFTER_PERM = "pending_after_perm"
+        private const val PERM_ASKED_AT = "perm_asked_at"
+        private const val PERM_ASK_COOLDOWN_MS = 90_000L
         private const val SNOOZE_MS = 6L * 60 * 60 * 1000
         private val BAD_LOCAL = setOf("0.1.36", "0.1.37", "0.1.75")
     }

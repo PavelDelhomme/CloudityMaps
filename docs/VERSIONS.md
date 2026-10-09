@@ -1,5 +1,13 @@
 # Hubera Maps — versions
 
+## 0.1.86 (9 oct. 2026)
+- Nothing : recherche / drawer / compte plus haut (inset glyph plafonné à 18 px). Samsung inchangé.
+- GPS idle 120 s (guidage GPS haute précision inchangé). Poll dock Music 1,5 s.
+
+## 0.1.85 (9 oct. 2026)
+- Recherche collée sous la barre de statut (plus le +8 px de 0.1.84).
+- Onglets Maps / Fuel / Enreg. relevés de 10 px. Uniquement Maps.
+
 ## 0.1.82 (8 oct. 2026)
 - UI WebView d’avant le chrome natif 0.1.80 : HUD, recherche, onglets HTML (plus de drawer/bottom-nav natif).
 - Cold start 0.1.79 conservé : carte d’abord, `adoptHuberaId` hors UI, GPS après le paint, Overpass skip non-JSON.

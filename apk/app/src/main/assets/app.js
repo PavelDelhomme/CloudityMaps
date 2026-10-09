@@ -2938,7 +2938,7 @@ function pingIdleGeo() {
 
 function startIdleGeo() {
   stopIdleGeo();
-  idleGeoTimer = window.setInterval(pingIdleGeo, 90000);
+  idleGeoTimer = window.setInterval(pingIdleGeo, 120000);
 }
 
 function bootLocate() {
@@ -5647,7 +5647,7 @@ if (nativeMusic) {
     } catch {
       /* ignore */
     }
-  }, 700);
+  }, 1500);
 }
 
 (function hideBootFail() {

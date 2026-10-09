@@ -9,8 +9,8 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; font-family: "Segoe UI", system-ui, sans-serif; background: #0f0f1a; color: #f1f5f9; }
     :root {
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-top: 24px;
+      --safe-bottom: 16px;
     }
     .boot-fail {
       position: absolute; z-index: 3000; inset: 0;
@@ -24,8 +24,8 @@
       border: 0; border-radius: 999px; padding: 12px 22px; font-weight: 700;
       background: #e94560; color: #fff; cursor: pointer;
     }
-    body { --chrome: 168px; }
-    body.music-off { --chrome: 58px; }
+    body { --chrome: 178px; }
+    body.music-off { --chrome: 68px; }
     #map { position: absolute; inset: 0; background: #d4dde3; }
     .leaflet-container, .leaflet-pane, .leaflet-tile-pane, .leaflet-map-pane {
       background: #d4dde3 !important;
@@ -33,7 +33,7 @@
     .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
     .top {
       position: absolute; z-index: 1100; left: 12px; right: 12px;
-      top: calc(12px + var(--safe-top));
+      top: var(--safe-top);
     }
     .search-bar, .nav-bar {
       display: flex; align-items: center; gap: 4px;
@@ -153,7 +153,7 @@
     /* Guidage : le panneau reste à droite du HUD, pas collé à la recherche. */
     body.nav .nav-signs {
       position: absolute; right: 12px;
-      top: calc(108px + var(--safe-top));
+      top: calc(100px + var(--safe-top));
       margin: 0;
     }
     .hud-speed {
@@ -375,7 +375,7 @@
     }
     .sheet { left: 12px; right: 12px; bottom: calc(var(--chrome) + 16px); border-radius: 16px; padding: 14px; width: auto; z-index: 1210; }
     #fillSheet {
-      z-index: 4000; top: calc(56px + var(--safe-top)); bottom: auto;
+      z-index: 4000; top: calc(52px + var(--safe-top)); bottom: auto;
       max-height: 72vh; overflow-y: auto;
       background: #1a1a2e;
     }
@@ -569,7 +569,7 @@
     }
     .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], .route-card[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden], .music-sheet[hidden], .poi-card[hidden], .nav-signs[hidden], .hud-speed[hidden], .trip-info[hidden], .trip-info-panel[hidden] { display: none !important; }
     .chrome {
-      padding: 0 0 calc(8px + var(--safe-bottom));
+      padding: 0 0 calc(10px + var(--safe-bottom));
       border-top: 1px solid #2d2d44;
       z-index: 1800;
       transform: none !important;
