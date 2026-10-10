@@ -1,5 +1,13 @@
 # Hubera Maps — versions
 
+## 0.1.88 (10 oct. 2026)
+- Nothing : recherche / hamburger / compte un peu plus bas, sous la barre d’état (plus collé au glyph). Samsung inchangé.
+
+## 0.1.87 (10 oct. 2026)
+- Trajets Fuel / suivi libre : GPS et tuiles restent actifs écran éteint (service premier plan).
+- Trace si on a bougé (plus seulement si le GPS annonce > 5 km/h).
+- Tuiles en mode trajet : bascule osm.de → osm.fr → ArcGIS si ça rate.
+
 ## 0.1.86 (9 oct. 2026)
 - Nothing : recherche / drawer / compte plus haut (inset glyph plafonné à 18 px). Samsung inchangé.
 - GPS idle 120 s (guidage GPS haute précision inchangé). Poll dock Music 1,5 s.

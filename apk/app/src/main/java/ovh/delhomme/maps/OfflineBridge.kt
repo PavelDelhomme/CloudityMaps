@@ -167,15 +167,9 @@ class OfflineBridge(
                 if (file.isFile && file.length() > 80) {
                     return@runCatching pngResponse(file.readBytes())
                 }
-                val bytes = fetchTile(t.first, t.second, t.third) ?: return@runCatching null
-                if (bytes.size <= 80 || isBlockedBytes(bytes)) return@runCatching null
-                runCatching {
-                    file.parentFile?.mkdirs()
-                    val tmp = File(file.parentFile, file.name + ".tmp")
-                    tmp.writeBytes(bytes)
-                    tmp.renameTo(file)
-                }
-                pngResponse(bytes)
+                // Pas en cache : laisser la WebView charger (osm.de / fr / ArcGIS).
+                // Un fetch Java ici bloquait le fil tuiles et vidait la carte en guidage.
+                null
             }.getOrNull()
         }
 

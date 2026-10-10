@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.86",
-  "versionCode": 87,
+  "version": "0.1.88",
+  "versionCode": 89,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -14,25 +14,25 @@
   "apkAvailable": true,
   "mandatory": false,
   "forceUpdate": false,
-  "notes": "0.1.86 : sur Nothing, recherche / menu / compte plus haut. GPS idle plus léger. Mise à jour proposée, pas forcée.",
-  "published_at": "2026-10-09T19:00:00Z",
-  "sha256": "e2bbdd669779d0b1cff2aa2adbb2e672c80fee17ed954599234e0e73667f5376",
+  "notes": "0.1.88 : recherche un peu plus bas, sous la barre d’état. Mise à jour proposée, pas forcée.",
+  "published_at": "2026-10-10T11:50:00Z",
+  "sha256": "74b6c9f9949228c2dc28b3937772563accbab00db5e63db2ae53120b1c9da0dd",
   "canonical": {
     "package": "cloud.hubera.maps",
-    "version": "0.1.86",
-    "versionCode": 87,
+    "version": "0.1.88",
+    "versionCode": 89,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
-    "sha256": "e2bbdd669779d0b1cff2aa2adbb2e672c80fee17ed954599234e0e73667f5376",
-    "notes": "0.1.86 : sur Nothing, recherche / menu / compte plus haut. GPS idle plus léger. Mise à jour proposée, pas forcée."
+    "sha256": "74b6c9f9949228c2dc28b3937772563accbab00db5e63db2ae53120b1c9da0dd",
+    "notes": "0.1.88 : recherche un peu plus bas, sous la barre d’état. Mise à jour proposée, pas forcée."
   },
   "legacy": {
     "package": "ovh.delhomme.maps",
-    "version": "0.1.86",
-    "versionCode": 87,
+    "version": "0.1.88",
+    "versionCode": 89,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
-    "sha256": "671ec8385c495bc718ed5e6273dcf8ffbfb84b02b1d4d85d3cc67e6de94d030f",
-    "notes": "Même build 0.1.86, paquet historique."
+    "sha256": "84fc4b463c450a8f63cbfb6011ff3526a17b15f1b7dd560b183c61befb0d86e6",
+    "notes": "Même build 0.1.88, paquet historique."
   }
 }

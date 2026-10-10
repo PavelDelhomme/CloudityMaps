@@ -100,9 +100,9 @@ function makeBaseTiles(idx) {
   }, spec.opts || {});
   const layer = L.tileLayer(spec.url, opts);
   layer.on('tileerror', () => {
-    if (navigating || document.body.classList.contains('routing')) return;
     tileErrorBurst += 1;
-    if (tileErrorBurst < 28 || tileSourceIdx >= TILE_SOURCES.length - 1) return;
+    const need = navigating || document.body.classList.contains('routing') ? 6 : 28;
+    if (tileErrorBurst < need || tileSourceIdx >= TILE_SOURCES.length - 1) return;
     tileErrorBurst = 0;
     tileSourceIdx += 1;
     try {
@@ -241,6 +241,16 @@ function fuelUrl(path) {
 function fuelTripQuery() {
   const n = Number(fuelTrip);
   return Number.isFinite(n) && n > 0 ? `tripId=${n}` : '';
+}
+
+function setTripKeepAlive(on) {
+  try {
+    if (window.HuberaTrip && typeof window.HuberaTrip.setActive === 'function') {
+      window.HuberaTrip.setActive(!!on);
+    }
+  } catch {
+    /* navigateur */
+  }
 }
 
 function fuelControl(action, extra) {
@@ -1337,12 +1347,13 @@ function goHere() {
 }
 
 function appendTrace(lat, lon) {
-  if (paused || isStationary()) return;
-  if (!navigating && !fuelTrip) return;
+  if (paused) return;
+  if (!navigating && !fuelTrip && !mapsStartedFuel) return;
   const last = trace[trace.length - 1];
   if (last) {
     const d = metersBetween({ lat: last[0], lon: last[1] }, { lat, lon });
     if (d < 12) return;
+    if (isStationary() && d < 25) return;
   }
   trace.push([lat, lon]);
   if (traceLayer) map.removeLayer(traceLayer);
@@ -2810,6 +2821,8 @@ function enterFreeHud(tripId) {
   if (speedEl) speedEl.hidden = false;
   startNavWatch(applyNavFix);
   startFuelPoll();
+  setTripKeepAlive(true);
+  try { map.invalidateSize(); } catch { /* */ }
   if (me) applyNavCamera(me.lat, me.lon, true);
 }
 
@@ -2875,6 +2888,8 @@ function enterNavUi() {
     try { map.removeLayer(originMarker); } catch { /* ignore */ }
     originMarker = null;
   }
+  setTripKeepAlive(true);
+  try { map.invalidateSize(); } catch { /* */ }
   if (me) {
     applyNavCamera(me.lat, me.lon, true);
     lastRoadAt = 0;
@@ -2960,6 +2975,7 @@ function bootLocate() {
 }
 
 window.__mapsEnergyPause = function () {
+  if (navigating && !paused) return;
   appVisible = false;
   stopNavWatch();
   stopIdleGeo();
@@ -3004,6 +3020,7 @@ function stopNavigation(opts) {
   try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
   try { window.HuberaTts?.stop?.(); } catch { /* ignore */ }
   setFollowNav(true);
+  setTripKeepAlive(false);
   document.body.classList.remove('nav');
   searchForm.hidden = false;
   navBar.hidden = true;

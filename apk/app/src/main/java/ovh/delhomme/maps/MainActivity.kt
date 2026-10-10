@@ -105,6 +105,7 @@ class MainActivity : AppCompatActivity() {
         target.addJavascriptInterface(offline, "HuberaOffline")
         updates = UpdateBridge(this)
         target.addJavascriptInterface(updates, "HuberaUpdate")
+        target.addJavascriptInterface(TripBridge(this), "HuberaTrip")
         target.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
                 view: WebView,
@@ -236,7 +237,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         if (this::music.isInitialized) runCatching { music.stopWatch() }
-        if (this::web.isInitialized) {
+        if (this::web.isInitialized && !TripKeepAliveService.running) {
             runCatching {
                 web.evaluateJavascript(
                     "window.__mapsEnergyPause&&window.__mapsEnergyPause()",
@@ -322,12 +323,12 @@ class MainActivity : AppCompatActivity() {
     private fun applySafeAreaJs(target: WebView, insets: WindowInsetsCompat) {
         val topRaw = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
         val bottomRaw = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-        // Nothing : le glyph / cutout gonfle l’inset statut → la recherche part trop bas.
-        // On n’utilise qu’une partie de l’inset (plafond 18 px) pour coller drawer + compte en haut.
+        // Nothing : le glyph gonfle l’inset. Moitié de l’inset, assez pour passer
+        // sous la barre d’état (0.1.86 à 18 px collait encore dessus).
         // Samsung / autres : inset réel, plancher 24, plafond 36 (réglage 0.1.85).
         val top =
             if (isNothingPhone()) {
-                (topRaw / 2).coerceIn(8, 18)
+                (topRaw / 2).coerceIn(26, 32)
             } else {
                 maxOf(topRaw, 24).coerceAtMost(36)
             }
