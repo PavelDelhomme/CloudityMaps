@@ -27,17 +27,36 @@ class InAppUpdate(private val activity: Activity) {
     private val main = Handler(Looper.getMainLooper())
     private val prefs = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
 
-    fun check() {
+    fun check(userInitiated: Boolean = false) {
         Thread {
-            runCatching { checkInner() }
+            runCatching { checkInner(userInitiated) }
+                .onFailure {
+                    if (userInitiated) {
+                        main.post {
+                            Toast.makeText(
+                                activity,
+                                "Vérification impossible — réessaie",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
+                }
         }.start()
     }
 
-    private fun checkInner() {
+    private fun checkInner(userInitiated: Boolean = false) {
         val local = runCatching {
             activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0"
         }.getOrElse { "0" }
-        val feed = fetchFeed() ?: return
+        val feed = fetchFeed()
+        if (feed == null) {
+            if (userInitiated) {
+                main.post {
+                    Toast.makeText(activity, "Vérification impossible — réseau", Toast.LENGTH_LONG).show()
+                }
+            }
+            return
+        }
         val localPkg = activity.packageName
         val slot = sequenceOf(
             feed.optJSONObject("canonical"),
@@ -45,7 +64,18 @@ class InAppUpdate(private val activity: Activity) {
         ).firstOrNull { it != null && it.optString("package") == localPkg }
         if (slot != null) {
             val cv = slot.optString("version")
-            if (cv.isBlank() || !isNewer(cv, local)) return
+            if (cv.isBlank() || !isNewer(cv, local)) {
+                if (userInitiated) {
+                    main.post {
+                        Toast.makeText(
+                            activity,
+                            "Application à jour — $local",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+                return
+            }
             val notes = slot.optString("notes").ifBlank {
                 feed.optString("notes").ifBlank { "Nouvelle version Hubera Maps." }
             }
@@ -58,7 +88,18 @@ class InAppUpdate(private val activity: Activity) {
         val remotePkg = feed.optString("package")
         if (remotePkg.isNotBlank() && remotePkg != localPkg) return
         val remote = feed.optString("version")
-        if (remote.isBlank() || !isNewer(remote, local)) return
+        if (remote.isBlank() || !isNewer(remote, local)) {
+            if (userInitiated) {
+                main.post {
+                    Toast.makeText(
+                        activity,
+                        "Application à jour — $local",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+            return
+        }
         if (snoozed(remote, local)) return
         val notes = feed.optString("notes").ifBlank { "Nouvelle version Hubera Maps." }
         val apkUrl = feed.optString("apk").ifBlank {

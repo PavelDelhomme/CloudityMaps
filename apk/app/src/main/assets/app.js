@@ -215,6 +215,7 @@ const FETCH_HDR = { Accept: 'application/json' };
 const TRAVEL_MODES = [
   ['car', 'Voiture'],
   ['walk', 'À pied'],
+  ['hike', 'Randonnée'],
   ['bike', 'Vélo'],
   ['transit', 'Transports'],
 ];
@@ -1608,7 +1609,9 @@ function parseOsrm(data) {
 }
 
 function osrmEndpoint() {
-  if (travelMode === 'walk') return 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/';
+  if (travelMode === 'walk' || travelMode === 'hike') {
+    return 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/';
+  }
   if (travelMode === 'bike') return 'https://routing.openstreetmap.de/routed-bike/route/v1/driving/';
   return 'https://router.project-osrm.org/route/v1/driving/';
 }
@@ -2212,7 +2215,13 @@ function fitRouteBounds() {
 }
 
 function modeLabel() {
-  return { car: 'Voiture', walk: 'À pied', bike: 'Vélo', transit: 'Transports' }[travelMode] || 'Voiture';
+  return {
+    car: 'Voiture',
+    walk: 'À pied',
+    hike: 'Randonnée',
+    bike: 'Vélo',
+    transit: 'Transports',
+  }[travelMode] || 'Voiture';
 }
 
 function isCarMode() {
@@ -2827,22 +2836,91 @@ function enterFreeHud(tripId) {
 }
 
 function startFuelTrip() {
+  promptFuelGate('start');
+}
+
+function promptFuelGate(kind) {
+  const sheet = document.getElementById('fuelGate');
+  if (!sheet) {
+    if (kind === 'start') {
+      const veh = activeFuelVehicle();
+      startFreeTracking(veh && veh.id);
+    }
+    return;
+  }
   const list = loadFuelSnap().vehicles || [];
-  if (!list.length) {
-    requestFuelSnapshot(true);
-    toast('Garage Fuel en cours de chargement…');
-    setTab('trips');
-    renderFuelHome();
-    return;
+  const sel = document.getElementById('fuelGateVeh');
+  const title = document.getElementById('fuelGateTitle');
+  const hint = document.getElementById('fuelGateHint');
+  const gauge = document.getElementById('fuelGateGauge');
+  const gaugeVal = document.getElementById('fuelGateGaugeVal');
+  if (title) title.textContent = kind === 'start' ? 'Démarrer le trajet' : 'Confirmer la jauge';
+  if (hint) {
+    hint.textContent =
+      kind === 'start'
+        ? 'Voiture + jauge. Tu peux démarrer tout de suite (3 s) si tu n’as pas le temps.'
+        : 'Ajuste la jauge. Je confirme nourrit l’IA conso ; Je ne confirme pas enregistre sans apprendre.';
   }
-  const veh = activeFuelVehicle();
-  if (!veh) {
-    toast('Choisis d’abord le véhicule, puis démarre.');
-    setTab('trips');
-    renderFuelHome();
-    return;
+  if (sel) {
+    sel.innerHTML =
+      `<option value="0">Sans véhicule</option>` +
+      list
+        .map((v) => {
+          const id = v.id || v.vehicleId;
+          const name = v.name || v.label || ('Véhicule ' + id);
+          const on = String(id) === String(fuelSelectedVehicleId) ? ' selected' : '';
+          return `<option value="${id}"${on}>${esc(name)}</option>`;
+        })
+        .join('');
   }
-  startFreeTracking(veh.id);
+  if (gauge && gaugeVal) {
+    gaugeVal.textContent = `${gauge.value} %`;
+    gauge.oninput = () => {
+      gaugeVal.textContent = `${gauge.value} %`;
+    };
+  }
+  sheet.hidden = false;
+  let auto = 0;
+  if (kind === 'start') {
+    auto = window.setTimeout(() => {
+      sheet.hidden = true;
+      const veh = (sel && sel.value) || fuelSelectedVehicleId;
+      startFreeTracking(veh);
+      toast('Trajet démarré · jauge à confirmer à l’arrêt');
+    }, 3000);
+  }
+  const clear = () => window.clearTimeout(auto);
+  const go = async (skip) => {
+    clear();
+    sheet.hidden = true;
+    if (kind === 'start') {
+      const okLoc = await requestPreciseLoc();
+      if (!okLoc) {
+        toast('Active la localisation pour démarrer un trajet.');
+        locNative()?.openSettings?.();
+        return;
+      }
+      if (sel && sel.value && sel.value !== '0') setSelectedFuelVehicle(sel.value);
+      startFreeTracking(sel && sel.value !== '0' ? sel.value : 0);
+      if (!skip) toast('Jauge enregistrée pour ce départ');
+    } else {
+      toast(skip ? 'Trajet enregistré sans apprentissage IA' : 'Conso confirmée pour l’IA');
+    }
+  };
+  const btnGo = document.getElementById('fuelGateGo');
+  const btnSkip = document.getElementById('fuelGateSkip');
+  const btnCancel = document.getElementById('fuelGateCancel');
+  if (btnGo) btnGo.onclick = () => go(false);
+  if (btnSkip) {
+    btnSkip.textContent = kind === 'start' ? 'Démarrer quand même' : 'Je ne confirme pas';
+    btnSkip.onclick = () => go(true);
+  }
+  if (btnCancel) {
+    btnCancel.onclick = () => {
+      clear();
+      sheet.hidden = true;
+    };
+  }
 }
 
 function startFreeTracking(vehicleId) {
@@ -2956,22 +3034,70 @@ function startIdleGeo() {
   idleGeoTimer = window.setInterval(pingIdleGeo, 120000);
 }
 
+function locNative() {
+  try {
+    return typeof HuberaLocation !== 'undefined' ? HuberaLocation : null;
+  } catch {
+    return null;
+  }
+}
+
+function showLocBanner(text) {
+  const el = document.getElementById('locBanner');
+  const t = document.getElementById('locBannerText');
+  if (!el) return;
+  if (t) t.textContent = text || 'La localisation est désactivée';
+  el.hidden = false;
+}
+
+function hideLocBanner() {
+  const el = document.getElementById('locBanner');
+  if (el) el.hidden = true;
+}
+
+function requestPreciseLoc() {
+  return new Promise((resolve) => {
+    const native = locNative();
+    if (native) {
+      try {
+        if (!native.hasPermission()) native.requestPermission();
+        if (!native.gpsEnabled()) {
+          showLocBanner('Active le GPS pour Maps et Fuel');
+        }
+      } catch {
+        /* webview */
+      }
+    }
+    if (!navigator.geolocation) {
+      showLocBanner('GPS indisponible sur cet appareil');
+      resolve(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setMe(pos.coords.latitude, pos.coords.longitude, true);
+        hideLocBanner();
+        resolve(true);
+      },
+      () => {
+        showLocBanner('La localisation est désactivée — Maps reste consultable');
+        resolve(false);
+      },
+      geoOpts({ accurate: true, freshMs: 2500, timeout: 10000 }),
+    );
+  });
+}
+
 function bootLocate() {
   const had = restoreMe();
   if (had && me) {
     const z = Math.max(15, map.getZoom() || 0);
-    if (z < 14) map.setView([me.lat, me.lon], 16);
+    map.setView([me.lat, me.lon], Math.max(16, z));
   }
-  if (!navigator.geolocation) return;
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const next = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-      const far = !me || metersBetween(me, next) > 120;
-      setMe(next.lat, next.lon, !had || far);
-    },
-    () => {},
-    geoOpts({ accurate: !had, freshMs: had ? 45000 : 8000, timeout: 8000 }),
-  );
+  requestPreciseLoc().then((ok) => {
+    if (!ok && !me) map.setView([46.6, 2.4], 6);
+  });
+  startIdleGeo();
 }
 
 window.__mapsEnergyPause = function () {
@@ -3049,7 +3175,13 @@ function stopNavigation(opts) {
   syncFuelChrome();
 }
 
-function startNavigation() {
+async function startNavigation() {
+  const okLoc = await requestPreciseLoc();
+  if (!okLoc) {
+    toast('Active la localisation pour démarrer un trajet.');
+    try { locNative()?.openSettings?.(); } catch { /* */ }
+    return;
+  }
   const r = currentChoice();
   if (!r) {
     toast('Choisis un itinéraire avant de démarrer.');
@@ -3836,7 +3968,32 @@ function openPoiCard(item) {
   if (!card) return;
   document.getElementById('poiCardKind').textContent = poiLabelOf(item.kind);
   document.getElementById('poiCardTitle').textContent = item.name;
-  document.getElementById('poiCardMeta').textContent = item.meta || '';
+  const extra = [];
+  if (item.hours || item.opening_hours) extra.push(item.hours || item.opening_hours);
+  if (item.phone) extra.push(item.phone);
+  if (me && Number.isFinite(item.lat)) {
+    const km = haversineKm(me, { lat: item.lat, lon: item.lon });
+    extra.push(`≈ ${km.toFixed(1)} km en voiture depuis toi`);
+  }
+  extra.push('Données OSM — pas d’avis Google inventés.');
+  document.getElementById('poiCardMeta').textContent = item.meta || extra[0] || '';
+  const extraEl = document.getElementById('poiCardExtra');
+  if (extraEl) extraEl.textContent = extra.slice(1).join(' · ');
+  const call = document.getElementById('poiCardCall');
+  if (call) {
+    call.hidden = !item.phone;
+    call.onclick = () => {
+      if (item.phone) window.location.href = `tel:${String(item.phone).replace(/\s/g, '')}`;
+    };
+  }
+  const share = document.getElementById('poiCardShare');
+  if (share) {
+    share.onclick = () => {
+      const text = `${item.name} — https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lon}`;
+      if (navigator.share) navigator.share({ title: item.name, text }).catch(() => {});
+      else toast(text);
+    };
+  }
   card.hidden = false;
 }
 
@@ -4610,6 +4767,7 @@ function showFuelRecap() {
   const rows = loadCachedFuelTrips();
   const similar = rows[0] ? fuelSimilarNote({ origin: rows[0].origin, dest: rows[0].dest, id: -1, km }, rows) : '';
   toast(`Trajet terminé · ${km.toFixed(1)} km${similar ? ' · ' + similar : ''}`);
+  if (isCarMode()) promptFuelGate('end');
 }
 
 function renderSettings() {
@@ -5252,6 +5410,10 @@ if (fuelFab && fuelRadial) {
     } else if (a === 'history' || a === 'sheet') openFuelSheet();
   });
 }
+document.getElementById('locEnable')?.addEventListener('click', () => {
+  try { locNative()?.openSettings?.(); } catch { /* */ }
+  requestPreciseLoc();
+});
 const poiCardClose = document.getElementById('poiCardClose');
 if (poiCardClose) poiCardClose.addEventListener('click', closePoiCard);
 const poiCardGo = document.getElementById('poiCardGo');

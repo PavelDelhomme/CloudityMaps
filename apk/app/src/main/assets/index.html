@@ -19,6 +19,33 @@
       background: #0f0f1a; color: #f1f5f9;
     }
     .boot-fail[hidden] { display: none !important; }
+    .loc-banner {
+      position: absolute; z-index: 1250; left: 12px; right: 12px;
+      top: calc(var(--safe-top) + 58px);
+      background: #fff8e8; color: #1a2330; border-radius: 14px;
+      padding: 10px 12px; display: flex; gap: 8px; align-items: center;
+      box-shadow: 0 6px 20px rgba(0,0,0,.2); font-size: 14px;
+    }
+    .loc-banner[hidden] { display: none !important; }
+    .loc-banner button {
+      margin-left: auto; border: 0; border-radius: 999px; padding: 8px 12px;
+      background: #0e4d5c; color: #fff; font-weight: 700; cursor: pointer;
+    }
+    .gate-sheet {
+      position: absolute; z-index: 1400; left: 0; right: 0; bottom: 0;
+      background: #1a1a2e; color: #f1f5f9; border-radius: 20px 20px 0 0;
+      padding: 16px 16px calc(16px + var(--safe-bottom)); box-shadow: 0 -8px 28px rgba(0,0,0,.4);
+    }
+    .gate-sheet[hidden] { display: none !important; }
+    .gate-sheet h3 { margin: 0 0 8px; }
+    .gate-sheet input[type=range] { width: 100%; }
+    .gate-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .gate-actions button {
+      flex: 1; min-width: 120px; border: 0; border-radius: 12px; padding: 12px;
+      font-weight: 700; cursor: pointer;
+    }
+    .gate-actions .go { background: #e94560; color: #fff; }
+    .gate-actions .ghost { background: #2d2d44; color: #f1f5f9; }
     .boot-fail p { margin: 0; max-width: 280px; line-height: 1.4; color: #cbd5e1; }
     .boot-fail button {
       border: 0; border-radius: 999px; padding: 12px 22px; font-weight: 700;
@@ -912,12 +939,35 @@
     <button type="button" data-rad="fill">Plein</button>
     <button type="button" data-rad="sheet">Garage</button>
   </div>
+  <div class="loc-banner" id="locBanner" hidden>
+    <span id="locBannerText">La localisation est désactivée</span>
+    <button type="button" id="locEnable">Activer</button>
+  </div>
+  <div class="gate-sheet" id="fuelGate" hidden>
+    <h3 id="fuelGateTitle">Démarrer le trajet</h3>
+    <p class="m" id="fuelGateHint"></p>
+    <label>Véhicule
+      <select id="fuelGateVeh"></select>
+    </label>
+    <label>Jauge (%)
+      <input type="range" id="fuelGateGauge" min="0" max="100" value="50" />
+      <span id="fuelGateGaugeVal">50 %</span>
+    </label>
+    <div class="gate-actions">
+      <button type="button" class="go" id="fuelGateGo">Démarrer</button>
+      <button type="button" class="ghost" id="fuelGateSkip">Démarrer quand même</button>
+      <button type="button" class="ghost" id="fuelGateCancel">Annuler</button>
+    </div>
+  </div>
   <div class="poi-card" id="poiCard" hidden>
     <div class="k" id="poiCardKind">Lieu</div>
     <h3 id="poiCardTitle">—</h3>
     <div class="m" id="poiCardMeta"></div>
+    <div class="m" id="poiCardExtra"></div>
     <div class="row">
       <button type="button" class="ghost" id="poiCardClose">Fermer</button>
+      <button type="button" class="ghost" id="poiCardCall" hidden>Appeler</button>
+      <button type="button" class="ghost" id="poiCardShare">Partager</button>
       <button type="button" class="ghost" id="poiCardSave">Enregistrer</button>
       <button type="button" class="go" id="poiCardGo">Itinéraire</button>
     </div>

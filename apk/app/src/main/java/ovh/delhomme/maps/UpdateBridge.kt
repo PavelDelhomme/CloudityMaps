@@ -6,7 +6,7 @@ import android.webkit.JavascriptInterface
 class UpdateBridge(private val activity: Activity) {
     @JavascriptInterface
     fun check() {
-        InAppUpdate(activity).check()
+        InAppUpdate(activity).check(userInitiated = true)
     }
 
     @JavascriptInterface

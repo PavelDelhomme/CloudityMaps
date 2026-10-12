@@ -105,6 +105,7 @@ class MainActivity : AppCompatActivity() {
         target.addJavascriptInterface(offline, "HuberaOffline")
         updates = UpdateBridge(this)
         target.addJavascriptInterface(updates, "HuberaUpdate")
+        target.addJavascriptInterface(LocationBridge(this), "HuberaLocation")
         target.addJavascriptInterface(TripBridge(this), "HuberaTrip")
         target.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
