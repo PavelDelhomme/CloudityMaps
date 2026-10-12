@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.89",
-  "versionCode": 90,
+  "version": "0.1.92",
+  "versionCode": 93,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -14,25 +14,25 @@
   "apkAvailable": true,
   "mandatory": false,
   "forceUpdate": false,
-  "notes": "0.1.89 : GPS au lancement, bandeau localisation, jauge Fuel avant/après, rando, fiche lieu OSM. Mise à jour proposée, pas forcée.",
-  "published_at": "2026-10-12T15:50:00Z",
-  "sha256": "7da64ea0b6164e2addabe4cf4cde1935f148846c494d37aa25f69e35e5a5f907",
+  "notes": "0.1.92 : GPS labo via provider huberalab (pas le gps matériel). Carte recentrée. Mise à jour proposée, pas forcée.",
+  "published_at": "2026-10-12T17:12:00Z",
+  "sha256": "0458a9b02d0efe337a5937c2569701f51152926e174b79a6f3d6e711b6fb2615",
   "canonical": {
     "package": "cloud.hubera.maps",
-    "version": "0.1.89",
-    "versionCode": 90,
+    "version": "0.1.92",
+    "versionCode": 93,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
-    "sha256": "7da64ea0b6164e2addabe4cf4cde1935f148846c494d37aa25f69e35e5a5f907",
-    "notes": "0.1.89 : GPS au lancement, bandeau localisation, jauge Fuel avant/après, rando, fiche lieu OSM. Mise à jour proposée, pas forcée."
+    "sha256": "0458a9b02d0efe337a5937c2569701f51152926e174b79a6f3d6e711b6fb2615",
+    "notes": "0.1.92 : GPS labo via provider huberalab (pas le gps matériel). Carte recentrée. Mise à jour proposée, pas forcée."
   },
   "legacy": {
     "package": "ovh.delhomme.maps",
-    "version": "0.1.89",
-    "versionCode": 90,
+    "version": "0.1.92",
+    "versionCode": 93,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
-    "sha256": "6785648e5f3cc33c9e52c5a737a2cfb8c91eb061b5703707e67b5c3e87f90c64",
-    "notes": "Même build 0.1.89, paquet historique."
+    "sha256": "4c5acdc67ae520ed1cacffb6e224f3b6282ad4fe82c438f0c9d6c42d90ae0070",
+    "notes": "Même build 0.1.92, paquet historique."
   }
 }

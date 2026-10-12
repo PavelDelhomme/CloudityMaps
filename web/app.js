@@ -819,6 +819,27 @@ function metersBetween(a, b) {
   return haversineKm(a, b) * 1000;
 }
 
+function mapsShouldFlyToFix(movedMeters, mock, userAsked) {
+  if (userAsked) return true;
+  if (mock && movedMeters > 25) return true;
+  return movedMeters > 80;
+}
+
+function mapsShouldDropFix(accuracyM, mock) {
+  if (mock) return false;
+  return Number.isFinite(accuracyM) && accuracyM > 80;
+}
+
+window.__mapsNativeFix = function (lat, lon, acc, mock) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  if (mapsShouldDropFix(Number(acc), !!mock)) return;
+  const next = { lat, lon };
+  const moved = metersBetween(me, next);
+  const fly = mapsShouldFlyToFix(moved, !!mock, false);
+  setMe(lat, lon, fly);
+  if (navigating && followNav) applyNavCamera(lat, lon, false);
+};
+
 function geoOpts({ accurate, freshMs, timeout }) {
   return {
     enableHighAccuracy: !!accurate,
@@ -1334,6 +1355,19 @@ function setMe(lat, lon, fly, fromCache) {
 
 function goHere() {
   if (me) setMe(me.lat, me.lon, true);
+  try {
+    const native = locNative();
+    native?.startWatch?.();
+    const raw = native?.lastFixJson?.();
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
+        setMe(p.lat, p.lon, true);
+      }
+    }
+  } catch {
+    /* web */
+  }
   if (!navigator.geolocation) {
     if (!me) toast('GPS indisponible.');
     return;
@@ -1343,7 +1377,7 @@ function goHere() {
     () => {
       if (!me) toast('Position indisponible — autorisez la localisation.');
     },
-    geoOpts({ accurate: true, freshMs: 2500, timeout: 8000 }),
+    geoOpts({ accurate: true, freshMs: 0, timeout: 8000 }),
   );
 }
 
@@ -3008,7 +3042,7 @@ function startNavWatch(onPos) {
       onPos(pos);
     },
     () => {},
-    geoOpts({ accurate: true, freshMs: 2500, timeout: 15000 }),
+    geoOpts({ accurate: true, freshMs: 0, timeout: 15000 }),
   );
 }
 
@@ -3025,7 +3059,7 @@ function pingIdleGeo() {
   navigator.geolocation.getCurrentPosition(
     (pos) => setMe(pos.coords.latitude, pos.coords.longitude, false),
     () => {},
-    geoOpts({ accurate: false, freshMs: 45000, timeout: 6000 }),
+    geoOpts({ accurate: false, freshMs: 0, timeout: 6000 }),
   );
 }
 
@@ -3061,8 +3095,17 @@ function requestPreciseLoc() {
     if (native) {
       try {
         if (!native.hasPermission()) native.requestPermission();
+        else native.startWatch?.();
         if (!native.gpsEnabled()) {
           showLocBanner('Active le GPS pour Maps et Fuel');
+        }
+        const raw = native.lastFixJson?.();
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
+            setMe(p.lat, p.lon, true);
+            hideLocBanner();
+          }
         }
       } catch {
         /* webview */
@@ -3083,7 +3126,7 @@ function requestPreciseLoc() {
         showLocBanner('La localisation est désactivée — Maps reste consultable');
         resolve(false);
       },
-      geoOpts({ accurate: true, freshMs: 2500, timeout: 10000 }),
+        geoOpts({ accurate: true, freshMs: 0, timeout: 10000 }),
     );
   });
 }
@@ -3520,7 +3563,7 @@ function getHere() {
         resolve(here);
       },
       () => reject(new Error('gps')),
-      geoOpts({ accurate: true, freshMs: 8000, timeout: 12000 }),
+      geoOpts({ accurate: true, freshMs: 0, timeout: 12000 }),
     );
   });
 }

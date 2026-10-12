@@ -1,5 +1,16 @@
 # Hubera Maps — versions
 
+## 0.1.92 (12 oct. 2026)
+- Pont GPS : écoute **tous** les providers (`huberalab` inclus). Un mock gagne ~120 s sur le GNSS réel. Harnais `cmd location` n’utilise plus le nom `gps` (interdit quand le GPS matériel existe).
+- Dual APK vc 93, OTA jamais forcée. Overlay Samsung + Blackview `-r`.
+
+## 0.1.91 (12 oct. 2026)
+- GPS labo : un fix **mock** gagne sur le GNSS réel (sinon la pastille reste au quartier vrai). Poll last-known ~1 s. Dual APK vc 92, OTA jamais forcée.
+
+## 0.1.90 (12 oct. 2026)
+- Pont GPS natif → JS : le WebView ignorait les positions mock (`cmd location`). Saut mock > 25 m recentre la carte. `maximumAge: 0` pour « Ma position ».
+- OTA jamais forcée. Dual APK vc 91.
+
 ## 0.1.88 (10 oct. 2026)
 - Nothing : recherche / hamburger / compte un peu plus bas, sous la barre d’état (plus collé au glyph). Samsung inchangé.
 

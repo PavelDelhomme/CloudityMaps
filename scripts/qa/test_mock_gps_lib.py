@@ -24,7 +24,7 @@ class MockGpsLibTest(unittest.TestCase):
 
     def test_inject_args(self):
         args = set_test_provider_location_args(48.11, -1.68)
-        self.assertEqual(args[:5], ["cmd", "location", "providers", "set-test-provider-location", "gps"])
+        self.assertEqual(args[:5], ["cmd", "location", "providers", "set-test-provider-location", "huberalab"])
         self.assertIn("--location", args)
         self.assertEqual(args[args.index("--location") + 1], "48.11,-1.68")
         self.assertNotIn("emu", args)
@@ -33,7 +33,7 @@ class MockGpsLibTest(unittest.TestCase):
         joined = " ".join(" ".join(c) for c in setup_test_provider_cmds())
         self.assertIn("cloud.hubera.maps", joined)
         self.assertIn("cloud.hubera.fuel", joined)
-        self.assertIn("add-test-provider gps", joined)
+        self.assertIn("add-test-provider huberalab", joined)
 
 
 if __name__ == "__main__":

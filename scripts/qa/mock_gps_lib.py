@@ -13,6 +13,8 @@ RENNES_ST_JACQUES = [
 MAPS_ACTIVITY = "cloud.hubera.maps/ovh.delhomme.maps.MainActivity"
 MAPS_PKG = "cloud.hubera.maps"
 FUEL_PKG = "cloud.hubera.fuel"
+# Pas « gps » : le provider réel existe déjà → IllegalArgumentException.
+TEST_PROVIDER = "huberalab"
 
 
 def location_cmd_supported(sdk: int) -> bool:
@@ -26,7 +28,7 @@ def set_test_provider_location_args(lat: float, lon: float, accuracy: float = 3.
         "location",
         "providers",
         "set-test-provider-location",
-        "gps",
+        TEST_PROVIDER,
         "--location",
         f"{lat},{lon}",
         "--accuracy",
@@ -40,6 +42,6 @@ def setup_test_provider_cmds() -> list[list[str]]:
         ["appops", "set", "com.android.shell", "android:mock_location", "allow"],
         ["appops", "set", MAPS_PKG, "android:mock_location", "allow"],
         ["appops", "set", FUEL_PKG, "android:mock_location", "allow"],
-        ["cmd", "location", "providers", "add-test-provider", "gps"],
-        ["cmd", "location", "providers", "set-test-provider-enabled", "gps", "true"],
+        ["cmd", "location", "providers", "add-test-provider", TEST_PROVIDER],
+        ["cmd", "location", "providers", "set-test-provider-enabled", TEST_PROVIDER, "true"],
     ]

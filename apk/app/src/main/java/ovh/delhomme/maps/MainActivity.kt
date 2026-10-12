@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var suite: SuiteBridge
     private lateinit var offline: OfflineBridge
     private lateinit var updates: UpdateBridge
+    private lateinit var location: LocationBridge
     private val main = Handler(Looper.getMainLooper())
     private var askedLocation = false
 
@@ -67,7 +68,10 @@ class MainActivity : AppCompatActivity() {
         main.postDelayed({
             runCatching { if (this::suite.isInitialized) suite.adoptHuberaId() }
         }, 400)
-        main.postDelayed({ askLocationIfNeeded() }, 900)
+        main.postDelayed({
+            askLocationIfNeeded()
+            if (this::location.isInitialized) runCatching { location.startWatchUi() }
+        }, 900)
         main.postDelayed({
             runCatching { InAppUpdate(this).check() }
         }, 2800)
@@ -105,7 +109,8 @@ class MainActivity : AppCompatActivity() {
         target.addJavascriptInterface(offline, "HuberaOffline")
         updates = UpdateBridge(this)
         target.addJavascriptInterface(updates, "HuberaUpdate")
-        target.addJavascriptInterface(LocationBridge(this), "HuberaLocation")
+        location = LocationBridge(this) { if (this::web.isInitialized) web else null }
+        target.addJavascriptInterface(location, "HuberaLocation")
         target.addJavascriptInterface(TripBridge(this), "HuberaTrip")
         target.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
@@ -234,10 +239,16 @@ class MainActivity : AppCompatActivity() {
         if (this::music.isInitialized) {
             runCatching { music.startWatch() }
         }
+        if (this::location.isInitialized) {
+            runCatching { location.startWatchUi() }
+        }
     }
 
     override fun onPause() {
         if (this::music.isInitialized) runCatching { music.stopWatch() }
+        if (this::location.isInitialized && !TripKeepAliveService.running) {
+            runCatching { location.stopWatchUi() }
+        }
         if (this::web.isInitialized && !TripKeepAliveService.running) {
             runCatching {
                 web.evaluateJavascript(
