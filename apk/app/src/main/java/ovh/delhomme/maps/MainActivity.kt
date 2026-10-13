@@ -328,7 +328,7 @@ class MainActivity : AppCompatActivity() {
         web.evaluateJavascript("(function(){try{return window.__mapsBack&&window.__mapsBack()||false;}catch(e){return false;}})()") { raw ->
             if (raw == "true") return@evaluateJavascript
             if (web.canGoBack()) web.goBack()
-            else super.onBackPressed()
+            else moveTaskToBack(true)
         }
     }
 

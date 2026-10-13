@@ -198,28 +198,20 @@ class InAppUpdate(private val activity: Activity) {
     private fun showDialog(version: String, notes: String, apkUrl: String, sha: String) {
         if (activity.isFinishing) return
         AlertDialog.Builder(activity)
-            .setTitle("Mise à jour $version")
-            .setMessage("$notes\n\nVous pouvez continuer sans installer. La mise à jour n’est pas obligatoire.")
+            .setTitle("Mise à jour disponible")
+            .setMessage(
+                notes.ifBlank { "Version $version — nouveautés et améliorations." } +
+                    "\n\nLa mise à jour n’est pas obligatoire.",
+            )
             .setCancelable(true)
-            .setPositiveButton("Installer") { _, _ ->
+            .setPositiveButton("Télécharger") { _, _ ->
                 Thread { downloadAndInstall(apkUrl, sha, version, notes) }.start()
             }
-            .setNegativeButton("Continuer") { _, _ ->
+            .setNegativeButton("Plus tard") { _, _ ->
                 prefs.edit()
                     .putLong(SNOOZE_UNTIL, System.currentTimeMillis() + SNOOZE_MS)
                     .putString(SNOOZE_VERSION, version)
                     .apply()
-            }
-            .setNeutralButton("Site web") { _, _ ->
-                prefs.edit()
-                    .putLong(SNOOZE_UNTIL, System.currentTimeMillis() + SNOOZE_MS)
-                    .putString(SNOOZE_VERSION, version)
-                    .apply()
-                runCatching {
-                    activity.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(INSTALL_URL)),
-                    )
-                }
             }
             .show()
     }
@@ -322,14 +314,39 @@ class InAppUpdate(private val activity: Activity) {
         val dir = File(activity.cacheDir, "apk").apply { mkdirs() }
         val dest = File(dir, "hubera-maps.apk")
         try {
-            if (dest.exists()) dest.delete()
+            if (dest.isFile && dest.length() > 1_000_000L && dest.length() >= 5_000_000L) {
+                val magic = ByteArray(4)
+                var zipOk = false
+                dest.inputStream().use { ins ->
+                    val n = ins.read(magic)
+                    zipOk = n >= 2 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte()
+                }
+                if (zipOk && (expectedSha.isBlank() || sha256(dest).equals(expectedSha, ignoreCase = true))) {
+                    main.post {
+                        progressDlg.get()?.dismiss()
+                        installApk(dest)
+                    }
+                    return
+                }
+            }
+            val existing = if (dest.exists()) dest.length() else 0L
+            if (dest.exists() && existing in 1 until 100_000L) dest.delete()
             val conn = URL(apkUrl).openConnection() as HttpURLConnection
+            if (dest.exists() && dest.length() >= 100_000L) {
+                conn.setRequestProperty("Range", "bytes=${dest.length()}-")
+            }
             conn.connectTimeout = 12_000
             conn.readTimeout = 90_000
             conn.instanceFollowRedirects = true
             conn.setRequestProperty("Accept", "application/vnd.android.package-archive,*/*")
+            val code = conn.responseCode
+            val append = code == 206 && dest.exists()
+            if (code != 200 && code != 206) {
+                conn.disconnect()
+                throw IllegalStateException("HTTP $code")
+            }
             conn.inputStream.use { ins ->
-                dest.outputStream().use { outs -> ins.copyTo(outs) }
+                java.io.FileOutputStream(dest, append).use { outs -> ins.copyTo(outs) }
             }
             conn.disconnect()
             if (dest.length() < 10_000L) {
@@ -370,7 +387,6 @@ class InAppUpdate(private val activity: Activity) {
                 installApk(dest)
             }
         } catch (t: Throwable) {
-            dest.delete()
             main.post {
                 progressDlg.get()?.dismiss()
                 Toast.makeText(
