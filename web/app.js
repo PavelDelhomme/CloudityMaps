@@ -78,6 +78,13 @@ function wantNight() {
   const p = nightPref();
   if (p === 'on') return true;
   if (p === 'off') return false;
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return true;
+    }
+  } catch {
+    /* WebView ancien */
+  }
   const h = new Date().getHours();
   return h >= 21 || h < 6;
 }
@@ -130,6 +137,11 @@ function applyTiles() {
 }
 applyTiles();
 window.setInterval(applyTiles, 10 * 60 * 1000);
+try {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTiles);
+} catch {
+  /* ignore */
+}
 
 const hitsEl = document.getElementById('hits');
 const qEl = document.getElementById('q');
@@ -1240,12 +1252,13 @@ function remainAlongKm(here, geometry) {
   return Math.max(0.04, sum);
 }
 
-function speakNav(text, distKm) {
+function speakNav(text, distKm, opts) {
   if (!navigating || !text || !voiceEnabled()) return;
-  if (paused || isStationary()) return;
-  if (distKm > 0.16) return;
+  const force = !!(opts && opts.force);
+  if (!force && (paused || isStationary())) return;
+  if (!force && distKm > 0.16) return;
   const now = Date.now();
-  if (text === lastSpoken && now - lastSpokenAt < 22000) return;
+  if (!force && text === lastSpoken && now - lastSpokenAt < 22000) return;
   lastSpoken = text;
   lastSpokenAt = now;
   try {
@@ -3188,12 +3201,22 @@ window.__mapsEnergyPause = function () {
 
 window.__mapsEnergyResume = function () {
   appVisible = true;
+  lastSpoken = '';
+  lastSpokenAt = 0;
   if (navigating && navWatchFn && !paused) startNavWatch(navWatchFn);
   else if (!navigating) startIdleGeo();
   try {
     map.invalidateSize();
   } catch {
     /* pas encore prêt */
+  }
+  try { applyTiles(); } catch { /* ignore */ }
+  if (navigating && !paused && voiceEnabled()) {
+    const sub = (document.getElementById('hudSub')?.textContent || '').trim();
+    const title = (document.getElementById('hudTitle')?.textContent || '').trim();
+    const skip = !title || title === 'À l\'arrêt' || title === 'En pause' || title === 'Guidage';
+    const phrase = sub || (skip ? '' : title);
+    if (phrase) speakNav(phrase, 0, { force: true });
   }
 };
 

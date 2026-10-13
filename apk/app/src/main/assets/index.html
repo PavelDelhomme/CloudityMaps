@@ -131,16 +131,41 @@
       border-left: 4px solid transparent; border-right: 4px solid transparent;
       border-bottom: 10px solid #1a73e8;
     }
-    body.night .search-bar { background: #12121c; }
-    body.night:not(.nav) .hud { background: #12121c; }
-    /* Négatif OSM = taches noires. Jamais d’invert en itinéraire / guidage. */
+    body.night .search-bar,
+    body.nav.night .search-bar,
+    body.nav.night .nav-bar { background: #12121c; }
+    body.night .hud { background: #12121c; }
+    body.nav.night #map,
+    body.nav.night .leaflet-container { background: #12121c; }
+    body.night .leaflet-container,
+    body.night .leaflet-pane,
+    body.night .leaflet-tile-pane,
+    body.night .leaflet-map-pane { background: #12121c !important; }
+    body.nav.night .hud {
+      background: #12121c; color: #f1f5f9; border: 1px solid #2d2d44;
+      box-shadow: 0 8px 28px rgba(0,0,0,.45);
+    }
+    body.nav.night .hud .ico { color: #f8fafc; }
+    body.nav.night .hud .ico:active { background: #1e293b; }
+    body.nav.night .hud-sub,
+    body.nav.night .hud-meta,
+    body.nav.night .hud-then .then-k { color: #94a3b8; }
+    body.nav.night .hud-then { color: #e2e8f0; }
+    body.nav.night .hud-speed {
+      background: #12121c; border: 1px solid #2d2d44;
+    }
+    body.nav.night .hud-speed .v { color: #f8fafc; }
+    body.nav.night .hud-speed .u { color: #94a3b8; }
+    /* Négatif OSM = taches noires hors guidage. En guidage nuit : assombrir sans invert. */
     body.night:not(.nav):not(.routing) .leaflet-tile-pane {
       filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.92) saturate(0.8);
     }
-    body.nav .leaflet-tile-pane,
-    body.routing .leaflet-tile-pane,
+    body.nav:not(.night) .leaflet-tile-pane,
+    body.routing:not(.night) .leaflet-tile-pane { filter: none !important; }
     body.nav.night .leaflet-tile-pane,
-    body.routing.night .leaflet-tile-pane { filter: none !important; }
+    body.routing.night .leaflet-tile-pane {
+      filter: brightness(0.68) saturate(0.82) contrast(1.06);
+    }
     .sheet input {
       width: 100%; margin-top: 8px; border: 1px solid #2d2d44; border-radius: 12px;
       background: #16213e; color: #f1f5f9; font-size: 16px; padding: 12px 14px;

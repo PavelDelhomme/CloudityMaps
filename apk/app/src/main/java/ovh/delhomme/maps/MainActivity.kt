@@ -242,6 +242,9 @@ class MainActivity : AppCompatActivity() {
         if (this::location.isInitialized) {
             runCatching { location.startWatchUi() }
         }
+        if (this::tts.isInitialized) {
+            runCatching { tts.ensureReady() }
+        }
     }
 
     override fun onPause() {
