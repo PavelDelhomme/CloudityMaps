@@ -28,20 +28,80 @@ class InAppUpdate(private val activity: Activity) {
     private val prefs = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
 
     fun check(userInitiated: Boolean = false) {
+        val checking = java.util.concurrent.atomic.AtomicReference<AlertDialog?>(null)
+        if (userInitiated) {
+            main.post { checking.set(showCheckingDialog()) }
+        }
         Thread {
-            runCatching { checkInner(userInitiated) }
-                .onFailure {
-                    if (userInitiated) {
-                        main.post {
-                            Toast.makeText(
-                                activity,
-                                "Vérification impossible — réessaie",
-                                Toast.LENGTH_LONG,
-                            ).show()
+            try {
+                runCatching { checkInner(userInitiated) }
+                    .onFailure {
+                        if (userInitiated) {
+                            main.post {
+                                Toast.makeText(
+                                    activity,
+                                    "Vérification impossible — réessaie",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
                         }
                     }
-                }
+            } finally {
+                main.post { runCatching { checking.get()?.dismiss() } }
+            }
         }.start()
+    }
+
+    private fun showCheckingDialog(): AlertDialog? {
+        if (activity.isFinishing) return null
+        val density = activity.resources.displayMetrics.density
+        val pad = (20 * density).toInt()
+        val wrap = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, pad)
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+            addView(
+                ProgressBar(activity).apply {
+                    isIndeterminate = true
+                    val lp = LinearLayout.LayoutParams(
+                        (36 * density).toInt(),
+                        (36 * density).toInt(),
+                    )
+                    lp.gravity = android.view.Gravity.CENTER_HORIZONTAL
+                    layoutParams = lp
+                },
+            )
+            addView(
+                TextView(activity).apply {
+                    text = "Vérification en cours…"
+                    textSize = 15f
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    )
+                    lp.topMargin = (12 * density).toInt()
+                    layoutParams = lp
+                    gravity = android.view.Gravity.CENTER
+                },
+            )
+            addView(
+                ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    isIndeterminate = true
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    )
+                    lp.topMargin = (10 * density).toInt()
+                    layoutParams = lp
+                },
+            )
+        }
+        return AlertDialog.Builder(activity)
+            .setTitle("Mise à jour")
+            .setView(wrap)
+            .setCancelable(true)
+            .setNegativeButton("Continuer") { d, _ -> d.dismiss() }
+            .show()
     }
 
     private fun checkInner(userInitiated: Boolean = false) {
@@ -220,10 +280,23 @@ class InAppUpdate(private val activity: Activity) {
             val wrap = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(pad, pad / 2, pad, pad)
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
                 addView(
                     TextView(activity).apply {
                         text = notes.ifBlank { "Nouveautés de la $version." }
                         textSize = 15f
+                    },
+                )
+                addView(
+                    ProgressBar(activity).apply {
+                        isIndeterminate = true
+                        val lp = LinearLayout.LayoutParams(
+                            (36 * density).toInt(),
+                            (36 * density).toInt(),
+                        )
+                        lp.gravity = android.view.Gravity.CENTER_HORIZONTAL
+                        lp.topMargin = (12 * density).toInt()
+                        layoutParams = lp
                     },
                 )
                 addView(
@@ -233,7 +306,7 @@ class InAppUpdate(private val activity: Activity) {
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT,
                         )
-                        lp.topMargin = (12 * density).toInt()
+                        lp.topMargin = (10 * density).toInt()
                         layoutParams = lp
                     },
                 )

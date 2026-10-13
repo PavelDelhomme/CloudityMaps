@@ -1427,7 +1427,16 @@ function featuresToHits(features, q) {
     const label = [props.name, props.street, props.city || props.state, props.country]
       .filter(Boolean)
       .join(', ');
-    const item = { label: label || q, lat, lon };
+    const hint = [props.osm_value, props.postcode, props.city || props.state].filter(Boolean).join(' · ');
+    const item = {
+      label: label || q,
+      lat,
+      lon,
+      hint: hint || '',
+      osmId: props.osm_id || '',
+      osmType: props.osm_type || '',
+      name: props.name || '',
+    };
     if (seen.has(item.label)) continue;
     seen.add(item.label);
     out.push(item);
@@ -1450,7 +1459,14 @@ async function searchNominatim(q) {
     const label = n.display_name || q;
     if (seen.has(label)) continue;
     seen.add(label);
-    out.push({ label, lat, lon });
+    out.push({
+      label,
+      lat,
+      lon,
+      osmId: n.osm_id || '',
+      osmType: n.osm_type || '',
+      name: n.name || '',
+    });
   }
   return out;
 }
@@ -2703,18 +2719,25 @@ function liveFuelHud() {
   return { veh, tank, l100, liters, pct, rangeKm };
 }
 
+function tripPlanning() {
+  return !!(lastDest && (routeChoices.length || lastOrigin));
+}
+
 function paintTripInfoMenu() {
   const wrap = document.getElementById('tripInfoMenu');
   const panel = document.getElementById('tripInfoPanel');
   const tog = document.getElementById('tripInfoToggle');
   if (!wrap || !panel) return;
-  wrap.hidden = !navigating;
-  if (!navigating) {
+  const planning = tripPlanning();
+  const show = navigating || planning;
+  wrap.hidden = !show;
+  if (!show) {
     tripInfoOpen = false;
     panel.hidden = true;
     if (tog) tog.setAttribute('aria-expanded', 'false');
     return;
   }
+  if (planning && !navigating) tripInfoOpen = true;
   if (tog) {
     tog.textContent = tripInfoOpen ? '▴' : '▾';
     tog.setAttribute('aria-expanded', tripInfoOpen ? 'true' : 'false');
@@ -2742,7 +2765,20 @@ function paintTripInfoMenu() {
   const rangeLab =
     fuel && fuel.rangeKm != null && fuel.rangeKm > 0 ? `~${Math.round(fuel.rangeKm)} km` : '';
   const fillW = fuel && fuel.pct != null ? fuel.pct : 0;
-  let rows =
+  let rows = '';
+  if (lastOrigin || lastDest) {
+    const from = pinTitle(lastOrigin) || (lastOrigin && lastOrigin.fromHere ? 'Ma position' : 'Départ');
+    const to = pinTitle(lastDest) || 'Destination';
+    rows +=
+      `<div class="ti-k">Itinéraire</div>` +
+      `<div class="ti-v">${esc(from)} → ${esc(to)}</div>`;
+    if (choice && Number.isFinite(choice.km)) {
+      rows +=
+        `<div class="ti-k">Trajet</div>` +
+        `<div class="ti-v">${choice.km.toFixed(1)} km · ${Math.round(choice.min || 0)} min</div>`;
+    }
+  }
+  rows +=
     `<div class="ti-k">Jauge Fuel</div>` +
     `<div class="ti-v">${esc(fuel ? fuel.veh.name : '—')} · ${esc(pctLab)}${Llab ? ` · ${esc(Llab)}` : ''}</div>` +
     `<div class="ti-bar"><i style="width:${fillW}%"></i></div>`;
@@ -2770,7 +2806,7 @@ function paintTripInfoMenu() {
 }
 
 function toggleTripInfo() {
-  if (!navigating) return;
+  if (!navigating && !tripPlanning()) return;
   tripInfoOpen = !tripInfoOpen;
   if (tripInfoOpen) requestFuelSnapshot(false);
   paintTripInfoMenu();
@@ -3821,6 +3857,7 @@ async function routeFromTo(origin, dest) {
   selectedRouteId = routeChoices[0].id;
   drawChoices(selectedRouteId);
   renderAlts();
+  paintTripInfoMenu();
   if (travelMode === 'car' && routeChoices.length) {
     void (async () => {
       try {
@@ -3851,7 +3888,8 @@ function showHits(items) {
       const hint = h.hint ? `<div class="hit-h">${esc(h.hint)}</div>` : '';
       return (
         `<button type="button" class="hit${h.here ? ' here' : ''}" data-here="${h.here ? '1' : ''}" ` +
-        `data-lat="${h.lat}" data-lon="${h.lon}" data-label="${esc(h.label)}"${h.query ? ` data-query="${esc(h.query)}"` : ''}>` +
+        `data-lat="${h.lat}" data-lon="${h.lon}" data-label="${esc(h.label)}" data-osm-id="${esc(h.osmId || '')}" ` +
+        `data-osm-type="${esc(h.osmType || '')}" data-name="${esc(h.name || '')}"${h.query ? ` data-query="${esc(h.query)}"` : ''}>` +
         `<div class="hit-t">${esc(h.label)}</div>${hint}</button>`
       );
     })
@@ -4005,23 +4043,144 @@ function poiMeta(tags, kind) {
   return bits.join(' · ') || 'Horaires et tarifs OSM, cache local 18 min.';
 }
 
+function nameScore(a, b) {
+  const na = String(a || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const nb = String(b || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (!na || !nb) return 0;
+  if (na === nb) return 100;
+  if (na.includes(nb) || nb.includes(na)) return 70;
+  const wa = na.split(/\W+/).filter(Boolean);
+  let hit = 0;
+  for (const w of wa) if (w.length > 2 && nb.includes(w)) hit += 1;
+  return hit * 12;
+}
+
+function osmTypeToken(t) {
+  const s = String(t || '').toLowerCase();
+  if (s === 'w' || s === 'way') return 'way';
+  if (s === 'r' || s === 'relation') return 'relation';
+  return 'node';
+}
+
+function poiFromOsmEl(el, fallbackName, lat, lon) {
+  const tags = (el && el.tags) || {};
+  const kind = poiKindOf(tags) || (tags.shop ? 'shop' : tags.amenity ? tags.amenity : 'place');
+  const name = tags.name || tags.brand || fallbackName || 'Lieu';
+  const lat0 = Number.isFinite(el.lat) ? el.lat : (el.center && el.center.lat) || lat;
+  const lon0 = Number.isFinite(el.lon) ? el.lon : (el.center && el.center.lon) || lon;
+  const addr = [
+    tags['addr:housenumber'],
+    tags['addr:street'],
+    tags['addr:postcode'],
+    tags['addr:city'] || tags['addr:town'] || tags['addr:village'],
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const hours = tags.opening_hours || '';
+  const phone = tags.phone || tags['contact:phone'] || tags['contact:mobile'] || '';
+  const web = tags.website || tags['contact:website'] || tags['contact:facebook'] || '';
+  const bits = [];
+  if (tags.brand && tags.brand !== name) bits.push(tags.brand);
+  if (tags.operator && tags.operator !== name && tags.operator !== tags.brand) bits.push(tags.operator);
+  if (tags.shop) bits.push(tags.shop.replace(/_/g, ' '));
+  if (tags.amenity && tags.amenity !== 'yes') bits.push(tags.amenity.replace(/_/g, ' '));
+  if (addr) bits.push(addr);
+  if (hours) bits.push(hours);
+  if (phone) bits.push(phone);
+  if (web) bits.push(web.replace(/^https?:\/\//, '').replace(/\/$/, ''));
+  if (tags.wheelchair === 'yes') bits.push('Accessible PMR');
+  return {
+    name,
+    lat: lat0,
+    lon: lon0,
+    kind,
+    hours,
+    opening_hours: hours,
+    phone,
+    website: web,
+    address: addr,
+    meta: bits.join(' · ') || poiMeta(tags, kind),
+    tags,
+  };
+}
+
+async function lookupOsmDetails(lat, lon, label, osm) {
+  const fallbackName = shortNameFromLabel(label) || label;
+  let data = null;
+  const osmId = osm && (osm.osmId || osm.id);
+  if (osmId) {
+    const t = osmTypeToken(osm.osmType || osm.type);
+    data = await overpassJson(`[out:json][timeout:10];${t}(${osmId});out tags center 1;`);
+  }
+  if (!data || !(data.elements || []).length) {
+    data = await overpassJson(
+      `[out:json][timeout:12];(` +
+        `nwr(around:140,${lat},${lon})[name];` +
+        `nwr(around:90,${lat},${lon})[shop];` +
+        `nwr(around:90,${lat},${lon})[amenity];` +
+        `);out tags center 28;`,
+    );
+  }
+  const els = (data && data.elements) || [];
+  if (!els.length) {
+    return {
+      name: fallbackName,
+      lat,
+      lon,
+      kind: 'shop',
+      meta: label,
+      address: label,
+    };
+  }
+  let best = els[0];
+  let score = -1;
+  for (const el of els) {
+    const tags = el.tags || {};
+    const n = tags.name || tags.brand || '';
+    const s = nameScore(n, fallbackName) + (tags.shop || tags.amenity ? 8 : 0);
+    if (s > score) {
+      score = s;
+      best = el;
+    }
+  }
+  return poiFromOsmEl(best, fallbackName, lat, lon);
+}
+
+async function openSearchPlace(lat, lon, label, osm) {
+  if (pendingAssign || pendingEnd) {
+    await routeTo(lat, lon, label);
+    return;
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  toast('Fiche du lieu…');
+  map.setView([lat, lon], 16);
+  try {
+    const details = await lookupOsmDetails(lat, lon, label, osm);
+    openPoiCard(details);
+  } catch {
+    openPoiCard({ name: shortNameFromLabel(label) || label, lat, lon, kind: 'shop', meta: label });
+  }
+}
+
 function openPoiCard(item) {
   selectedPoi = item;
   const card = document.getElementById('poiCard');
   if (!card) return;
-  document.getElementById('poiCardKind').textContent = poiLabelOf(item.kind);
+  document.getElementById('poiCardKind').textContent = poiLabelOf(item.kind) || 'Lieu';
   document.getElementById('poiCardTitle').textContent = item.name;
   const extra = [];
+  if (item.address) extra.push(item.address);
   if (item.hours || item.opening_hours) extra.push(item.hours || item.opening_hours);
   if (item.phone) extra.push(item.phone);
+  if (item.website) extra.push(String(item.website).replace(/^https?:\/\//, ''));
   if (me && Number.isFinite(item.lat)) {
     const km = haversineKm(me, { lat: item.lat, lon: item.lon });
-    extra.push(`≈ ${km.toFixed(1)} km en voiture depuis toi`);
+    extra.push(`≈ ${km.toFixed(1)} km depuis toi`);
   }
-  extra.push('Données OSM — pas d’avis Google inventés.');
+  extra.push('Données OpenStreetMap.');
   document.getElementById('poiCardMeta').textContent = item.meta || extra[0] || '';
   const extraEl = document.getElementById('poiCardExtra');
-  if (extraEl) extraEl.textContent = extra.slice(1).join(' · ');
+  if (extraEl) extraEl.textContent = extra.filter((x) => x && x !== item.meta).join(' · ');
   const call = document.getElementById('poiCardCall');
   if (call) {
     call.hidden = !item.phone;
@@ -5161,12 +5320,21 @@ hitsEl.addEventListener('click', (e) => {
   setTab('maps');
   if (btn.dataset.query) {
     searchPhoton(btn.dataset.query).then((hits) => {
-      if (hits[0]) void routeTo(hits[0].lat, hits[0].lon, btn.dataset.label);
+      if (hits[0]) void openSearchPlace(hits[0].lat, hits[0].lon, btn.dataset.label, hits[0]);
       else toast('Adresse Contacts introuvable');
     });
     return;
   }
-  void routeTo(Number(btn.dataset.lat), Number(btn.dataset.lon), btn.dataset.label);
+  void openSearchPlace(
+    Number(btn.dataset.lat),
+    Number(btn.dataset.lon),
+    btn.dataset.label,
+    {
+      osmId: btn.dataset.osmId,
+      osmType: btn.dataset.osmType,
+      name: btn.dataset.name,
+    },
+  );
 });
 
 chipsEl.addEventListener('click', (e) => {
@@ -5206,12 +5374,12 @@ if (tripInfoToggle) tripInfoToggle.addEventListener('click', (e) => {
   e.stopPropagation();
   toggleTripInfo();
 });
-if (roadSignEl) {
+  if (roadSignEl) {
   roadSignEl.addEventListener('click', () => {
-    if (navigating) toggleTripInfo();
+    if (navigating || tripPlanning()) toggleTripInfo();
   });
   roadSignEl.addEventListener('keydown', (e) => {
-    if (!navigating) return;
+    if (!navigating && !tripPlanning()) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       toggleTripInfo();
@@ -5798,6 +5966,12 @@ function applyMusicState(s) {
   const sp = document.getElementById('musicSheetPlay');
   if (st) st.textContent = musicEmptyTitle(s);
   if (sa) sa.textContent = musicEmptyArtist(s);
+  const lp = document.getElementById('lyricPrev');
+  const lc = document.getElementById('lyricCur');
+  const ln = document.getElementById('lyricNext');
+  if (lp) lp.textContent = s.lyricPrev || '';
+  if (lc) lc.textContent = s.lyricCur || (s.title ? 'Paroles…' : '');
+  if (ln) ln.textContent = s.lyricNext || '';
   if (sp) {
     sp.textContent = glyph;
     sp.classList.toggle('is-playing', !!s.playing);

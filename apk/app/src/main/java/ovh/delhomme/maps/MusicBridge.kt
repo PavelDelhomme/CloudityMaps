@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
@@ -11,6 +12,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import org.json.JSONObject
 
@@ -173,11 +175,16 @@ class MusicBridge(
             connect()
             val c = liveController()
             if (c != null) {
-                // seekToNext() → PlaybackService.skipToNextFromExternal (file Hubera).
-                // Pas de KEYCODE_MEDIA_* si la session est connectee : evite le double skip
-                // et de voler le focus a une autre app.
-                val ok = runCatching { c.seekToNext(); true }.getOrDefault(false)
-                if (!ok) runCatching { c.seekToNextMediaItem() }
+                // Commande custom : jamais seekToNext DASH (rejoue le titre).
+                val cmd = SessionCommand("ytm.action.SKIP_NEXT", Bundle.EMPTY)
+                val sent = runCatching {
+                    c.sendCustomCommand(cmd, Bundle.EMPTY)
+                    true
+                }.getOrDefault(false)
+                if (!sent) {
+                    val ok = runCatching { c.seekToNext(); true }.getOrDefault(false)
+                    if (!ok) runCatching { c.seekToNextMediaItem() }
+                }
             } else {
                 sendKey(KeyEvent.KEYCODE_MEDIA_NEXT)
             }
@@ -195,8 +202,15 @@ class MusicBridge(
             connect()
             val c = liveController()
             if (c != null) {
-                val ok = runCatching { c.seekToPrevious(); true }.getOrDefault(false)
-                if (!ok) runCatching { c.seekToPreviousMediaItem() }
+                val cmd = SessionCommand("ytm.action.SKIP_PREV", Bundle.EMPTY)
+                val sent = runCatching {
+                    c.sendCustomCommand(cmd, Bundle.EMPTY)
+                    true
+                }.getOrDefault(false)
+                if (!sent) {
+                    val ok = runCatching { c.seekToPrevious(); true }.getOrDefault(false)
+                    if (!ok) runCatching { c.seekToPreviousMediaItem() }
+                }
             } else {
                 sendKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             }
@@ -247,6 +261,7 @@ class MusicBridge(
     private fun stateObject(): JSONObject {
         val c = liveController()
         val meta = c?.mediaMetadata
+        val extras = c?.sessionExtras
         val title = meta?.title?.toString()?.trim().orEmpty()
         val artist = meta?.artist?.toString()?.trim().orEmpty()
         val playing = c != null && c.isPlaying
@@ -258,6 +273,9 @@ class MusicBridge(
             .put("artist", if (empty) "" else artist)
             .put("hasQueue", (c?.mediaItemCount ?: 0) > 0)
             .put("buffering", c?.playbackState == Player.STATE_BUFFERING)
+            .put("lyricPrev", extras?.getString("lyricPrev").orEmpty())
+            .put("lyricCur", extras?.getString("lyricCur").orEmpty())
+            .put("lyricNext", extras?.getString("lyricNext").orEmpty())
     }
 
     private fun defaultState(): JSONObject = JSONObject()
@@ -267,6 +285,9 @@ class MusicBridge(
         .put("artist", "")
         .put("hasQueue", false)
         .put("buffering", false)
+        .put("lyricPrev", "")
+        .put("lyricCur", "")
+        .put("lyricNext", "")
 
     private fun sendKey(code: Int) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager

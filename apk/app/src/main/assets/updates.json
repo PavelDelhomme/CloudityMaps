@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.92",
-  "versionCode": 93,
+  "version": "0.1.93",
+  "versionCode": 94,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -14,25 +14,25 @@
   "apkAvailable": true,
   "mandatory": false,
   "forceUpdate": false,
-  "notes": "0.1.92 : GPS labo via provider huberalab (pas le gps matériel). Carte recentrée. Mise à jour proposée, pas forcée.",
-  "published_at": "2026-10-12T17:12:00Z",
-  "sha256": "0458a9b02d0efe337a5937c2569701f51152926e174b79a6f3d6e711b6fb2615",
+  "notes": "0.1.93 : popup Music (paroles, logo, plus de boucle), panneau vitesse bas-droite, fiche lieu OSM, OTA avec icône qui tourne. Mise à jour proposée, pas forcée.",
+  "published_at": "2026-10-13T02:20:00Z",
+  "sha256": "4ab351aa3a839b3610af07d7ddd886b9dc8bfca9e6ade67d487e5917afb11223",
   "canonical": {
     "package": "cloud.hubera.maps",
-    "version": "0.1.92",
-    "versionCode": 93,
+    "version": "0.1.93",
+    "versionCode": 94,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
-    "sha256": "0458a9b02d0efe337a5937c2569701f51152926e174b79a6f3d6e711b6fb2615",
-    "notes": "0.1.92 : GPS labo via provider huberalab (pas le gps matériel). Carte recentrée. Mise à jour proposée, pas forcée."
+    "sha256": "4ab351aa3a839b3610af07d7ddd886b9dc8bfca9e6ade67d487e5917afb11223",
+    "notes": "0.1.93 : popup Music (paroles, logo, plus de boucle), panneau vitesse bas-droite, fiche lieu OSM, OTA avec icône qui tourne. Mise à jour proposée, pas forcée."
   },
   "legacy": {
     "package": "ovh.delhomme.maps",
-    "version": "0.1.92",
-    "versionCode": 93,
+    "version": "0.1.93",
+    "versionCode": 94,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
-    "sha256": "4c5acdc67ae520ed1cacffb6e224f3b6282ad4fe82c438f0c9d6c42d90ae0070",
-    "notes": "Même build 0.1.92, paquet historique."
+    "sha256": "7f7d245c3c53cd0efb4a47211b1ef72967439c2873895f90e79c9b12afd894e8",
+    "notes": "Même build 0.1.93, paquet historique."
   }
 }
