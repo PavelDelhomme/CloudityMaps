@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.94",
-  "versionCode": 95,
+  "version": "0.1.96",
+  "versionCode": 97,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -14,25 +14,25 @@
   "apkAvailable": true,
   "mandatory": false,
   "forceUpdate": false,
-  "notes": "0.1.94 : mode sombre pendant le guidage, voix au retour au premier plan. Mise à jour proposée, pas forcée.",
-  "published_at": "2026-10-13T15:05:00Z",
-  "sha256": "aa41e965e151f6ffcac2c61adbf8ddc56a47baee23430b965e5e0c54ecc9e146",
+  "notes": "0.1.96 : pleins Fuel du véhicule choisi, dont la 206. Mise à jour proposée, pas forcée.",
+  "published_at": "2026-10-14T02:00:00Z",
+  "sha256": "0a68fd5c4efacf3fbbbffa10fc3e1bc3690ba01324eb45825044605dcbd64dc8",
   "canonical": {
     "package": "cloud.hubera.maps",
-    "version": "0.1.94",
-    "versionCode": 95,
+    "version": "0.1.96",
+    "versionCode": 97,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
-    "sha256": "aa41e965e151f6ffcac2c61adbf8ddc56a47baee23430b965e5e0c54ecc9e146",
-    "notes": "0.1.94 : mode sombre pendant le guidage, voix au retour au premier plan. Mise à jour proposée, pas forcée."
+    "sha256": "0a68fd5c4efacf3fbbbffa10fc3e1bc3690ba01324eb45825044605dcbd64dc8",
+    "notes": "0.1.96 : pleins Fuel du véhicule choisi, dont la 206. Mise à jour proposée, pas forcée."
   },
   "legacy": {
     "package": "ovh.delhomme.maps",
-    "version": "0.1.94",
-    "versionCode": 95,
+    "version": "0.1.96",
+    "versionCode": 97,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
-    "sha256": "20d1e071b6677f5d192916e4fb7028263cc35115f42eeeddb6773f40358172ae",
-    "notes": "Même build 0.1.94, paquet historique."
+    "sha256": "b4de38c10bf60b35c6300b26f80074af1e4a37d760b092b8b05d086b7fbe13f7",
+    "notes": "Même build 0.1.96, paquet historique."
   }
 }

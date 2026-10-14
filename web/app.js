@@ -4566,8 +4566,14 @@ function parseFuelSnapPack(raw) {
       }).filter((v) => Number.isFinite(v.id) && v.id > 0);
     } else if (kind === 'F') {
       out.fills = body.split('|').filter(Boolean).map((row) => {
-        const [date, L, cost, station] = row.split('~');
-        return { date: date || '', liters: Number(L) || 0, cost: Number(cost) || 0, station: station || '' };
+        const [date, L, cost, station, vid] = row.split('~');
+        return {
+          date: date || '',
+          liters: Number(L) || 0,
+          cost: Number(cost) || 0,
+          station: station || '',
+          vehicleId: Number(vid) || 0,
+        };
       });
     } else if (kind === 'B' && body) {
       const [amount, spent, name] = body.split('~');
@@ -4686,6 +4692,7 @@ function applyFuelHttpSnap(data) {
           liters: Number(f.liters) || 0,
           cost: Number(f.cost) || 0,
           station: f.station || '',
+          vehicleId: Number(f.vehicleId) || 0,
         }))
       : loadFuelSnap().fills || [],
     budget: data.budget && typeof data.budget === 'object' ? data.budget : loadFuelSnap().budget,
@@ -4928,9 +4935,23 @@ function paintFuelSheetBody() {
     return;
   }
   if (which === 'fills') {
+    requestFuelSnapshot(true);
+    const veh = activeFuelVehicle();
+    const rows = (loadFuelSnap().fills || []).filter(
+      (f) => !veh || !f.vehicleId || f.vehicleId === veh.id,
+    );
+    const list = rows.length
+      ? rows
+          .map(
+            (f) =>
+              `<div class="item">${esc(String(f.date || '').slice(0, 16))} · ${Number(f.liters) || 0} L · ${Number(f.cost) || 0} €${f.station ? ` · ${esc(f.station)}` : ''}</div>`,
+          )
+          .join('')
+      : `<div class="item">${veh ? `Aucun plein reçu pour ${esc(veh.name)}.` : 'Aucun plein reçu de Fuel.'} Actualise après un plein dans Hubera Fuel.</div>`;
     body.innerHTML =
-      `<p class="page-hint">Les pleins s’enregistrent dans Fuel (moteur invisible). Maps saisit litres / montant ici.</p>` +
-      `<button type="button" class="primary" id="sheetFill" style="width:100%">Nouveau plein</button>`;
+      `<p class="page-hint">Pleins du véhicule sélectionné, lus dans Fuel.</p>` +
+      list +
+      `<button type="button" class="primary" id="sheetFill" style="width:100%;margin-top:10px">Nouveau plein</button>`;
     const b = document.getElementById('sheetFill');
     if (b) b.onclick = () => {
       closeFuelSheet();
