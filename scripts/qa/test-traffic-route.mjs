@@ -47,13 +47,26 @@ assert(paris && Math.abs(paris.lat - 48.8566) < 0.01 && Math.abs(paris.lon - 2.3
 const csv = await getText('https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/QTV-DIR/refDir.csv');
 const xml = await getText('https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/QTV-DIR/qtvDir.xml');
 const stations = traffic.buildTrafficStations(csv, xml);
-assert(stations.length > 10, `flux Bison Futé parsé (${stations.length} stations lentes)`);
+const slowStations = stations.filter((s) => s.slow);
+assert(slowStations.length > 10, `flux Bison Futé parsé (${slowStations.length} stations lentes / ${stations.length})`);
 
 const untouched = traffic.annotateRoutes(
   [{ id: 'keep', kind: 'fastest', label: 'Plus rapide', km: 5, min: 12, geometry: { coordinates: [[2.3, 48.8], [2.4, 48.9]] } }],
   [],
 );
 assert(untouched[0].min === 12 && untouched[0].trafficDelayMin == null, 'sans stations, durée inchangée');
+
+const city = traffic.annotateRoutes(
+  [{ id: 'city', kind: 'fastest', label: 'Plus rapide', km: 1.2, min: 4, geometry: { coordinates: [[2.3522, 48.8566], [2.353, 48.857]] } }],
+  stations,
+);
+const cityRow = city[0];
+if (cityRow.trafficStatus === 'uncovered') {
+  assert(cityRow.min === 4 && (cityRow.trafficDelayMin || 0) === 0, 'rue sans station : durée inchangée, pas de bouchon inventé');
+} else {
+  assert(cityRow.min >= 4, 'si une station nationale est là, la durée ne raccourcit pas');
+}
+console.log('rue test', cityRow.trafficStatus, 'delay', cityRow.trafficDelayMin);
 
 const pairs = [
   ['Marseille', { lat: 43.2, lon: 5.37 }, { lat: 43.45, lon: 5.4 }],

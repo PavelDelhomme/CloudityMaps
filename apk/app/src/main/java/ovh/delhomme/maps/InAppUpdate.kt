@@ -108,6 +108,17 @@ class InAppUpdate(private val activity: Activity) {
             }
             return
         }
+        if (feed.has("apkAvailable") && !feed.optBoolean("apkAvailable", true)) {
+            if (userInitiated) {
+                main.post {
+                    dismissCard()
+                    Toast.makeText(activity, "Application à jour — $localName", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                main.post { dismissCard() }
+            }
+            return
+        }
         val found = resolveOffer(feed, localName) ?: run {
             if (userInitiated) {
                 main.post {
@@ -770,9 +781,13 @@ class InAppUpdate(private val activity: Activity) {
     }
 
     private fun fetchFeed(): JSONObject? {
+        val ver = java.net.URLEncoder.encode(localVersionName(), Charsets.UTF_8.name())
+        val pkg = java.net.URLEncoder.encode(activity.packageName, Charsets.UTF_8.name())
+        val q = "clientVersion=$ver&clientVersionCode=${localVersionCode()}&clientPackage=$pkg"
         val urls = arrayOf(
-            "https://maps.hubera.cloud/updates.json",
-            "https://hubera.cloud/updates/maps.json",
+            "https://maps.hubera.cloud/api/version?$q",
+            "https://maps.hubera.cloud/updates.json?$q",
+            "https://hubera.cloud/updates/maps.json?$q",
         )
         for (u in urls) {
             try {

@@ -1864,10 +1864,9 @@ async function motisPlan(from, to, signal) {
 
 function overpassEndpoints() {
   return [
-    'https://overpass.osm.ch/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
     'https://maps.hubera.cloud/overpass',
     'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass-api.de/api/interpreter',
   ];
 }
 
@@ -2152,9 +2151,11 @@ async function enrichRoutesWithTraffic(from, to, routes, signal) {
     stations = await loadTrafficStations(signal);
   } catch (err) {
     if (err && err.name === 'AbortError') throw err;
-    return routes;
+    return routes.map((r) => ({ ...r, trafficStatus: 'unavailable', trafficMeasured: false, trafficDelayMin: 0 }));
   }
-  if (!stations.length) return routes;
+  if (!stations.length) {
+    return routes.map((r) => ({ ...r, trafficStatus: 'unavailable', trafficMeasured: false, trafficDelayMin: 0 }));
+  }
   const tagged = HuberaTraffic.annotateRoutes(routes, stations);
   const base = tagged[0];
   if (!base || !HuberaTraffic.isHeavy(base) || !base.trafficJam) return tagged;
@@ -2170,13 +2171,22 @@ async function enrichRoutesWithTraffic(from, to, routes, signal) {
 }
 
 function trafficNoteHtml() {
-  const delays = routeChoices.filter((r) => (r.trafficDelayMin || 0) >= 1);
-  if (!delays.length) return '';
   const sel = currentChoice();
+  if (!sel || travelMode !== 'car') return '';
   const offered = routeChoices.some((r) => r.kind === 'traffic');
-  let text = 'Circulation temps réel (Bison Futé).';
-  if (sel && sel.trafficDelayMin >= 1 && sel.freeMin != null) {
-    text += ` Trajet affiché : ${sel.freeMin} min sans trafic, ${sel.min} min avec les ralentissements.`;
+  if (sel.trafficStatus === 'unavailable') {
+    return `<p class="works-note">Circulation temps réel indisponible. Le trajet reste celui calculé, sans bouchon inventé.</p>`;
+  }
+  if (sel.trafficStatus === 'uncovered') {
+    return `<p class="works-note">Pas de mesure locale sur ce trajet. Bison Futé couvre le réseau national non concédé, pas les rues ni une zone 30.</p>`;
+  }
+  if (sel.trafficStatus === 'clear') {
+    return `<p class="works-note">Circulation fluide là où Bison Futé mesure le trajet. Les rues n’ont pas de mesure locale.</p>`;
+  }
+  if ((sel.trafficDelayMin || 0) < 1 && sel.trafficStatus !== 'slow') return '';
+  let text = 'Circulation temps réel (Bison Futé, réseau national).';
+  if (sel.freeMin != null) {
+    text += ` Habituel ${sel.freeMin} min, actuellement ${sel.min} min.`;
   }
   if (offered) {
     text += ' « Évite le bouchon » est proposé : tu le choisis, il n’est pas lancé à ta place.';
@@ -2236,6 +2246,15 @@ function drawChoices(selectedId) {
     layer.on('click', () => selectRoute(r.id));
     altLayers.push(layer);
     if (on) routeLayer = layer;
+    for (const span of r.trafficSpans || []) {
+      if (!span || span.length < 2) continue;
+      const jam = L.polyline(
+        span.map((c) => [c[1], c[0]]),
+        { color: '#f59e0b', weight: on ? 9 : 6, opacity: 0.95, lineCap: 'round' },
+      ).addTo(map);
+      jam.on('click', () => selectRoute(r.id));
+      altLayers.push(jam);
+    }
     const b = layer.getBounds();
     bounds = bounds ? bounds.extend(b) : b;
   }
@@ -2823,7 +2842,15 @@ function paintHud(choice) {
       thenEl.textContent = '';
     }
   }
-  if (metaEl) metaEl.textContent = eta ? `vers ${short} · ${eta}` : `vers ${short}`;
+  if (metaEl) {
+    let line = eta ? `vers ${short} · ${eta}` : `vers ${short}`;
+    if (choice && (choice.trafficDelayMin || 0) >= 1 && choice.freeMin != null) {
+      line += ` · habituel ${choice.freeMin} min, trafic ${choice.min} min`;
+    } else if (choice && choice.trafficStatus === 'uncovered') {
+      line += ' · pas de mesure locale';
+    }
+    metaEl.textContent = line;
+  }
   const speedEl = document.getElementById('hudSpeed');
   const speedVal = document.getElementById('hudSpeedVal');
   if (speedEl) speedEl.hidden = !navigating;
@@ -3438,118 +3465,56 @@ async function startNavigation() {
   if (me) applyNavCamera(me.lat, me.lon, true);
 }
 
-const FR_SPEED = {
-  'FR:urban': 50,
-  'FR:rural': 80,
-  'FR:zone30': 30,
-  'FR:zone20': 20,
-  'FR:motorway': 130,
-  'FR:trunk': 110,
-  'FR:living_street': 20,
-};
-
-function parseOsmMaxspeed(raw) {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  if (!s || s === 'none' || s === 'signals') return null;
-  if (FR_SPEED[s]) return FR_SPEED[s];
-  const frNum = s.match(/^FR:(\d{1,3})$/i);
-  if (frNum) {
-    const v = Number(frNum[1]);
-    if (v >= 5 && v <= 140) return Math.round(v);
-  }
-  const fr = s.match(/^FR:(\w+)/i);
-  if (fr) {
-    const k = `FR:${fr[1].toLowerCase()}`;
-    if (FR_SPEED[k]) return FR_SPEED[k];
-  }
-  const km = s.match(/^(\d+(?:\.\d+)?)\s*(km\/h|kmh)?$/i);
-  if (km) {
-    const v = Number(km[1]);
-    if (v >= 5 && v <= 140) return Math.round(v);
-  }
-  const mph = s.match(/^(\d+)\s*mph$/i);
-  if (mph) return Math.round(Number(mph[1]) * 1.609);
-  return null;
-}
-
-function impliedSpeedFromHighway(hw) {
-  if (!hw) return null;
-  if (hw === 'living_street') return 20;
-  if (hw === 'motorway' || hw === 'motorway_link') return 130;
-  if (hw === 'trunk' || hw === 'trunk_link') return 110;
-  if (
-    hw === 'residential' ||
-    hw === 'unclassified' ||
-    hw === 'tertiary' ||
-    hw === 'tertiary_link' ||
-    hw === 'secondary' ||
-    hw === 'secondary_link' ||
-    hw === 'primary' ||
-    hw === 'primary_link'
-  ) {
-    return 50;
-  }
-  return null;
-}
-
-function skipPedestrianHighway(hw) {
-  return !hw || /^(footway|cycleway|path|steps|pedestrian|bridleway|construction|proposed|elevator|corridor|platform|track)$/.test(hw);
-}
-
-function taggedSpeed(tags) {
-  if (!tags) return null;
-  for (const k of ['maxspeed', 'maxspeed:forward', 'maxspeed:backward', 'source:maxspeed', 'maxspeed:type', 'zone:maxspeed']) {
-    const v = parseOsmMaxspeed(tags[k]);
-    if (v != null) return v;
-  }
-  return null;
-}
-
-function zoneFromTags(tags) {
-  if (!tags) return false;
-  if (tags['zone:maxspeed']) return true;
-  const type = String(tags['maxspeed:type'] || '').toLowerCase();
-  if (type.includes('zone')) return true;
-  const src = String(tags['source:maxspeed'] || '').toLowerCase();
-  return src.includes('zone');
-}
-
-function pickSpeedRow(rows) {
-  if (!rows.length) return null;
-  const near = rows.slice().sort((a, b) => a.dist - b.dist);
-  const zoneHit = near.find((r) => r.zone && r.tagged != null && r.dist <= 90);
-  if (zoneHit) return zoneHit;
-  const tagged = near.find((r) => r.tagged != null && r.dist <= 55);
-  if (tagged) return tagged;
-  return near[0];
-}
-
 let lastPaintedLimit = null;
 
-function paintSpeedLimit(kmh, zone) {
+function paintSpeedLimit(kmh, zone, known) {
   if (!roadNameEl) return;
   if (roadSignEl) roadSignEl.hidden = false;
   const signs = document.getElementById('navSigns');
   if (signs) signs.hidden = false;
-  if (kmh == null) return;
-  lastPaintedLimit = kmh;
-  roadNameEl.textContent = String(kmh);
-  const isZone = !!zone;
-  if (roadSignEl) roadSignEl.classList.toggle('is-zone', isZone);
   const zoneEl = document.getElementById('roadZone');
+  const isKnown = known !== false && kmh != null && Number.isFinite(Number(kmh));
+  if (!isKnown) {
+    lastPaintedLimit = null;
+    roadNameEl.textContent = '—';
+    if (roadSignEl) {
+      roadSignEl.classList.remove('is-zone');
+      roadSignEl.classList.add('is-unknown');
+      roadSignEl.title = 'Aucune limite taguée sur cette voie OpenStreetMap';
+    }
+    if (zoneEl) {
+      zoneEl.hidden = false;
+      zoneEl.textContent = 'SANS TAG';
+    }
+    placeRoadSign();
+    return;
+  }
+  const speed = Math.round(Number(kmh));
+  lastPaintedLimit = speed;
+  roadNameEl.textContent = String(speed);
+  const isZone = !!zone;
+  if (roadSignEl) {
+    roadSignEl.classList.toggle('is-zone', isZone);
+    roadSignEl.classList.remove('is-unknown');
+    roadSignEl.title = 'Limitation lue sur la voie OpenStreetMap';
+  }
   if (zoneEl) {
     zoneEl.hidden = !isZone;
-    zoneEl.textContent = kmh <= 20 ? 'ZONE 20' : kmh <= 30 ? 'ZONE 30' : 'ZONE';
+    zoneEl.textContent = speed <= 20 ? 'ZONE 20' : speed <= 30 ? 'ZONE 30' : 'ZONE';
   }
   placeRoadSign();
 }
 
-window.__huberaSpeedLimit = function (kmh, zone) {
+window.__huberaSpeedLimit = function (kmh, zone, known) {
+  if (known === false || known === 0 || known === '0') {
+    lastRoadPos = me || lastRoadPos;
+    paintSpeedLimit(null, false, false);
+    return;
+  }
   const n = Number(kmh);
   if (!Number.isFinite(n) || n < 5) return;
   lastRoadPos = me || lastRoadPos;
-  paintSpeedLimit(Math.round(n), !!zone);
+  paintSpeedLimit(Math.round(n), !!zone, true);
 };
 
 async function refreshRoad(lat, lon) {
@@ -3566,40 +3531,39 @@ async function refreshRoad(lat, lon) {
     try {
       HuberaSpeed.lookup(String(lat), String(lon));
     } catch {
-      /* proxy JS ci-dessous */
+      /* le JS ci-dessous sert le site et le repli */
     }
   }
-  const query =
-    `[out:json][timeout:8];(` +
-    `way(around:28,${lat.toFixed(5)},${lon.toFixed(5)})[highway];` +
-    `way(around:90,${lat.toFixed(5)},${lon.toFixed(5)})["zone:maxspeed"];` +
-    `way(around:90,${lat.toFixed(5)},${lon.toFixed(5)})["maxspeed:type"~"zone"];` +
-    `);out center tags 50;`;
-  const urls = overpassEndpoints();
-  for (const endpoint of urls) {
+  if (typeof HuberaSpeedCore === 'undefined') return;
+  const query = HuberaSpeedCore.waysQuery(lat, lon);
+  const heading = Number.isFinite(lastHeadingDeg) ? lastHeadingDeg : null;
+  for (const endpoint of overpassEndpoints()) {
     try {
       const data = await overpassPost(endpoint, query);
-      if (!data) continue;
-      const rows = [];
-      for (const el of data.elements || []) {
-        const tags = el.tags || {};
-        if (tags.highway && skipPedestrianHighway(tags.highway)) continue;
-        const c = el.center;
-        const dist = c && Number.isFinite(c.lat) ? metersBetween(here, { lat: c.lat, lon: c.lon }) : 999;
-        const tagged = taggedSpeed(tags);
-        const implied = impliedSpeedFromHighway(tags.highway);
-        if (tagged == null && implied == null) continue;
-        const urban = tags.highway === 'residential' || tags.highway === 'living_street' || tags.highway === 'unclassified';
-        rows.push({ dist, tagged, implied, urban, zone: zoneFromTags(tags) });
-      }
-      const picked = pickSpeedRow(rows);
-      if (!picked) continue;
-      const speed = picked.tagged != null ? picked.tagged : picked.implied;
-      if (speed != null) {
+      if (!data || !Array.isArray(data.elements)) continue;
+      if (!data.elements.length) continue;
+      const hit = HuberaSpeedCore.resolveSpeed(lat, lon, data.elements, heading);
+      if (!hit) continue;
+      if (hit.known && hit.kmh != null) {
         lastRoadPos = here;
-        paintSpeedLimit(speed, !!picked.zone);
+        paintSpeedLimit(hit.kmh, !!hit.zone, true);
         return;
       }
+      let area = null;
+      try {
+        area = await overpassPost(endpoint, HuberaSpeedCore.areaQuery(lat, lon));
+      } catch {
+        area = null;
+      }
+      const zones = HuberaSpeedCore.zonesFromArea(area && area.elements);
+      if (zones.length) {
+        lastRoadPos = here;
+        paintSpeedLimit(zones[0].kmh, true, true);
+        return;
+      }
+      lastRoadPos = here;
+      paintSpeedLimit(null, false, false);
+      return;
     } catch {
       /* Overpass suivant */
     }

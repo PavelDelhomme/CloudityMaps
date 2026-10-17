@@ -223,6 +223,9 @@
       display: grid; place-items: center; text-align: center;
     }
     .road-sign.is-zone { border-radius: 12px; height: 72px; padding-bottom: 12px; }
+    .road-sign.is-unknown { border-radius: 12px; width: 64px; height: 72px; padding-bottom: 14px; }
+    .road-sign.is-unknown .name { font-size: 20px; }
+    .road-sign.is-unknown .zone { letter-spacing: .04em; font-size: 7px; }
     .road-sign .kind { display: none; }
     .road-sign .name {
       font-weight: 800; font-size: 22px; line-height: 1; color: #111;
@@ -1114,6 +1117,7 @@
     <button type="button" id="bootFailUpdate">Mettre à jour Maps</button>
   </div>
   <script src="leaflet.js"></script>
+  <script src="speed-core.js"></script>
   <script src="traffic-core.js"></script>
   <script src="app.js"></script>
 </body>

@@ -5,6 +5,7 @@ import android.os.Looper
 import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -18,8 +19,9 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Overpass depuis le natif : le WebView file:// bloque CORS, donc le JS
- * ne voit jamais maxspeed. Même parser que Fuel / web/app.js.
+ * Overpass depuis le natif : le WebView file:// bloque CORS.
+ * La limite vient du tag OSM de la voie (maxspeed, zone, living_street).
+ * Aucun 50 inventé si la voie n’a pas de tag.
  */
 class SpeedLimitBridge(
     private val web: () -> WebView?,
@@ -54,9 +56,11 @@ class SpeedLimitBridge(
     }
 
     private fun push(hit: SpeedHit) {
+        val kmh = if (hit.known && hit.kmh != null) hit.kmh.toString() else "null"
+        val known = if (hit.known) "true" else "false"
         main.post {
             web()?.evaluateJavascript(
-                "window.__huberaSpeedLimit && window.__huberaSpeedLimit(${hit.kmh}, ${if (hit.zone) "true" else "false"})",
+                "window.__huberaSpeedLimit && window.__huberaSpeedLimit($kmh, ${if (hit.zone) "true" else "false"}, $known)",
                 null,
             )
         }
@@ -65,13 +69,21 @@ class SpeedLimitBridge(
     private fun fetch(lat: Double, lon: Double): SpeedHit? {
         val la = String.format(java.util.Locale.US, "%.5f", lat)
         val lo = String.format(java.util.Locale.US, "%.5f", lon)
-        val query =
-            "[out:json][timeout:8];(" +
-                "way(around:28,$la,$lo)[highway];" +
-                "way(around:90,$la,$lo)[\"zone:maxspeed\"];" +
-                "way(around:90,$la,$lo)[\"maxspeed:type\"~\"zone\"];" +
-                ");out center tags 50;"
-        val body = "data=" + java.net.URLEncoder.encode(query, Charsets.UTF_8.name())
+        val ways =
+            "[out:json][timeout:12];(" +
+                "way(around:42,$la,$lo)[\"highway\"];" +
+                "way(around:55,$la,$lo)[\"zone:maxspeed\"];" +
+                ");out tags geom;"
+        val area =
+            "[out:json][timeout:8];" +
+                "is_in($la,$lo)->.a;" +
+                "(" +
+                "relation(pivot.a)[\"zone:maxspeed\"];" +
+                "way(pivot.a)[\"zone:maxspeed\"];" +
+                "relation(pivot.a)[\"enforcement\"=\"maxspeed\"];" +
+                ");out tags;"
+        val waysBody = "data=" + java.net.URLEncoder.encode(ways, Charsets.UTF_8.name())
+        val areaBody = "data=" + java.net.URLEncoder.encode(area, Charsets.UTF_8.name())
         val winner = AtomicReference<SpeedHit?>(null)
         val latch = CountDownLatch(1)
         val pool = Executors.newFixedThreadPool(ENDPOINTS.size.coerceAtMost(4)) { r ->
@@ -87,15 +99,24 @@ class SpeedLimitBridge(
                 pool.execute {
                     runCatching {
                         if (winner.get() != null) return@runCatching
-                        val raw = post(endpoint, body) ?: return@runCatching
+                        val raw = post(endpoint, waysBody) ?: return@runCatching
                         val parsed = parse(raw, lat, lon) ?: return@runCatching
-                        if (winner.compareAndSet(null, parsed)) latch.countDown()
+                        val hit = if (parsed.known) {
+                            parsed
+                        } else {
+                            val zone = runCatching {
+                                val areaRaw = post(endpoint, areaBody)
+                                if (areaRaw == null) null else lowestZone(areaRaw)
+                            }.getOrNull()
+                            zone ?: parsed
+                        }
+                        if (winner.compareAndSet(null, hit)) latch.countDown()
                     }.onFailure { t ->
                         Log.w(TAG, "overpass worker $endpoint: ${t.message}")
                     }
                 }
             }
-            latch.await(7, TimeUnit.SECONDS)
+            latch.await(8, TimeUnit.SECONDS)
             return winner.get()
         } finally {
             pool.shutdownNow()
@@ -106,11 +127,11 @@ class SpeedLimitBridge(
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 5_000
-            readTimeout = 6_000
+            readTimeout = 8_000
             doOutput = true
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "HuberaMaps/0.1.81 (https://maps.hubera.cloud)")
+            setRequestProperty("User-Agent", "HuberaMaps/0.1.107 (https://maps.hubera.cloud)")
         }
         return try {
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
@@ -130,10 +151,7 @@ class SpeedLimitBridge(
     }
 
     private fun parse(raw: String, lat: Double, lon: Double): SpeedHit? {
-        if (!looksLikeJson(raw)) {
-            Log.w(TAG, "overpass skip non-json ${raw.trimStart().take(32)}")
-            return null
-        }
+        if (!looksLikeJson(raw)) return null
         return runCatching { parseJson(raw.trimStart().removePrefix("\uFEFF").trimStart(), lat, lon) }
             .onFailure { t -> Log.w(TAG, "overpass parse: ${t.message}") }
             .getOrNull()
@@ -142,45 +160,55 @@ class SpeedLimitBridge(
     private fun parseJson(raw: String, lat: Double, lon: Double): SpeedHit? {
         val root = JSONObject(raw)
         val elements = root.optJSONArray("elements") ?: return null
-        data class Cand(val dist: Double, val tagged: Int?, val implied: Int?, val urban: Boolean, val zone: Boolean)
+        if (elements.length() == 0) return null
+        data class Cand(val dist: Double, val bearing: Double?, val tags: JSONObject)
         val cands = ArrayList<Cand>()
+        val zones = ArrayList<Int>()
         for (i in 0 until elements.length()) {
             val el = elements.optJSONObject(i) ?: continue
             val tags = el.optJSONObject("tags") ?: continue
-            val hw = tags.optString("highway")
-            if (hw.isNotBlank() && skipPedestrian(hw)) continue
-            val center = el.optJSONObject("center")
-            val dist = if (center != null) {
-                meters(lat, lon, center.optDouble("lat"), center.optDouble("lon"))
-            } else {
-                999.0
+            val contained = zoneKmh(tags)?.let { z ->
+                if (contains(lat, lon, el)) z else null
             }
-            val tagged = taggedSpeed(tags)
-            val implied = impliedHighway(hw)
-            if (tagged == null && implied == null) continue
-            val urban = hw == "residential" || hw == "living_street" || hw == "unclassified"
-            val zone = zoneTag(tags)
-            cands.add(Cand(dist, tagged, implied, urban, zone))
+            if (contained != null) zones.add(contained)
+            val hw = tags.optString("highway")
+            if (hw.isBlank() || skipPedestrian(hw)) continue
+            val d = wayDistance(lat, lon, el)
+            cands.add(Cand(d.first, d.second, tags))
         }
-        if (cands.isEmpty()) return null
         cands.sortBy { it.dist }
-        val zoneHit = cands.firstOrNull { it.zone && it.tagged != null && it.dist <= 90.0 }
-        if (zoneHit != null) return SpeedHit(zoneHit.tagged!!, true)
-        val tagged = cands.firstOrNull { it.tagged != null && it.dist <= 55.0 }
-        if (tagged != null) return SpeedHit(tagged.tagged!!, tagged.zone)
-        val closest = cands[0]
-        val speed = closest.tagged ?: closest.implied ?: return null
-        return SpeedHit(speed, closest.zone)
+        val near = cands.firstOrNull { it.dist <= 48.0 }
+        if (near != null) {
+            val ex = explicitSpeed(near.tags, near.bearing)
+            if (ex != null) return SpeedHit(ex.first, ex.second, true)
+            if (near.tags.optString("highway") == "living_street") return SpeedHit(20, true, true)
+        }
+        if (zones.isNotEmpty()) return SpeedHit(zones.min(), true, true)
+        if (near != null) return SpeedHit(null, false, false)
+        return null
+    }
+
+    private fun lowestZone(raw: String): SpeedHit? {
+        if (!looksLikeJson(raw)) return null
+        val root = runCatching { JSONObject(raw.trimStart().removePrefix("\uFEFF").trimStart()) }.getOrNull() ?: return null
+        val elements = root.optJSONArray("elements") ?: return null
+        var best: Int? = null
+        for (i in 0 until elements.length()) {
+            val tags = elements.optJSONObject(i)?.optJSONObject("tags") ?: continue
+            val z = zoneKmh(tags) ?: continue
+            if (best == null || z < best) best = z
+        }
+        val kmh = best ?: return null
+        return SpeedHit(kmh, true, true)
     }
 
     companion object {
         private const val TAG = "HuberaSpeed"
-        data class SpeedHit(val kmh: Int, val zone: Boolean)
+        data class SpeedHit(val kmh: Int?, val zone: Boolean, val known: Boolean)
         private val ENDPOINTS = listOf(
-            "https://overpass.osm.ch/api/interpreter",
+            "https://overpass-api.de/api/interpreter",
             "https://maps.hubera.cloud/overpass",
             "https://overpass.kumi.systems/api/interpreter",
-            "https://overpass-api.de/api/interpreter",
         )
         private val FR = mapOf(
             "FR:urban" to 50,
@@ -207,8 +235,13 @@ class SpeedLimitBridge(
         private fun parseMaxspeed(raw: String?): Int? {
             if (raw.isNullOrBlank()) return null
             val s = raw.trim()
-            if (s == "none" || s == "signals") return null
+            if (s == "none" || s == "signals" || s == "walk" || s == "variable") return null
             FR[s]?.let { return it }
+            val zone = Regex("^FR:zone:?(\\d{1,3})$", RegexOption.IGNORE_CASE).matchEntire(s)
+            if (zone != null) {
+                val v = zone.groupValues[1].toInt()
+                if (v in 5..140) return v
+            }
             val frNum = Regex("^FR:(\\d{1,3})$", RegexOption.IGNORE_CASE).matchEntire(s)
             if (frNum != null) {
                 val v = frNum.groupValues[1].toInt()
@@ -226,33 +259,147 @@ class SpeedLimitBridge(
             return null
         }
 
-        private fun taggedSpeed(tags: JSONObject): Int? {
-            for (k in listOf(
-                "maxspeed", "maxspeed:forward", "maxspeed:backward",
-                "source:maxspeed", "maxspeed:type", "zone:maxspeed",
-            )) {
-                parseMaxspeed(tags.optString(k).ifBlank { null })?.let { return it }
+        private fun zoneTag(tags: JSONObject): Boolean {
+            if (tags.optString("zone:maxspeed").isNotBlank()) return true
+            if (tags.optString("maxspeed:type").lowercase().contains("zone")) return true
+            if (tags.optString("source:maxspeed").lowercase().contains("zone")) return true
+            return tags.optString("highway") == "living_street"
+        }
+
+        private fun explicitSpeed(tags: JSONObject, bearing: Double?): Pair<Int, Boolean>? {
+            val directed = directedKmh(tags, bearing)
+            if (directed != null) return directed to zoneTag(tags)
+            val zone = parseMaxspeed(tags.optString("zone:maxspeed").ifBlank { null })
+            if (zone != null) return zone to true
+            val type = tags.optString("maxspeed:type").trim()
+            if (type.contains("zone", ignoreCase = true)) {
+                parseMaxspeed(type)?.let { return it to true }
+            }
+            if (Regex("^FR:\\d{1,3}$", RegexOption.IGNORE_CASE).matches(type)) {
+                parseMaxspeed(type)?.let { return it to false }
             }
             return null
         }
 
-        private fun zoneTag(tags: JSONObject): Boolean {
-            if (tags.optString("zone:maxspeed").isNotBlank()) return true
-            val type = tags.optString("maxspeed:type").lowercase()
-            if (type.contains("zone")) return true
-            return tags.optString("source:maxspeed").lowercase().contains("zone")
+        private fun directedKmh(tags: JSONObject, bearing: Double?): Int? {
+            val base = parseMaxspeed(tags.optString("maxspeed").ifBlank { null })
+            val fwd = parseMaxspeed(tags.optString("maxspeed:forward").ifBlank { null })
+            val back = parseMaxspeed(tags.optString("maxspeed:backward").ifBlank { null })
+            if (fwd == null && back == null) return base
+            if (bearing == null) {
+                if (base != null) return base
+                if (fwd != null && back != null) return minOf(fwd, back)
+                return fwd ?: back
+            }
+            if (base != null && fwd == null && back == null) return base
+            return base ?: fwd ?: back
         }
 
-        private fun impliedHighway(hw: String): Int? = when (hw) {
-            "living_street" -> 20
-            "motorway", "motorway_link" -> 130
-            "trunk", "trunk_link" -> 110
-            "residential", "unclassified",
-            "tertiary", "tertiary_link",
-            "secondary", "secondary_link",
-            "primary", "primary_link",
-            -> 50
-            else -> null
+        private fun zoneKmh(tags: JSONObject): Int? {
+            if (tags.optString("zone:maxspeed").isNotBlank()) {
+                return parseMaxspeed(tags.optString("zone:maxspeed"))
+            }
+            val type = tags.optString("maxspeed:type")
+            if (type.contains("zone", ignoreCase = true)) {
+                return parseMaxspeed(type) ?: parseMaxspeed(tags.optString("maxspeed").ifBlank { null })
+            }
+            if (tags.optString("enforcement") == "maxspeed" || tags.optString("type") == "enforcement") {
+                return parseMaxspeed(tags.optString("maxspeed").ifBlank { null })
+            }
+            return null
+        }
+
+        private fun contains(lat: Double, lon: Double, el: JSONObject): Boolean {
+            val rings = ArrayList<JSONArray>()
+            val members = el.optJSONArray("members")
+            if (members != null) {
+                for (i in 0 until members.length()) {
+                    val m = members.optJSONObject(i) ?: continue
+                    val role = m.optString("role")
+                    if (role.isNotBlank() && role != "outer") continue
+                    val g = m.optJSONArray("geometry") ?: continue
+                    if (ringClosed(g)) rings.add(g)
+                }
+            }
+            val geom = el.optJSONArray("geometry")
+            if (geom != null && ringClosed(geom)) rings.add(geom)
+            return rings.any { pointInRing(lat, lon, it) }
+        }
+
+        private fun ringClosed(geom: JSONArray): Boolean {
+            if (geom.length() < 4) return false
+            val a = geom.optJSONObject(0) ?: return false
+            val b = geom.optJSONObject(geom.length() - 1) ?: return false
+            return kotlin.math.abs(a.optDouble("lat") - b.optDouble("lat")) < 1e-5 &&
+                kotlin.math.abs(a.optDouble("lon") - b.optDouble("lon")) < 1e-5
+        }
+
+        private fun pointInRing(lat: Double, lon: Double, ring: JSONArray): Boolean {
+            var inside = false
+            var j = ring.length() - 1
+            for (i in 0 until ring.length()) {
+                val pi = ring.optJSONObject(i) ?: continue
+                val pj = ring.optJSONObject(j) ?: continue
+                val yi = pi.optDouble("lat")
+                val xi = pi.optDouble("lon")
+                val yj = pj.optDouble("lat")
+                val xj = pj.optDouble("lon")
+                val intersect = (yi > lat) != (yj > lat) &&
+                    lon < (xj - xi) * (lat - yi) / (if (yj == yi) 1e-12 else (yj - yi)) + xi
+                if (intersect) inside = !inside
+                j = i
+            }
+            return inside
+        }
+
+        private fun wayDistance(lat: Double, lon: Double, el: JSONObject): Pair<Double, Double?> {
+            val geom = el.optJSONArray("geometry")
+            if (geom == null || geom.length() == 0) {
+                val c = el.optJSONObject("center") ?: return 9999.0 to null
+                return meters(lat, lon, c.optDouble("lat"), c.optDouble("lon")) to null
+            }
+            if (geom.length() == 1) {
+                val p = geom.optJSONObject(0) ?: return 9999.0 to null
+                return meters(lat, lon, p.optDouble("lat"), p.optDouble("lon")) to null
+            }
+            var best = 1e12
+            var bearing: Double? = null
+            for (i in 1 until geom.length()) {
+                val a = geom.optJSONObject(i - 1) ?: continue
+                val b = geom.optJSONObject(i) ?: continue
+                val hit = distPointSeg(lat, lon, a.optDouble("lat"), a.optDouble("lon"), b.optDouble("lat"), b.optDouble("lon"))
+                if (hit.first < best) {
+                    best = hit.first
+                    bearing = hit.second
+                }
+            }
+            return best to bearing
+        }
+
+        private fun distPointSeg(lat: Double, lon: Double, lat1: Double, lon1: Double, lat2: Double, lon2: Double): Pair<Double, Double> {
+            val cosLat = cos(Math.toRadians(lat))
+            val px = lon * 111320.0 * cosLat
+            val py = lat * 110540.0
+            val ax = lon1 * 111320.0 * cosLat
+            val ay = lat1 * 110540.0
+            val bx = lon2 * 111320.0 * cosLat
+            val by = lat2 * 110540.0
+            val dx = bx - ax
+            val dy = by - ay
+            val l2 = dx * dx + dy * dy
+            var t = 0.0
+            if (l2 > 1) t = (((px - ax) * dx + (py - ay) * dy) / l2).coerceIn(0.0, 1.0)
+            val dist = kotlin.math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+            return dist to bearing(lat1, lon1, lat2, lon2)
+        }
+
+        private fun bearing(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+            val p1 = Math.toRadians(lat1)
+            val p2 = Math.toRadians(lat2)
+            val dl = Math.toRadians(lon2 - lon1)
+            val y = sin(dl) * cos(p2)
+            val x = cos(p1) * sin(p2) - sin(p1) * cos(p2) * cos(dl)
+            return (Math.toDegrees(atan2(y, x)) + 360.0) % 360.0
         }
 
         private fun meters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {

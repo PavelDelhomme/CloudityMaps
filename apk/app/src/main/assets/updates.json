@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.106",
-  "versionCode": 107,
+  "version": "0.1.107",
+  "versionCode": 108,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -14,25 +14,25 @@
   "apkAvailable": true,
   "mandatory": false,
   "forceUpdate": false,
-  "notes": "0.1.106 : la mise à jour s’affiche comme dans Hubera Fuel. Elle est proposée, jamais imposée. Téléchargement puis installation Android.",
-  "published_at": "2026-10-17T13:26:00Z",
-  "sha256": "9995c74ef11217feaaf8b6d3c82c0b9ce8c29f8e4398cdf210d5c1d392520a38",
+  "notes": "0.1.107 : la limite vient de la voie OpenStreetMap (zone 30, maxspeed). Sans tag, le panneau le dit au lieu d’afficher 50. Les ralentissements Bison Futé allongent le trajet voiture quand une station répond. Mise à jour proposée, jamais imposée.",
+  "published_at": "2026-10-17T16:30:00Z",
+  "sha256": "a843cf941afa3865ec123fe860a4e60a7f4af73ed2d373280ca9cd885a7ffbf6",
   "canonical": {
     "package": "cloud.hubera.maps",
-    "version": "0.1.106",
-    "versionCode": 107,
+    "version": "0.1.107",
+    "versionCode": 108,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
-    "sha256": "9995c74ef11217feaaf8b6d3c82c0b9ce8c29f8e4398cdf210d5c1d392520a38",
-    "notes": "0.1.106 : la mise à jour s’affiche comme dans Hubera Fuel. Elle est proposée, jamais imposée. Téléchargement puis installation Android."
+    "sha256": "a843cf941afa3865ec123fe860a4e60a7f4af73ed2d373280ca9cd885a7ffbf6",
+    "notes": "0.1.107 : la limite vient de la voie OpenStreetMap (zone 30, maxspeed). Sans tag, le panneau le dit au lieu d’afficher 50. Les ralentissements Bison Futé allongent le trajet voiture quand une station répond. Mise à jour proposée, jamais imposée."
   },
   "legacy": {
     "package": "ovh.delhomme.maps",
-    "version": "0.1.106",
-    "versionCode": 107,
+    "version": "0.1.107",
+    "versionCode": 108,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
-    "sha256": "9f77360d04f2b7fd287569ce93ee34c9d874beef3f643aa90c48da8c2a031c21",
-    "notes": "Même build 0.1.106, paquet historique."
+    "sha256": "169f45917f54a7cfce13951045032c61dce4595bde72d4ba0e607436e5241d71",
+    "notes": "Même build 0.1.107, paquet historique."
   }
 }

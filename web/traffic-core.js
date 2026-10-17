@@ -119,11 +119,10 @@
       const speed = speeds[st.id];
       if (speed == null) continue;
       const free = referenceKmh(st.axe);
-      if (!isSlow(speed, free)) continue;
       const lenKm = st.lenM / 1000;
-      const delayMin = (lenKm / speed) * 60 - (lenKm / free) * 60;
-      if (!(delayMin >= 0.15)) continue;
-      stations.push({ ...st, speed, free, delayMin });
+      const rawDelay = speed > 0 ? (lenKm / speed) * 60 - (lenKm / free) * 60 : 0;
+      const slow = isSlow(speed, free) && rawDelay >= 0.15;
+      stations.push({ ...st, speed, free, delayMin: slow ? rawDelay : 0, slow });
     }
     return stations;
   }
@@ -155,7 +154,7 @@
   }
 
   function delayOnRoute(coords, stations) {
-    const empty = { delayMin: 0, jam: null };
+    const empty = { delayMin: 0, jam: null, measured: false, spans: [] };
     if (!coords || coords.length < 2 || !stations || !stations.length) return empty;
     let minLon = 180;
     let maxLon = -180;
@@ -174,6 +173,8 @@
     samples.push(coords[coords.length - 1]);
     const pad = 0.03;
     const hits = [];
+    const slowAt = new Set();
+    let measured = false;
     for (const st of stations) {
       const outside = (lat, lon) =>
         lon < minLon - pad || lon > maxLon + pad || lat < minLat - pad || lat > maxLat + pad;
@@ -187,7 +188,12 @@
           at = i;
         }
       }
-      if (best <= MATCH_M) hits.push({ st, at });
+      if (best > MATCH_M) continue;
+      measured = true;
+      const jammed = st.slow !== false && (st.delayMin || 0) >= 0.15;
+      if (!jammed) continue;
+      hits.push({ st, at });
+      slowAt.add(at);
     }
     hits.sort((a, b) => a.at - b.at);
     const kept = [];
@@ -213,7 +219,20 @@
       }
     }
     const delayMin = Math.min(45, Math.round(raw));
-    return { delayMin, jam: delayMin > 0 ? jam : null };
+    const spans = [];
+    let cur = null;
+    for (let i = 0; i < samples.length; i += 1) {
+      if (!slowAt.has(i)) {
+        if (cur && cur.length >= 2) spans.push(cur);
+        cur = null;
+        continue;
+      }
+      if (!cur) cur = [];
+      cur.push(samples[i]);
+      if (samples[i + 1]) cur.push(samples[i + 1]);
+    }
+    if (cur && cur.length >= 2) spans.push(cur);
+    return { delayMin, jam: delayMin > 0 ? jam : null, measured, spans };
   }
 
   function annotateRoutes(routes, stations) {
@@ -224,13 +243,18 @@
       if (!coords || !coords.length) return r;
       const free = r.freeMin != null ? r.freeMin : r.min;
       const hit = delayOnRoute(coords, stations);
+      const delay = hit.delayMin || 0;
+      const status = !hit.measured ? 'uncovered' : delay >= 1 ? 'slow' : 'clear';
       return {
         ...r,
         freeMin: free,
-        trafficDelayMin: hit.delayMin,
-        min: free + hit.delayMin,
+        trafficDelayMin: delay,
+        min: free + delay,
         trafficJam: hit.jam,
-        trafficSource: hit.delayMin > 0 ? 'bison-fute' : r.trafficSource || '',
+        trafficSpans: hit.spans || [],
+        trafficMeasured: !!hit.measured,
+        trafficStatus: status,
+        trafficSource: hit.measured ? 'bison-fute' : '',
       };
     });
   }

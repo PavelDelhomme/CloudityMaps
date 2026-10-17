@@ -1,5 +1,10 @@
 # Hubera Maps — versions
 
+## 0.1.107 (17 oct. 2026)
+- Limite lue sur la voie OSM (`maxspeed`, `zone:maxspeed`, `living_street`). Plus de 50 inventé pour une rue sans tag : le panneau dit « sans tag ».
+- Trajet voiture : ralentissements Bison Futé sur le tracé quand une station répond. Durée habituelle et durée actuelle. « Évite le bouchon » proposé, pas sélectionné. Sans mesure locale, on le dit.
+- Dual APK `cloud.hubera.maps` + `ovh.delhomme.maps`, versionCode 108. OTA `forceUpdate: false` / `mandatory: false`. `GET /api/version` compare le code du client.
+
 ## 0.1.106 (17 oct. 2026)
 - Popup de mise à jour alignée sur Hubera Fuel : proposée, jamais forcée, téléchargement puis installateur Android.
 - Thème jour/nuit du téléphone. Dual APK `cloud.hubera.maps` + `ovh.delhomme.maps`, versionCode 107. OTA `forceUpdate: false` / `mandatory: false`. Pas d’overlay Nothing.
