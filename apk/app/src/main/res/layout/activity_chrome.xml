@@ -125,13 +125,14 @@
             android:paddingBottom="8dp"
             android:text="Apps Hubera"
             android:textStyle="bold"
-            android:textColor="#5A6878" />
+            android:textColor="#5A6878"
+            android:visibility="gone" />
 
-        <TextView android:id="@+id/d_music" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Music" android:textColor="#1A2330" />
-        <TextView android:id="@+id/d_fuel" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Fuel" android:textColor="#1A2330" />
-        <TextView android:id="@+id/d_docs" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Docs" android:textColor="#1A2330" />
-        <TextView android:id="@+id/d_mail" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Mail" android:textColor="#1A2330" />
-        <TextView android:id="@+id/d_id" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Compte" android:textColor="#1A2330" />
+        <TextView android:id="@+id/d_music" android:visibility="gone" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Music" android:textColor="#1A2330" />
+        <TextView android:id="@+id/d_fuel" android:visibility="gone" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Fuel" android:textColor="#1A2330" />
+        <TextView android:id="@+id/d_docs" android:visibility="gone" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Docs" android:textColor="#1A2330" />
+        <TextView android:id="@+id/d_mail" android:visibility="gone" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Mail" android:textColor="#1A2330" />
+        <TextView android:id="@+id/d_id" android:visibility="gone" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingStart="16dp" android:text="Compte" android:textColor="#1A2330" />
         <TextView android:id="@+id/d_version" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="16dp" android:textColor="#5A6878" android:textSize="12sp" />
     </LinearLayout>
 </androidx.drawerlayout.widget.DrawerLayout>
