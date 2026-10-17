@@ -4,7 +4,23 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.text.InputType
+import android.util.TypedValue
+import android.view.Gravity
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import java.util.Locale
+import androidx.appcompat.app.AlertDialog
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -67,6 +83,7 @@ class MainActivity : AppCompatActivity() {
         }
         main.postDelayed({
             runCatching { if (this::suite.isInitialized) suite.adoptHuberaId() }
+            offerHuberaAccount()
         }, 400)
         main.postDelayed({
             askLocationIfNeeded()
@@ -75,6 +92,20 @@ class MainActivity : AppCompatActivity() {
         main.postDelayed({
             runCatching { InAppUpdate(this).check() }
         }, 2800)
+    }
+
+    private fun systemNight(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+
+    private fun pushSystemNight(view: WebView?) {
+        if (view == null) return
+        val night = systemNight()
+        view.setBackgroundColor(if (night) 0xFF0F0F1A.toInt() else 0xFFF7F8FA.toInt())
+        view.evaluateJavascript(
+            "window.__huberaSystemNight=${if (night) "true" else "false"};try{applyTiles()}catch(e){}",
+            null,
+        )
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -101,7 +132,11 @@ class MainActivity : AppCompatActivity() {
         target.addJavascriptInterface(speed, "HuberaSpeed")
         val routes = RouteBridge { if (this::web.isInitialized) web else null }
         target.addJavascriptInterface(routes, "HuberaRoute")
-        suite = SuiteBridge(this) { if (this::web.isInitialized) web else null }
+        suite = SuiteBridge(
+            this,
+            { if (this::web.isInitialized) web else null },
+            onChooseAccount = { offerHuberaAccount(force = true) },
+        )
         target.addJavascriptInterface(suite, "HuberaSuite")
         val calendar = CalendarBridge(this) { if (this::suite.isInitialized) suite else null }
         target.addJavascriptInterface(calendar, "HuberaCalendar")
@@ -149,6 +184,7 @@ class MainActivity : AppCompatActivity() {
                         host.endsWith("arcgisonline.com") ||
                         host.endsWith("komoot.io") ||
                         host.endsWith("project-osrm.org") ||
+                        host.endsWith("bison-fute.gouv.fr") ||
                         host.endsWith("transitous.org") ||
                         host.endsWith("overpass-api.de") ||
                         host.endsWith("kumi.systems") ||
@@ -163,6 +199,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 view?.requestApplyInsets()
+                pushSystemNight(view)
                 if (lastSafeJs.isNotBlank()) view?.evaluateJavascript(lastSafeJs, null)
                 runCatching { if (this@MainActivity::music.isInitialized) music.startWatch() }
                 runCatching { if (this@MainActivity::suite.isInitialized) suite.refreshContacts() }
@@ -330,6 +367,200 @@ class MainActivity : AppCompatActivity() {
             if (web.canGoBack()) web.goBack()
             else moveTaskToBack(true)
         }
+    }
+
+    private fun offerHuberaAccount(force: Boolean = false) {
+        if (isFinishing || !this::suite.isInitialized) return
+        if (!force && suite.token().isNotBlank()) {
+            if (!isHuberaIdInstalled()) {
+                AlertDialog.Builder(this)
+                    .setTitle("Installer Hubera ID")
+                    .setPositiveButton("Installer") { _, _ -> openHuberaIdInstall() }
+                    .setNegativeButton("Plus tard", null)
+                    .show()
+            }
+            return
+        }
+        val accounts = runCatching {
+            cloud.hubera.id.sso.HuberaIdAccounts.listAccounts(this)
+        }.getOrDefault(emptyList()).filter { it.email.isNotBlank() }
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val ink = if (night) 0xFFE8EAED.toInt() else 0xFF202124.toInt()
+        val muted = if (night) 0xFF9AA0A6.toInt() else 0xFF5F6368.toInt()
+        val surface = if (night) 0xFF2D2E30.toInt() else Color.WHITE
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(surface)
+            setPadding(dp(8), dp(16), dp(8), dp(8))
+        }
+        box.addView(TextView(this).apply {
+            text = "Choisir un compte"
+            setTextColor(ink)
+            textSize = 22f
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        })
+        val dialog = AlertDialog.Builder(this).setView(ScrollView(this).apply { addView(box) }).create()
+        accounts.forEach { acc ->
+            val title = accountTitle(acc.displayName, acc.email)
+            box.addView(accountRow(title, acc.email, accountInitial(title, acc.email), acc.email, ink, muted) {
+                dialog.dismiss()
+                if (acc.accessToken.isBlank() && acc.refreshToken.isBlank()) {
+                    Toast.makeText(this@MainActivity, "Session absente", Toast.LENGTH_LONG).show()
+                } else {
+                    suite.continueWithHubera(acc.email)
+                }
+            })
+        }
+        box.addView(accountRow("Ajouter un compte", null, null, null, ink, muted) {
+            dialog.dismiss()
+            promptNewAccount()
+        })
+        if (!isHuberaIdInstalled()) {
+            box.addView(accountRow("Installer Hubera ID", null, null, null, ink, muted) {
+                dialog.dismiss()
+                openHuberaIdInstall()
+            })
+        }
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(ColorDrawable(surface))
+        }
+        dialog.show()
+    }
+
+    private fun accountTitle(displayName: String, email: String): String {
+        val name = displayName.trim()
+        if (name.isNotEmpty() && !name.equals(email, ignoreCase = true)) return name
+        val local = email.substringBefore('@').trim()
+        if (local.isEmpty()) return email
+        return local.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+    }
+
+    private fun accountInitial(title: String, email: String): String {
+        val source = title.trim().ifEmpty { email.trim() }
+        return if (source.isEmpty()) "?" else source.first().uppercaseChar().toString()
+    }
+
+    private fun accountRow(
+        title: String,
+        subtitle: String?,
+        letter: String?,
+        colorKey: String?,
+        ink: Int,
+        muted: Int,
+        onClick: () -> Unit,
+    ): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(64)
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            isClickable = true
+            isFocusable = true
+            val out = TypedValue()
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, out, true)
+            setBackgroundResource(out.resourceId)
+            setOnClickListener { onClick() }
+        }
+        row.addView(TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(16) }
+            gravity = Gravity.CENTER
+            textSize = 16f
+            if (letter == null) {
+                text = "+"
+                setTextColor(ink)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.TRANSPARENT)
+                    setStroke(dp(1), muted)
+                }
+            } else {
+                text = letter
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(avatarColor(colorKey ?: title))
+                }
+            }
+        })
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        labels.addView(TextView(this).apply {
+            text = title
+            setTextColor(ink)
+            textSize = 16f
+            maxLines = 1
+        })
+        val sub = subtitle?.trim().orEmpty()
+        if (sub.isNotEmpty() && !sub.equals(title, ignoreCase = true)) {
+            labels.addView(TextView(this).apply {
+                text = sub
+                setTextColor(muted)
+                textSize = 14f
+                maxLines = 1
+            })
+        }
+        row.addView(labels)
+        return row
+    }
+
+    private fun avatarColor(key: String): Int {
+        val palette = intArrayOf(
+            0xFF1A73E8.toInt(), 0xFF188038.toInt(), 0xFFE37400.toInt(), 0xFF9334E6.toInt(),
+            0xFF007B83.toInt(), 0xFFC5221F.toInt(), 0xFF1967D2.toInt(), 0xFF0D7377.toInt(),
+        )
+        var hash = 0
+        for (ch in key.lowercase(Locale.ROOT)) hash = (hash * 31 + ch.code) and 0x7fffffff
+        return palette[hash % palette.size]
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun promptNewAccount() {
+        val email = EditText(this).apply { hint = "E-mail" }
+        val password = EditText(this).apply {
+            hint = "Mot de passe Hubera ID"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 16, 48, 0)
+            addView(email)
+            addView(password)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Ajouter un compte")
+            .setView(box)
+            .setPositiveButton("Créer la session") { _, _ ->
+                Thread {
+                    val err = runCatching {
+                        suite.loginNewAccount(email.text.toString(), password.text.toString())
+                    }.getOrElse { it.message }
+                    runOnUiThread {
+                        if (!err.isNullOrBlank()) {
+                            Toast.makeText(this, err, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }.start()
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun isHuberaIdInstalled(): Boolean =
+        runCatching {
+            packageManager.getPackageInfo("cloud.hubera.id", 0)
+            true
+        }.getOrDefault(false)
+
+    private fun openHuberaIdInstall() {
+        val launch = packageManager.getLaunchIntentForPackage("cloud.hubera.id")
+        val intent = launch ?: Intent(Intent.ACTION_VIEW, Uri.parse("https://id.hubera.cloud/"))
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { startActivity(intent) }
     }
 
     /** Android 15 : env(safe-area-inset-*) est souvent 0 dans la WebView. */

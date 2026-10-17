@@ -1,4 +1,4 @@
-/* Hubera Maps — OSM + Photon + OSRM. Chrome type Google Maps + Fuel + Music. */
+/* Hubera Maps — OSM + Photon + OSRM. Trafic voiture : Bison Futé. Chrome type Google Maps + Fuel + Music. */
 const LAST_ME_KEY = 'hubera-maps-last-me';
 const PLACE_KEY = 'hubera-maps-places';
 const CONTACT_GEO_KEY = 'hubera-maps-contact-geo';
@@ -11,25 +11,50 @@ const FUEL_UX_KEY = 'hubera-maps-fuel-ux-dev';
 const FUEL_SNAP_KEY = 'hubera-maps-fuel-snap';
 const FUEL_LOGO_KEY = 'hubera-maps-fuel-logo';
 const FUEL_VEH_KEY = 'hubera-maps-fuel-veh';
+const FUEL_VEH_PICK_KEY = 'hubera-maps-fuel-veh-user';
+const FUEL_VEH_SEEN_KEY = 'hubera-maps-fuel-veh-seen';
 const PLACES_CACHE_KEY = 'hubera-maps-osm-places-v1';
 const PLANNED_TRIPS_KEY = 'hubera-maps-planned-trips';
 let fuelPageTab = 'home';
-function loadSelectedFuelVehicleId() {
-  const n = Number(localStorage.getItem(FUEL_VEH_KEY) || '0');
+function loadFuelVehNumber(key) {
+  const n = Number(localStorage.getItem(key) || '0');
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
-function setSelectedFuelVehicle(id) {
+function loadSelectedFuelVehicleId() {
+  return loadFuelVehNumber(FUEL_VEH_KEY);
+}
+function userLockedFuelVehicle() {
+  try {
+    return localStorage.getItem(FUEL_VEH_PICK_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function rememberSeenFuelActive(id) {
+  const n = Number(id) || 0;
+  try {
+    if (n > 0) localStorage.setItem(FUEL_VEH_SEEN_KEY, String(n));
+    else localStorage.removeItem(FUEL_VEH_SEEN_KEY);
+  } catch {
+    /* quota */
+  }
+}
+function setSelectedFuelVehicle(id, fromUser) {
   const n = Number(id);
   fuelSelectedVehicleId = Number.isFinite(n) && n > 0 ? n : 0;
   try {
     if (fuelSelectedVehicleId) localStorage.setItem(FUEL_VEH_KEY, String(fuelSelectedVehicleId));
     else localStorage.removeItem(FUEL_VEH_KEY);
+    if (fromUser && fuelSelectedVehicleId) {
+      localStorage.setItem(FUEL_VEH_PICK_KEY, '1');
+      fuelUserPickedVehicle = true;
+    }
   } catch {
     /* quota */
   }
 }
 let fuelSelectedVehicleId = loadSelectedFuelVehicleId();
-let fuelUserPickedVehicle = false;
+let fuelUserPickedVehicle = userLockedFuelVehicle();
 function readLastMe() {
   try {
     const p = JSON.parse(localStorage.getItem(LAST_ME_KEY) || 'null');
@@ -78,9 +103,14 @@ function wantNight() {
   const p = nightPref();
   if (p === 'on') return true;
   if (p === 'off') return false;
+  if (window.__huberaSystemNight === true) return true;
+  if (window.__huberaSystemNight === false) return false;
   try {
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       return true;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      return false;
     }
   } catch {
     /* WebView ancien */
@@ -641,6 +671,17 @@ function syncChromeHeight() {
   if (!el) return;
   const h = Math.ceil(el.getBoundingClientRect().height);
   if (h > 40) document.body.style.setProperty('--chrome', `${h}px`);
+  placeRoadSign();
+}
+
+function placeRoadSign() {
+  const sign = document.getElementById('roadSign');
+  const top = document.getElementById('topChrome');
+  if (!sign || !top) return;
+  const bottom = Math.ceil(top.getBoundingClientRect().bottom);
+  sign.style.top = `${Math.max(8, bottom + 8)}px`;
+  sign.style.right = '14px';
+  sign.style.left = 'auto';
 }
 
 function syncClear() {
@@ -2054,6 +2095,95 @@ function corridorVias(from, to) {
   }));
 }
 
+let trafficCache = null;
+
+function trafficUrlList(kind) {
+  const direct =
+    kind === 'qtv'
+      ? 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/QTV-DIR/qtvDir.xml'
+      : 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/QTV-DIR/refDir.csv';
+  const path = kind === 'qtv' ? '/traffic/qtv' : '/traffic/stations';
+  const onFile = typeof location !== 'undefined' && location.protocol === 'file:';
+  if (onFile) return [direct, `https://maps.hubera.cloud${path}`];
+  return [path, direct];
+}
+
+async function fetchTextFirst(urls, signal) {
+  for (const url of urls) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 9000);
+    if (signal) signal.addEventListener('abort', () => ctrl.abort(), { once: true });
+    try {
+      const res = await fetch(url, { headers: { Accept: '*/*' }, signal: ctrl.signal });
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (text && text.length > 80) return text;
+    } catch (err) {
+      if (err && err.name === 'AbortError' && signal && signal.aborted) throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return '';
+}
+
+async function loadTrafficStations(signal) {
+  if (typeof HuberaTraffic === 'undefined') return [];
+  const now = Date.now();
+  if (trafficCache && now - trafficCache.at < 90000 && trafficCache.stations.length) {
+    return trafficCache.stations;
+  }
+  const [csv, xml] = await Promise.all([
+    fetchTextFirst(trafficUrlList('stations'), signal),
+    fetchTextFirst(trafficUrlList('qtv'), signal),
+  ]);
+  if (!csv || !xml) return [];
+  const stations = HuberaTraffic.buildTrafficStations(csv, xml);
+  if (!stations.length) return [];
+  trafficCache = { at: now, stations };
+  return stations;
+}
+
+async function enrichRoutesWithTraffic(from, to, routes, signal) {
+  if (travelMode !== 'car' || !routes || !routes.length) return routes;
+  if (typeof HuberaTraffic === 'undefined') return routes;
+  let stations = [];
+  try {
+    stations = await loadTrafficStations(signal);
+  } catch (err) {
+    if (err && err.name === 'AbortError') throw err;
+    return routes;
+  }
+  if (!stations.length) return routes;
+  const tagged = HuberaTraffic.annotateRoutes(routes, stations);
+  const base = tagged[0];
+  if (!base || !HuberaTraffic.isHeavy(base) || !base.trafficJam) return tagged;
+  const via = offsetAroundWork(base.trafficJam, from, to);
+  let detour = [];
+  try {
+    detour = await osrmPath([from, via, to], 0, '', signal);
+  } catch (err) {
+    if (err && err.name === 'AbortError') throw err;
+    return tagged;
+  }
+  return HuberaTraffic.offerAvoidJam(tagged, detour[0] || null, stations);
+}
+
+function trafficNoteHtml() {
+  const delays = routeChoices.filter((r) => (r.trafficDelayMin || 0) >= 1);
+  if (!delays.length) return '';
+  const sel = currentChoice();
+  const offered = routeChoices.some((r) => r.kind === 'traffic');
+  let text = 'Circulation temps réel (Bison Futé).';
+  if (sel && sel.trafficDelayMin >= 1 && sel.freeMin != null) {
+    text += ` Trajet affiché : ${sel.freeMin} min sans trafic, ${sel.min} min avec les ralentissements.`;
+  }
+  if (offered) {
+    text += ' « Évite le bouchon » est proposé : tu le choisis, il n’est pas lancé à ta place.';
+  }
+  return `<p class="works-note">${text}</p>`;
+}
+
 function routeCacheKey(from, to) {
   const r = (n) => Number(n).toFixed(4);
   return `${travelMode}|${r(from.lat)},${r(from.lon)}|${r(to.lat)},${r(to.lon)}`;
@@ -2521,15 +2651,17 @@ function renderAlts() {
   showAltsShell(
     `<div class="picks">` +
       routeChoices
-        .map(
-          (r) =>
+        .map((r) => {
+          const delay = (r.trafficDelayMin || 0) >= 1 ? ` · +${r.trafficDelayMin} min` : '';
+          return (
             `<button type="button" class="alt${r.id === selectedRouteId ? ' on' : ''}" data-id="${r.id}">` +
             `<div class="k">${esc(r.label)}</div>` +
             `<div class="t">${r.min} min</div>` +
-            `<div class="d">${r.km} km</div></button>`,
-        )
+            `<div class="d">${r.km} km${delay}</div></button>`
+          );
+        })
         .join('') +
-      `</div>${worksNote}` +
+      `</div>${worksNote}${trafficNoteHtml()}` +
       `<label class="cal-when">Enregistrer à une date` +
       `<input type="datetime-local" id="tripCalWhen" value="${esc(defaultTripWhen())}" /></label>` +
       `<button type="button" class="go cal" id="btnSaveTripDate">Enregistrer dans Calendar</button>` +
@@ -2711,7 +2843,8 @@ function liveFuelHud() {
   const veh = activeFuelVehicle();
   if (!veh) return null;
   const tank = Number(veh.tank) || 0;
-  const l100 = Number(veh.l100) > 0 ? Number(veh.l100) : 0;
+  const l100base = Number(veh.l100) > 0 ? Number(veh.l100) : 0;
+  const l100 = l100base > 0 ? l100base * comfortFactor(dashPrefs()) : 0;
   let liters =
     veh.liters != null && Number(veh.liters) >= 0
       ? Number(veh.liters)
@@ -2941,7 +3074,7 @@ function promptFuelGate(kind) {
   if (hint) {
     hint.textContent =
       kind === 'start'
-        ? 'Voiture + jauge. Tu peux démarrer tout de suite (3 s) si tu n’as pas le temps.'
+        ? 'Voiture + jauge. Le trajet ne démarre que si tu valides.'
         : 'Ajuste la jauge. Je confirme nourrit l’IA conso ; Je ne confirme pas enregistre sans apprendre.';
   }
   if (sel) {
@@ -2963,16 +3096,7 @@ function promptFuelGate(kind) {
     };
   }
   sheet.hidden = false;
-  let auto = 0;
-  if (kind === 'start') {
-    auto = window.setTimeout(() => {
-      sheet.hidden = true;
-      const veh = (sel && sel.value) || fuelSelectedVehicleId;
-      startFreeTracking(veh);
-      toast('Trajet démarré · jauge à confirmer à l’arrêt');
-    }, 3000);
-  }
-  const clear = () => window.clearTimeout(auto);
+  const clear = () => {};
   const go = async (skip) => {
     clear();
     sheet.hidden = true;
@@ -2983,7 +3107,7 @@ function promptFuelGate(kind) {
         locNative()?.openSettings?.();
         return;
       }
-      if (sel && sel.value && sel.value !== '0') setSelectedFuelVehicle(sel.value);
+      if (sel && sel.value && sel.value !== '0') setSelectedFuelVehicle(sel.value, true);
       startFreeTracking(sel && sel.value !== '0' ? sel.value : 0);
       if (!skip) toast('Jauge enregistrée pour ce départ');
     } else {
@@ -3058,6 +3182,7 @@ function enterNavUi() {
     if (roadSignEl) roadSignEl.hidden = false;
     const signs = document.getElementById('navSigns');
     if (signs) signs.hidden = false;
+    requestAnimationFrame(placeRoadSign);
     void refreshRoad(me.lat, me.lon);
   }
 }
@@ -3417,6 +3542,7 @@ function paintSpeedLimit(kmh, zone) {
     zoneEl.hidden = !isZone;
     zoneEl.textContent = kmh <= 20 ? 'ZONE 20' : kmh <= 30 ? 'ZONE 30' : 'ZONE';
   }
+  placeRoadSign();
 }
 
 window.__huberaSpeedLimit = function (kmh, zone) {
@@ -3883,18 +4009,29 @@ async function routeFromTo(origin, dest) {
   paintTripInfoMenu();
   if (travelMode === 'car' && routeChoices.length) {
     void (async () => {
+      let next = routeChoices;
       try {
-        const enriched = await enrichRoutesWithWorks(lastOrigin, lastDest, routeChoices, signal);
-        if (gen !== routeGen) return;
-        if (!enriched || !enriched.length) return;
-        const keep = selectedRouteId;
-        routeChoices = enriched;
-        if (!routeChoices.some((r) => r.id === keep)) selectedRouteId = routeChoices[0].id;
-        drawChoices(selectedRouteId);
-        if (!navigating) renderAlts();
-      } catch {
-        /* Overpass / OSRM travaux : on garde l’itinéraire déjà affiché */
+        next = await enrichRoutesWithTraffic(lastOrigin, lastDest, next, signal);
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
       }
+      if (gen !== routeGen) return;
+      try {
+        next = await enrichRoutesWithWorks(lastOrigin, lastDest, next, signal);
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+      }
+      if (gen !== routeGen) return;
+      if (trafficCache && trafficCache.stations.length && typeof HuberaTraffic !== 'undefined') {
+        next = HuberaTraffic.annotateRoutes(next, trafficCache.stations);
+      }
+      if (!next || !next.length) return;
+      const keep = selectedRouteId;
+      routeChoices = next;
+      if (!routeChoices.some((r) => r.id === keep)) selectedRouteId = routeChoices[0].id;
+      drawChoices(selectedRouteId);
+      if (!navigating) renderAlts();
+      else paintHud(currentChoice());
     })();
   }
 }
@@ -4379,6 +4516,7 @@ function renderChips() {
     );
   }
   chipsEl.innerHTML = bits.join('');
+  placeRoadSign();
 }
 
 function renderSaved() {
@@ -4578,6 +4716,8 @@ function parseFuelSnapPack(raw) {
     } else if (kind === 'B' && body) {
       const [amount, spent, name] = body.split('~');
       out.budget = { amount: Number(amount) || 0, spent: Number(spent) || 0, name: name || 'Budget' };
+    } else if (kind === 'L') {
+      out.lastVehicleId = Number(body) || 0;
     }
   }
   return out;
@@ -4587,12 +4727,30 @@ function activeFuelVehicle() {
   const snap = loadFuelSnap();
   const list = snap.vehicles || [];
   if (fuelSelectedVehicleId) {
-    const hit = list.find((v) => v.id === fuelSelectedVehicleId);
+    const hit = list.find((v) => Number(v.id) === Number(fuelSelectedVehicleId));
     if (hit) return hit;
   }
-  const act = list.find((v) => v.active) || list[0] || null;
-  if (act && !fuelSelectedVehicleId) setSelectedFuelVehicle(act.id);
-  return act;
+  const chosen = fuelChoiceId({ vehicles: list });
+  if (chosen) {
+    const hit = list.find((v) => Number(v.id) === chosen);
+    if (hit) return hit;
+  }
+  return list.length === 1 ? list[0] : null;
+}
+
+function fuelChoiceId(parsed) {
+  const list = (parsed && parsed.vehicles) || [];
+  const last = Number(parsed && parsed.lastVehicleId) || 0;
+  if (last > 0 && list.some((v) => Number(v.id) === last)) return last;
+  const ids = [
+    ...new Set(
+      list
+        .filter((v) => v && v.active)
+        .map((v) => Number(v.id))
+        .filter((id) => id > 0),
+    ),
+  ];
+  return ids.length === 1 ? ids[0] : 0;
 }
 
 let lastFuelSnapAt = 0;
@@ -4680,7 +4838,7 @@ function applyFuelHttpSnap(data) {
         id: Number(v.id),
         name: v.name || `Véhicule ${v.id}`,
         pct: Number.isFinite(Number(v.pct)) ? Number(v.pct) : -1,
-        active: Boolean(v.isActive || v.isDefault || v.id === data.activeVehicleId),
+        active: Boolean(v.isActive || v.isDefault),
         tank: Number(v.tankCapacity || v.tank) || 0,
         liters: Number.isFinite(Number(v.liters)) ? Number(v.liters) : -1,
         l100: Number(v.l100 || v.avgConsumption || v.consumptionPer100) || 0,
@@ -4698,8 +4856,11 @@ function applyFuelHttpSnap(data) {
     budget: data.budget && typeof data.budget === 'object' ? data.budget : loadFuelSnap().budget,
   };
   if (!snap.vehicles.length) return false;
+  const flagged = snap.vehicles.filter((v) => v.active).map((v) => Number(v.id));
+  if (flagged.length === 1) snap.lastVehicleId = flagged[0];
+  else snap.vehicles.forEach((v) => { v.active = false; });
   saveFuelSnap(snap);
-  applyFuelSnapDefaultVehicle(snap);
+  applyFuelSnapDefaultVehicle(snap, 'http');
   mergeFuelPlaces(data.places);
   fuelSnapTries = 0;
   lastFuelSnapAt = Date.now();
@@ -4781,13 +4942,44 @@ function openFuelApp() {
   return false;
 }
 
-function applyFuelSnapDefaultVehicle(parsed) {
+function applyFuelSnapDefaultVehicle(parsed, source) {
   const list = (parsed && parsed.vehicles) || [];
-  if (fuelUserPickedVehicle && fuelSelectedVehicleId && list.some((v) => v.id === fuelSelectedVehicleId)) {
+  const fuelActive = fuelChoiceId(parsed);
+  const saved = loadSelectedFuelVehicleId();
+  const seen = loadFuelVehNumber(FUEL_VEH_SEEN_KEY);
+  const locked = fuelUserPickedVehicle || userLockedFuelVehicle();
+  const inList = (id) => id > 0 && list.some((v) => Number(v.id) === Number(id));
+  if (source === 'http' && (locked || seen)) {
+    if (locked && inList(saved)) setSelectedFuelVehicle(saved, false);
     return;
   }
-  const act = list.find((v) => v.active) || list[0];
-  if (act) setSelectedFuelVehicle(act.id);
+  if (locked && inList(saved)) {
+    const fuelChanged =
+      source !== 'http' &&
+      fuelActive &&
+      seen &&
+      fuelActive !== seen &&
+      fuelActive !== Number(saved) &&
+      inList(fuelActive);
+    if (fuelChanged) {
+      setSelectedFuelVehicle(fuelActive, true);
+      rememberSeenFuelActive(fuelActive);
+      return;
+    }
+    if (fuelActive) rememberSeenFuelActive(fuelActive);
+    setSelectedFuelVehicle(saved, false);
+    return;
+  }
+  if (fuelActive && inList(fuelActive)) {
+    setSelectedFuelVehicle(fuelActive, false);
+    rememberSeenFuelActive(fuelActive);
+    return;
+  }
+  if (list.length === 1 && Number(list[0].id) > 0) {
+    setSelectedFuelVehicle(list[0].id, false);
+    return;
+  }
+  if (!locked) setSelectedFuelVehicle(0, false);
 }
 
 function vehicleChipsHtml() {
@@ -4813,7 +5005,7 @@ function bindFuelVehicleChips(root) {
     b.onclick = () => {
       const id = Number(b.dataset.vid);
       if (!Number.isFinite(id) || id <= 0) return;
-      setSelectedFuelVehicle(id);
+      setSelectedFuelVehicle(id, true);
       fuelUserPickedVehicle = true;
       fuelControl('select', { vehicleId: id });
       renderFuelHome();
@@ -4821,6 +5013,67 @@ function bindFuelVehicleChips(root) {
       paintFuelPeek();
     };
   });
+}
+
+function dashPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem('hubera_maps_dash') || '{}');
+    return { open: !!p.open, ac: !!p.ac, heat: !!p.heat, deg: Number.isFinite(Number(p.deg)) ? Number(p.deg) : 20 };
+  } catch (_) {
+    return { open: false, ac: false, heat: false, deg: 20 };
+  }
+}
+
+function saveDash(p) {
+  localStorage.setItem('hubera_maps_dash', JSON.stringify(p));
+}
+
+function comfortFactor(p) {
+  let f = 1;
+  if (p.ac) f += 0.08;
+  if (p.heat) f += 0.06;
+  if (p.deg < 5) f += 0.05;
+  if (p.deg > 28) f += 0.04;
+  return f;
+}
+
+function dashControlsHtml() {
+  const p = dashPrefs();
+  const factor = comfortFactor(p);
+  const extra = p.open
+    ? `<div class="comfort-row">` +
+      `<button type="button" id="dashAc" class="${p.ac ? 'on' : ''}">Clim</button>` +
+      `<button type="button" id="dashHeat" class="${p.heat ? 'on' : ''}">Chauffage</button>` +
+      `<label>Degré <input id="dashDeg" type="number" min="-10" max="40" value="${p.deg}"></label>` +
+      `</div>` +
+      `<div class="dash-note">Estimation locale de conso × ${factor.toFixed(2)} (clim, chauffage, température). Ce n’est pas une mesure Fuel.</div>`
+    : '';
+  return `<button type="button" class="ghost" id="dashToggle">${p.open ? 'Masquer le tableau de bord' : 'Tableau de bord'}</button>` + extra;
+}
+
+function bindDashControls(root) {
+  if (!root) return;
+  const toggle = root.querySelector('#dashToggle');
+  if (toggle) {
+    toggle.onclick = () => {
+      const p = dashPrefs();
+      p.open = !p.open;
+      saveDash(p);
+      renderFuelHome();
+    };
+  }
+  const ac = root.querySelector('#dashAc');
+  const heat = root.querySelector('#dashHeat');
+  const deg = root.querySelector('#dashDeg');
+  if (ac) ac.onclick = () => { const p = dashPrefs(); p.ac = !p.ac; saveDash(p); renderFuelHome(); };
+  if (heat) heat.onclick = () => { const p = dashPrefs(); p.heat = !p.heat; saveDash(p); renderFuelHome(); };
+  if (deg) deg.onchange = () => {
+    const p = dashPrefs();
+    const n = Number(deg.value);
+    p.deg = Number.isFinite(n) ? Math.max(-10, Math.min(40, n)) : 20;
+    saveDash(p);
+    renderFuelHome();
+  };
 }
 
 function renderFuelHome() {
@@ -4859,16 +5112,20 @@ function renderFuelHome() {
     if (inst) inst.onclick = () => openFuelApp();
     return;
   }
+  const dash = dashPrefs();
+  const gaugeBlock = dash.open
+    ? `<div class="fuel-gauge-card">` +
+      `<div class="lab">${esc(veh ? veh.name : 'Véhicule')}</div>` +
+      `<div class="pct">${esc(gaugeLabel)}</div>` +
+      `<div class="lab" style="margin-top:8px">${esc(gaugeSub)}</div>` +
+      `<button type="button" class="hubera-open" id="fuelHomeOpenApp">Ouvrir Hubera Fuel</button>` +
+      `</div>`
+    : '';
   home.innerHTML =
     `<div class="fuel-panel">` +
     (chips || emptyGarage) +
-    `<div class="fuel-gauge-card">` +
-    `<div class="lab">${esc(veh ? veh.name : 'Véhicule')}</div>` +
-    `<div class="pct">${esc(gaugeLabel)}</div>` +
-    `<div class="bar"><i id="fuelHomeGaugeFill" style="width:${pct == null ? 0 : pct}%"></i></div>` +
-    `<div class="lab" style="margin-top:8px">${esc(gaugeSub)}</div>` +
-    `<button type="button" class="hubera-open" id="fuelHomeOpenApp">Ouvrir Hubera Fuel</button>` +
-    `</div>` +
+    dashControlsHtml() +
+    gaugeBlock +
     `<div class="fuel-actions${live ? ' live' : ''}">` +
     (live
       ? `<button type="button" class="ghost" id="fuelHomePause">Pause</button>` +
@@ -4892,6 +5149,7 @@ function renderFuelHome() {
   if (retry) retry.onclick = () => requestFuelSnapshot(true);
   if (openEmpty) openEmpty.onclick = () => openFuelApp();
   bindFuelVehicleChips(home);
+  bindDashControls(home);
 }
 
 function paintFuelPeek() {
@@ -5236,6 +5494,7 @@ function setTab(id) {
   if (id === 'settings') renderSettings();
   if (id === 'offline') renderOffline();
   if (id === 'fuelux') renderFuelUxPage();
+  placeRoadSign();
   closeDrawer();
 }
 
@@ -5836,7 +6095,7 @@ window.__mapsFuelEvent = function (raw) {
       const parsed = parseFuelSnapPack(snapPack);
       if (parsed) {
         saveFuelSnap(parsed);
-        applyFuelSnapDefaultVehicle(parsed);
+        applyFuelSnapDefaultVehicle(parsed, 'native');
         lastFuelSnapAt = Date.now();
         paintFuelPeek();
         renderFuelHome();

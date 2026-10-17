@@ -16,8 +16,9 @@ object HuberaIdAccounts {
 
     fun listAccounts(ctx: Context): List<HuberaIdAccount> {
         return try {
+            val copies = listAllCopies(ctx)
             val best = linkedMapOf<String, HuberaIdAccount>()
-            for (acc in listAllCopies(ctx)) {
+            for (acc in copies) {
                 val email = acc.email.trim()
                 if (email.isEmpty()) continue
                 val prev = best[email]
@@ -25,7 +26,17 @@ object HuberaIdAccounts {
                     best[email] = acc
                 }
             }
-            best.values.toList()
+            val accounts = best.values.toList()
+            val prefs = ctx.getSharedPreferences("hubera_device_account", Context.MODE_PRIVATE)
+            val pin = AccountPickerOrder.choosePin(
+                accounts,
+                copies,
+                prefs.getString("email", null),
+            )
+            if (!pin.isNullOrEmpty()) {
+                prefs.edit().putString("email", pin).apply()
+            }
+            AccountPickerOrder.placeFirst(accounts, pin)
         } catch (_: Throwable) {
             emptyList()
         }

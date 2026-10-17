@@ -1,5 +1,13 @@
 # Hubera Maps — versions
 
+## 0.1.106 (17 oct. 2026)
+- Popup de mise à jour alignée sur Hubera Fuel : proposée, jamais forcée, téléchargement puis installateur Android.
+- Thème jour/nuit du téléphone. Dual APK `cloud.hubera.maps` + `ovh.delhomme.maps`, versionCode 107. OTA `forceUpdate: false` / `mandatory: false`. Pas d’overlay Nothing.
+
+## 0.1.105 (17 oct. 2026)
+- Trajet voiture : durée avec les vitesses Bison Futé quand le flux répond. « Évite le bouchon » seulement s’il fait gagner au moins 5 min, jamais sélectionné tout seul.
+- Dual APK `cloud.hubera.maps` + `ovh.delhomme.maps`, versionCode 106. OTA `forceUpdate: false` / `mandatory: false`. Pas d’overlay Nothing.
+
 ## 0.1.92 (12 oct. 2026)
 - Pont GPS : écoute **tous** les providers (`huberalab` inclus). Un mock gagne ~120 s sur le GNSS réel. Harnais `cmd location` n’utilise plus le nom `gps` (interdit quand le GPS matériel existe).
 - Dual APK vc 93, OTA jamais forcée. Overlay Samsung + Blackview `-r`.

@@ -20,6 +20,7 @@ import java.util.concurrent.Executors
 class SuiteBridge(
     private val context: Context,
     private val web: () -> WebView?,
+    private val onChooseAccount: (() -> Unit)? = null,
 ) {
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
@@ -89,6 +90,11 @@ class SuiteBridge(
         runCatching {
             HuberaIdAccounts.listAccounts(context).joinToString("\n") { it.email }
         }.getOrDefault("")
+
+    @JavascriptInterface
+    fun openAccountChooser() {
+        main.post { onChooseAccount?.invoke() }
+    }
 
     @JavascriptInterface
     fun continueWithHubera(email: String) {
@@ -217,6 +223,50 @@ class SuiteBridge(
         } catch (t: Throwable) {
             android.util.Log.w("HuberaSuite", "${t.javaClass.simpleName} $url ${t.message}")
             null
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** Crée la session Hubera ID depuis Maps, pour que les autres apps la voient. */
+    fun loginNewAccount(email: String, password: String): String? {
+        val clean = email.trim().lowercase()
+        if (clean.isEmpty() || password.isEmpty()) return "E-mail et mot de passe requis"
+        val body = org.json.JSONObject()
+            .put("email", clean)
+            .put("password", password)
+            .put("tenant_id", "1")
+            .toString()
+        val conn = (URL("https://id.hubera.cloud/auth/login").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+            doOutput = true
+            connectTimeout = 12_000
+            readTimeout = 12_000
+        }
+        return try {
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            val text = (if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.readText().orEmpty()
+            val json = org.json.JSONObject(text.ifBlank { "{}" })
+            if (json.optBoolean("requires_2fa")) return "Validation en deux étapes : ouvre Hubera ID"
+            val access = json.optString("access_token")
+            if (access.isBlank()) return json.optString("error").ifBlank { "Identifiants invalides" }
+            val refresh = json.optString("refresh_token")
+            setToken(access)
+            prefs.edit().putString("email", clean).apply()
+            HuberaIdAccounts.saveSession(
+                context,
+                clean,
+                access,
+                refresh,
+                issuer = "maps",
+                gatewayUrl = "https://id.hubera.cloud",
+            )
+            null
+        } catch (t: Throwable) {
+            t.message ?: "Connexion impossible"
         } finally {
             conn.disconnect()
         }

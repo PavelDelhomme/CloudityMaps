@@ -2,8 +2,8 @@
   "app": "hubera_maps",
   "slug": "maps",
   "name": "Hubera Maps",
-  "version": "0.1.96",
-  "versionCode": 97,
+  "version": "0.1.106",
+  "versionCode": 107,
   "package": "cloud.hubera.maps",
   "signingCertSha256": "3cf6c5321da1517e79940c9e25514a639b2c449e3eff7df7476876cbf6f4c11f",
   "min_supported": "0.1.0",
@@ -14,25 +14,25 @@
   "apkAvailable": true,
   "mandatory": false,
   "forceUpdate": false,
-  "notes": "0.1.96 : pleins Fuel du véhicule choisi, dont la 206. Mise à jour proposée, pas forcée.",
-  "published_at": "2026-10-14T02:00:00Z",
-  "sha256": "0a68fd5c4efacf3fbbbffa10fc3e1bc3690ba01324eb45825044605dcbd64dc8",
+  "notes": "0.1.106 : la mise à jour s’affiche comme dans Hubera Fuel. Elle est proposée, jamais imposée. Téléchargement puis installation Android.",
+  "published_at": "2026-10-17T13:26:00Z",
+  "sha256": "9995c74ef11217feaaf8b6d3c82c0b9ce8c29f8e4398cdf210d5c1d392520a38",
   "canonical": {
     "package": "cloud.hubera.maps",
-    "version": "0.1.96",
-    "versionCode": 97,
+    "version": "0.1.106",
+    "versionCode": 107,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps.apk",
-    "sha256": "0a68fd5c4efacf3fbbbffa10fc3e1bc3690ba01324eb45825044605dcbd64dc8",
-    "notes": "0.1.96 : pleins Fuel du véhicule choisi, dont la 206. Mise à jour proposée, pas forcée."
+    "sha256": "9995c74ef11217feaaf8b6d3c82c0b9ce8c29f8e4398cdf210d5c1d392520a38",
+    "notes": "0.1.106 : la mise à jour s’affiche comme dans Hubera Fuel. Elle est proposée, jamais imposée. Téléchargement puis installation Android."
   },
   "legacy": {
     "package": "ovh.delhomme.maps",
-    "version": "0.1.96",
-    "versionCode": 97,
+    "version": "0.1.106",
+    "versionCode": 107,
     "apk": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
     "apk_url": "https://maps.hubera.cloud/apk/hubera-maps-legacy.apk",
-    "sha256": "b4de38c10bf60b35c6300b26f80074af1e4a37d760b092b8b05d086b7fbe13f7",
-    "notes": "Même build 0.1.96, paquet historique."
+    "sha256": "9f77360d04f2b7fd287569ce93ee34c9d874beef3f643aa90c48da8c2a031c21",
+    "notes": "Même build 0.1.106, paquet historique."
   }
 }

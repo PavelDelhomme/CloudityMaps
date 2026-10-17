@@ -215,7 +215,8 @@
     .hud-speed .v { font-size: 18px; font-weight: 800; line-height: 1; letter-spacing: -.04em; color: #f8fafc; }
     .hud-speed .u { font-size: 9px; color: #94a3b8; font-weight: 700; letter-spacing: .04em; margin-top: 2px; }
     .road-sign {
-      position: relative; right: auto; top: auto;
+      position: fixed; z-index: 1660; right: 14px; left: auto;
+      top: calc(var(--safe-top) + 118px);
       width: 58px; height: 58px; padding: 0;
       border-radius: 50%; border: 5px solid #e11d2a; background: #fff;
       box-shadow: 0 2px 8px rgba(0,0,0,.45);
@@ -416,7 +417,7 @@
     }
     .mode.on { background: #3f1d2e; border-color: #e94560; color: #fff; }
     .fab {
-      position: absolute; z-index: 1300; right: 14px;
+      position: absolute; z-index: 1600; right: 14px;
       bottom: calc(var(--chrome) + 10px);
       width: 52px; height: 52px; border-radius: 14px; border: 1px solid #2d2d44; background: #1a1a2e; color: #e94560;
       box-shadow: 0 2px 8px rgba(0,0,0,.45); cursor: pointer; display: grid; place-items: center;
@@ -581,6 +582,11 @@
     .fuel-gauge-card .bar { height: 10px; border-radius: 99px; background: #0f172a; overflow: hidden; }
     .fuel-gauge-card .bar i { display: block; height: 100%; background: #e94560; }
     .fuel-veh-row { display: flex; gap: 8px; overflow-x: auto; margin: 0 0 12px; scrollbar-width: none; }
+    .fuel-veh { min-height: 44px; padding: 10px 14px; border-radius: 12px; font-size: 15px; font-weight: 700; }
+    .comfort-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 12px; }
+    .comfort-row button, .comfort-row input { min-height: 40px; border-radius: 12px; border: 1px solid #2d2d44; background: #16213e; color: #f1f5f9; padding: 0 12px; }
+    .comfort-row button.on { background: #e94560; color: #fff; border-color: #e94560; }
+    .dash-note { color: #94a3b8; font-size: 12px; margin-top: 6px; }
     .fuel-veh {
       flex-shrink: 0; border: 1px solid #2d2d44; background: #16213e; color: #f1f5f9;
       border-radius: 999px; padding: 8px 12px; font-size: 13px; font-weight: 700; cursor: pointer;
@@ -649,21 +655,25 @@
       color: #94a3b8; font-size: 18px; cursor: pointer; flex-shrink: 0;
     }
     .music-peek {
-      position: absolute; z-index: 1305; left: auto; right: 12px;
-      bottom: calc(var(--chrome) + 12px);
-      width: 44px; height: 44px; border-radius: 22px; border: 1px solid #2d2d44;
-      background: #1a1a2e; color: #e94560; font-size: 18px; cursor: pointer;
+      position: absolute; z-index: 1600; left: auto; right: 14px;
+      bottom: calc(var(--chrome) + 74px);
+      width: 52px; height: 52px; border-radius: 14px; border: 1px solid #2d2d44;
+      background: #1a1a2e; color: #e94560; font-size: 22px; cursor: pointer;
       box-shadow: 0 2px 8px rgba(0,0,0,.45);
     }
     body.music-off.fuel-live .music-peek {
-      /* À gauche du bouton recentrer Fuel. */
-      bottom: calc(var(--chrome) + 78px);
-      right: 68px;
+      bottom: calc(var(--chrome) + 74px);
+      right: 14px;
     }
     body:not(.music-off) .music-peek { display: none !important; }
+    body.music-off .nav-signs,
+    body.music-off.nav .nav-signs {
+      bottom: calc(var(--chrome) + 74px + 52px + 8px);
+    }
     .music-sheet {
-      z-index: 1500; padding: 16px 16px 18px;
+      z-index: 1450; padding: 16px 16px 18px;
       bottom: calc(var(--chrome) + 8px);
+      right: 78px;
     }
     .music-sheet .ms-head {
       display: flex; align-items: center; justify-content: flex-end; gap: 4px;
@@ -714,7 +724,69 @@
       background: transparent;
       padding-bottom: 0;
       pointer-events: none;
-      z-index: 1160;
+      z-index: 1700;
+    }
+    /* Panneau / sheet Fuel au-dessus du logo Music, du bouton position et du bouton Fuel. */
+    #fuel:not([hidden]),
+    #panelFuel:not([hidden]),
+    #fuelSheet.open {
+      z-index: 1700;
+    }
+    /* Hors carte : ces boutons ne couvrent plus les contrôles de l’écran ouvert. */
+    body:has(#pageSaved:not([hidden])) .fab,
+    body:has(#pageSaved:not([hidden])) .music-peek,
+    body:has(#pageSaved:not([hidden])) .fuel-fab,
+    body:has(#pageSaved:not([hidden])) .fuel-radial,
+    body:has(#pageSaved:not([hidden])) .nav-signs,
+    body:has(#pageSettings:not([hidden])) .fab,
+    body:has(#pageSettings:not([hidden])) .music-peek,
+    body:has(#pageSettings:not([hidden])) .fuel-fab,
+    body:has(#pageSettings:not([hidden])) .fuel-radial,
+    body:has(#pageSettings:not([hidden])) .nav-signs,
+    body:has(#pageOffline:not([hidden])) .fab,
+    body:has(#pageOffline:not([hidden])) .music-peek,
+    body:has(#pageOffline:not([hidden])) .fuel-fab,
+    body:has(#pageOffline:not([hidden])) .fuel-radial,
+    body:has(#pageOffline:not([hidden])) .nav-signs,
+    body:has(#pageFuelUx:not([hidden])) .fab,
+    body:has(#pageFuelUx:not([hidden])) .music-peek,
+    body:has(#pageFuelUx:not([hidden])) .fuel-fab,
+    body:has(#pageFuelUx:not([hidden])) .fuel-radial,
+    body:has(#pageFuelUx:not([hidden])) .nav-signs,
+    body:has(#alts:not([hidden])) .fab,
+    body:has(#alts:not([hidden])) .music-peek,
+    body:has(#alts:not([hidden])) .fuel-fab,
+    body:has(#alts:not([hidden])) .fuel-radial,
+    body:has(#poiCard:not([hidden])) .fab,
+    body:has(#poiCard:not([hidden])) .music-peek,
+    body:has(#poiCard:not([hidden])) .fuel-fab,
+    body:has(#poiCard:not([hidden])) .fuel-radial,
+    body:has(#fuelGate:not([hidden])) .fab,
+    body:has(#fuelGate:not([hidden])) .music-peek,
+    body:has(#fuelGate:not([hidden])) .fuel-fab,
+    body:has(#fuelGate:not([hidden])) .fuel-radial,
+    body:has(#fillSheet:not([hidden])) .fab,
+    body:has(#fillSheet:not([hidden])) .music-peek,
+    body:has(#fillSheet:not([hidden])) .fuel-fab,
+    body:has(#fillSheet:not([hidden])) .fuel-radial,
+    body:has(#musicSheet:not([hidden])) .fab,
+    body:has(#musicSheet:not([hidden])) .music-peek,
+    body:has(#musicSheet:not([hidden])) .fuel-fab,
+    body:has(#musicSheet:not([hidden])) .fuel-radial,
+    body:has(#sheet:not([hidden])) .fab,
+    body:has(#sheet:not([hidden])) .music-peek,
+    body:has(#sheet:not([hidden])) .fuel-fab,
+    body:has(#sheet:not([hidden])) .fuel-radial,
+    body:has(#hits:not([hidden])) .fab,
+    body:has(#hits:not([hidden])) .music-peek,
+    body:has(#hits:not([hidden])) .fuel-fab,
+    body:has(#hits:not([hidden])) .fuel-radial,
+    body:has(.drawer.open) .fab,
+    body:has(.drawer.open) .music-peek,
+    body:has(.drawer.open) .fuel-fab,
+    body:has(.drawer.open) .fuel-radial {
+      visibility: hidden;
+      pointer-events: none;
     }
     #pageFuel .page-head { display: none; }
     #pageFuel .page-body {
@@ -1042,6 +1114,7 @@
     <button type="button" id="bootFailUpdate">Mettre à jour Maps</button>
   </div>
   <script src="leaflet.js"></script>
+  <script src="traffic-core.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
