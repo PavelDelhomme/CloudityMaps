@@ -52,8 +52,16 @@ class LocationBridge(
     fun gpsEnabled(): Boolean {
         val lm = activity.getSystemService(LocationManager::class.java) ?: return false
         return runCatching {
+            // Interrupteur Android « Localisation ». isProviderEnabled(GPS) peut
+            // rester faux au démarrage ou en économie alors que le réglage est actif.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && lm.isLocationEnabled) {
+                return@runCatching true
+            }
+            val fused = Build.VERSION.SDK_INT >= 31 &&
+                lm.isProviderEnabled(LocationManager.FUSED_PROVIDER)
             lm.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-                lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ||
+                fused
         }.getOrDefault(false)
     }
 

@@ -890,6 +890,7 @@ window.__mapsNativeFix = function (lat, lon, acc, mock) {
   const moved = metersBetween(me, next);
   const fly = mapsShouldFlyToFix(moved, !!mock, false);
   setMe(lat, lon, fly);
+  hideLocBanner();
   if (navigating && followNav) applyNavCamera(lat, lon, false);
 };
 
@@ -3129,9 +3130,8 @@ function promptFuelGate(kind) {
     sheet.hidden = true;
     if (kind === 'start') {
       const okLoc = await requestPreciseLoc();
-      if (!okLoc) {
-        toast('Active la localisation pour démarrer un trajet.');
-        locNative()?.openSettings?.();
+      if (!okLoc && !me) {
+        explainLocMiss();
         return;
       }
       if (sel && sel.value && sel.value !== '0') setSelectedFuelVehicle(sel.value, true);
@@ -3277,11 +3277,13 @@ function locNative() {
   }
 }
 
-function showLocBanner(text) {
+function showLocBanner(text, action) {
   const el = document.getElementById('locBanner');
   const t = document.getElementById('locBannerText');
+  const btn = document.getElementById('locEnable');
   if (!el) return;
-  if (t) t.textContent = text || 'La localisation est désactivée';
+  if (t) t.textContent = text || 'Position pas encore trouvée';
+  if (btn) btn.textContent = action || 'Réessayer';
   el.hidden = false;
 }
 
@@ -3290,44 +3292,131 @@ function hideLocBanner() {
   if (el) el.hidden = true;
 }
 
+function nativeLocSnapshot() {
+  const native = locNative();
+  const snap = { native, perm: null, gps: null, fix: null };
+  if (!native) return snap;
+  try { snap.perm = !!native.hasPermission(); } catch { snap.perm = null; }
+  try { snap.gps = !!native.gpsEnabled(); } catch { snap.gps = null; }
+  try {
+    const raw = native.lastFixJson?.();
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) snap.fix = p;
+    }
+  } catch {
+    /* webview */
+  }
+  return snap;
+}
+
+function applyNativeFix(fix, fly) {
+  if (!fix || !Number.isFinite(fix.lat) || !Number.isFinite(fix.lon)) return false;
+  setMe(fix.lat, fix.lon, !!fly);
+  hideLocBanner();
+  return true;
+}
+
+/** 'perm' | 'gps' | null. null = réglage actif (ou inconnu) : un fix peut encore manquer. */
+function locBlock() {
+  const snap = nativeLocSnapshot();
+  if (snap.perm === false) return 'perm';
+  if (snap.gps === false) return 'gps';
+  return null;
+}
+
+function showLocFailure(err) {
+  if (me) {
+    hideLocBanner();
+    return;
+  }
+  const snap = nativeLocSnapshot();
+  const code = err && typeof err.code === 'number' ? err.code : 0;
+  if (snap.perm === false || (code === 1 && !snap.native)) {
+    showLocBanner('Autorise la localisation pour Maps', 'Autoriser');
+    return;
+  }
+  if (snap.gps === false) {
+    showLocBanner('Active le GPS pour Maps et Fuel', 'Activer');
+    return;
+  }
+  showLocBanner('Position pas encore trouvée — Maps reste consultable', 'Réessayer');
+}
+
+function openLocRemedy() {
+  const block = locBlock();
+  const native = locNative();
+  try {
+    if (block === 'perm') native?.requestPermission?.();
+    else if (block === 'gps') native?.openSettings?.();
+    else native?.startWatch?.();
+  } catch {
+    /* webview */
+  }
+}
+
+function explainLocMiss() {
+  const block = locBlock();
+  if (block === 'gps') {
+    toast('Active la localisation pour démarrer un trajet.');
+    try { locNative()?.openSettings?.(); } catch { /* */ }
+  } else if (block === 'perm') {
+    toast('Autorise la localisation pour démarrer un trajet.');
+    try { locNative()?.requestPermission?.(); } catch { /* */ }
+  } else {
+    toast('Position pas encore trouvée. Réessaie dans un instant.');
+  }
+}
+
 function requestPreciseLoc() {
   return new Promise((resolve) => {
-    const native = locNative();
-    if (native) {
+    const snap = nativeLocSnapshot();
+    if (snap.native) {
       try {
-        if (!native.hasPermission()) native.requestPermission();
-        else native.startWatch?.();
-        if (!native.gpsEnabled()) {
-          showLocBanner('Active le GPS pour Maps et Fuel');
-        }
-        const raw = native.lastFixJson?.();
-        if (raw) {
-          const p = JSON.parse(raw);
-          if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
-            setMe(p.lat, p.lon, true);
-            hideLocBanner();
-          }
-        }
+        if (snap.perm === false) snap.native.requestPermission();
+        else snap.native.startWatch?.();
       } catch {
         /* webview */
       }
     }
+    const haveFix = !!(
+      (snap.gps !== false && snap.fix && applyNativeFix(snap.fix, true)) ||
+      me
+    );
+    if (snap.gps === false) {
+      showLocBanner('Active le GPS pour Maps et Fuel', 'Activer');
+    } else if (snap.perm === false) {
+      showLocBanner('Autorise la localisation pour Maps', 'Autoriser');
+    } else if (haveFix) {
+      hideLocBanner();
+    }
+    const succeed = () => {
+      hideLocBanner();
+      resolve(true);
+    };
     if (!navigator.geolocation) {
-      showLocBanner('GPS indisponible sur cet appareil');
-      resolve(false);
+      if (haveFix) succeed();
+      else {
+        showLocFailure(null);
+        resolve(false);
+      }
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setMe(pos.coords.latitude, pos.coords.longitude, true);
-        hideLocBanner();
-        resolve(true);
+        succeed();
       },
-      () => {
-        showLocBanner('La localisation est désactivée — Maps reste consultable');
+      (err) => {
+        const again = nativeLocSnapshot();
+        if (again.gps !== false && (me || applyNativeFix(again.fix, false))) {
+          succeed();
+          return;
+        }
+        showLocFailure(err);
         resolve(false);
       },
-        geoOpts({ accurate: true, freshMs: 0, timeout: 10000 }),
+      geoOpts({ accurate: true, freshMs: 0, timeout: 10000 }),
     );
   });
 }
@@ -3431,9 +3520,8 @@ function stopNavigation(opts) {
 
 async function startNavigation() {
   const okLoc = await requestPreciseLoc();
-  if (!okLoc) {
-    toast('Active la localisation pour démarrer un trajet.');
-    try { locNative()?.openSettings?.(); } catch { /* */ }
+  if (!okLoc && !me) {
+    explainLocMiss();
     return;
   }
   const r = currentChoice();
@@ -5893,7 +5981,7 @@ if (fuelFab && fuelRadial) {
   });
 }
 document.getElementById('locEnable')?.addEventListener('click', () => {
-  try { locNative()?.openSettings?.(); } catch { /* */ }
+  openLocRemedy();
   requestPreciseLoc();
 });
 const poiCardClose = document.getElementById('poiCardClose');

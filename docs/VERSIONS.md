@@ -1,5 +1,10 @@
 # Hubera Maps — versions
 
+## 0.1.109 (18 oct. 2026)
+- Bandeau carte : « localisation désactivée » n’apparaît plus quand le réglage Android est actif et la permission accordée. Un fix qui tarde dit « position pas encore trouvée ». Le bouton n’ouvre les réglages que si le GPS est vraiment coupé.
+- `gpsEnabled()` suit l’interrupteur Localisation (`isLocationEnabled`), pas seulement le fournisseur GPS matériel.
+- Dual APK `cloud.hubera.maps` + `ovh.delhomme.maps`, versionCode 110. OTA `forceUpdate: false` / `mandatory: false`.
+
 ## 0.1.107 (17 oct. 2026)
 - Limite lue sur la voie OSM (`maxspeed`, `zone:maxspeed`, `living_street`). Plus de 50 inventé pour une rue sans tag : le panneau dit « sans tag ».
 - Trajet voiture : ralentissements Bison Futé sur le tracé quand une station répond. Durée habituelle et durée actuelle. « Évite le bouchon » proposé, pas sélectionné. Sans mesure locale, on le dit.
