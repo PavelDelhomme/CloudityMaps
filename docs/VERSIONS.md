@@ -1,5 +1,11 @@
 # Hubera Maps — versions
 
+## 0.1.110 (18 oct. 2026)
+- « Ma position » et la recherche autour de soi disent « position pas encore trouvée » tant que le GPS est allumé et la permission accordée.
+- Les contacts enregistrés se chargent aussi dans la WebView (`file://`), sans requête Fetch refusée.
+- Les insets et les calques de carte ne lisent plus `style` sur un nœud absent.
+- Dual APK `cloud.hubera.maps` + `ovh.delhomme.maps`, versionCode 111. OTA `forceUpdate: false` / `mandatory: false`.
+
 ## 0.1.109 (18 oct. 2026)
 - Bandeau carte : « localisation désactivée » n’apparaît plus quand le réglage Android est actif et la permission accordée. Un fix qui tarde dit « position pas encore trouvée ». Le bouton n’ouvre les réglages que si le GPS est vraiment coupé.
 - `gpsEnabled()` suit l’interrupteur Localisation (`isLocationEnabled`), pas seulement le fournisseur GPS matériel.

@@ -580,8 +580,7 @@ class MainActivity : AppCompatActivity() {
             }
         val bottom = bottomRaw.coerceIn(0, 36)
         lastSafeJs =
-            "document.documentElement.style.setProperty('--safe-top','${top}px');" +
-                "document.documentElement.style.setProperty('--safe-bottom','${bottom}px');"
+            "try{var de=document.documentElement;if(de&&de.style){de.style.setProperty('--safe-top','${top}px');de.style.setProperty('--safe-bottom','${bottom}px');}}catch(e){}"
         target.evaluateJavascript(lastSafeJs, null)
     }
 

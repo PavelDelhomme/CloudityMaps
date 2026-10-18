@@ -74,13 +74,16 @@ const map = L.map('map', {
   zoomAnimation: true,
   zoomAnimationThreshold: 4,
 }).setView(bootMe ? [bootMe.lat, bootMe.lon] : [46.6, 2.4], bootMe ? 16 : 6);
-map.createPane('mePane');
-map.getPane('mePane').style.zIndex = 900;
-map.createPane('labelsPane');
-map.getPane('labelsPane').style.zIndex = 450;
-map.getPane('labelsPane').style.pointerEvents = 'none';
-map.createPane('poiPane');
-map.getPane('poiPane').style.zIndex = 620;
+function stylePane(name, z, pointer) {
+  map.createPane(name);
+  const pane = map.getPane(name);
+  if (!pane || !pane.style) return;
+  pane.style.zIndex = String(z);
+  if (pointer) pane.style.pointerEvents = pointer;
+}
+stylePane('mePane', 900);
+stylePane('labelsPane', 450, 'none');
+stylePane('poiPane', 620);
 map.whenReady(() => {
   map.invalidateSize();
   const boot = document.getElementById('bootFail');
@@ -662,7 +665,7 @@ function musicDockOn() {
 function setMusicDock(on) {
   localStorage.setItem(MUSIC_KEY, on ? '1' : '0');
   document.body.classList.toggle('music-off', !on);
-  musicPeek.hidden = on;
+  if (musicPeek) musicPeek.hidden = on;
   syncChromeHeight();
 }
 
@@ -1430,7 +1433,11 @@ function goHere() {
   navigator.geolocation.getCurrentPosition(
     (pos) => setMe(pos.coords.latitude, pos.coords.longitude, true),
     () => {
-      if (!me) toast('Position indisponible — autorisez la localisation.');
+      if (me) return;
+      const block = typeof locBlock === 'function' ? locBlock() : null;
+      if (block === 'perm') toast('Autorise la localisation pour Maps.');
+      else if (block === 'gps') toast('Active le GPS pour Maps.');
+      else toast('Position pas encore trouvée.');
     },
     geoOpts({ accurate: true, freshMs: 0, timeout: 8000 }),
   );
@@ -3325,6 +3332,13 @@ function locBlock() {
   return null;
 }
 
+function locMissToast(waiting) {
+  const block = locBlock();
+  if (block === 'perm') toast('Autorise la localisation pour Maps.');
+  else if (block === 'gps') toast('Active le GPS pour Maps.');
+  else toast(waiting || 'Position pas encore trouvée.');
+}
+
 function showLocFailure(err) {
   if (me) {
     hideLocBanner();
@@ -4110,7 +4124,7 @@ function showHits(items) {
 
 async function showNearby(kind) {
   if (!me) {
-    toast('Position indisponible — autorisez le GPS.');
+    locMissToast();
     return;
   }
   const amenity = kind === 'parking' ? 'parking' : 'fuel';
@@ -5478,7 +5492,7 @@ function startOfflinePack(kind) {
     name = 'Travail';
   }
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-    toast('Position inconnue — active le GPS ou enregistre Maison.');
+    toast(kind === 'home' ? 'Enregistre d’abord Maison.' : kind === 'work' ? 'Enregistre d’abord Travail.' : 'Position pas encore trouvée.');
     return;
   }
   toast(`Téléchargement « ${name} »…`);
@@ -5524,11 +5538,11 @@ function setTab(id) {
   if (pageOffline) pageOffline.hidden = id !== 'offline';
   if (pageFuelUx) pageFuelUx.hidden = id !== 'fuelux';
   const overlay = id === 'saved' || id === 'settings' || id === 'offline' || id === 'fuelux';
-  topChrome.style.visibility = overlay ? 'hidden' : '';
-  roadSignEl.hidden = overlay;
+  if (topChrome && topChrome.style) topChrome.style.visibility = overlay ? 'hidden' : '';
+  if (roadSignEl) roadSignEl.hidden = overlay;
   const signs = document.getElementById('navSigns');
   if (signs) signs.hidden = overlay;
-  btnHere.hidden = id !== 'maps' && id !== 'trips';
+  if (btnHere) btnHere.hidden = id !== 'maps' && id !== 'trips';
   if (id !== 'maps' && id !== 'trips') {
     sheetEl.hidden = true;
     if (altsEl) altsEl.hidden = true;
@@ -5665,7 +5679,7 @@ hitsEl.addEventListener('click', (e) => {
         setTab('maps');
         void routeTo(here.lat, here.lon, label);
       } catch {
-        toast('Position indisponible — autorisez le GPS.');
+        locMissToast();
       }
     })();
     return;
@@ -6270,16 +6284,38 @@ try {
 } catch {
   /* web */
 }
-fetch('contacts-seed.json')
-  .then((r) => (r.ok ? r.json() : []))
-  .then((seed) => {
-    mergeSeedContacts(seed);
+function loadContactsSeed() {
+  const apply = (seed) => {
+    try {
+      mergeSeedContacts(Array.isArray(seed) ? seed : []);
+    } catch {
+      /* seed illisible */
+    }
     paintContactPins();
     renderSaved();
-  })
-  .catch(() => {
-    paintContactPins();
-  });
+  };
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', 'contacts-seed.json', true);
+    xhr.onload = () => {
+      const ok = xhr.status === 200 || (xhr.status === 0 && xhr.responseText);
+      if (!ok) {
+        apply([]);
+        return;
+      }
+      try {
+        apply(JSON.parse(xhr.responseText));
+      } catch {
+        apply([]);
+      }
+    };
+    xhr.onerror = () => apply([]);
+    xhr.send();
+  } catch {
+    apply([]);
+  }
+}
+loadContactsSeed();
 renderChips();
 renderSaved();
 applyFuelUx();
