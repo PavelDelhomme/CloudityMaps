@@ -254,6 +254,7 @@ let fuelLiveKm = 0;
 let fuelPollTimer = 0;
 let fuelHudTick = 0;
 let hudCollapsed = false;
+let fuelCardCollapsed = false;
 let livePoiLayer = null;
 let placeLabelLayer = null;
 let mapPlacesTimer = 0;
@@ -2357,13 +2358,15 @@ function drawChoices(selectedId) {
   altLayers = [];
   routeLayer = null;
   let bounds = null;
-  for (const r of routeChoices) {
+  const ordered = routeChoices.slice().sort((a, b) => (a.id === selectedId) - (b.id === selectedId));
+  for (const r of ordered) {
     const on = r.id === selectedId;
+    const ink = HuberaHud.routeLineStyle(on);
     const layer = L.geoJSON(r.geometry, {
       style: {
         color: on ? '#e94560' : '#64748b',
-        weight: on ? 6 : 4,
-        opacity: on ? 1 : 0.5,
+        weight: ink.weight,
+        opacity: ink.opacity,
       },
     }).addTo(map);
     layer.on('click', () => selectRoute(r.id));
@@ -2371,9 +2374,10 @@ function drawChoices(selectedId) {
     if (on) routeLayer = layer;
     for (const span of r.trafficSpans || []) {
       if (!span || span.length < 2) continue;
+      const jamInk = HuberaHud.routeJamStyle(on);
       const jam = L.polyline(
         span.map((c) => [c[1], c[0]]),
-        { color: '#f59e0b', weight: on ? 9 : 6, opacity: 0.95, lineCap: 'round' },
+        { color: '#f59e0b', weight: jamInk.weight, opacity: jamInk.opacity, lineCap: 'round' },
       ).addTo(map);
       jam.on('click', () => selectRoute(r.id));
       altLayers.push(jam);
@@ -3126,10 +3130,16 @@ function paintTripInfoMenu() {
     if (tog) tog.setAttribute('aria-expanded', 'false');
     return;
   }
-  if (planning && !navigating) tripInfoOpen = true;
+  if (navigating) tripInfoOpen = !fuelCardCollapsed;
+  else if (planning) tripInfoOpen = true;
   if (tog) {
     tog.textContent = tripInfoOpen ? '▴' : '▾';
     tog.setAttribute('aria-expanded', tripInfoOpen ? 'true' : 'false');
+    if (navigating) {
+      const lab = tripInfoOpen ? 'Replier la carte Fuel' : 'Déplier la carte Fuel';
+      tog.title = lab;
+      tog.setAttribute('aria-label', lab);
+    }
   }
   panel.hidden = !tripInfoOpen;
   if (!tripInfoOpen) return;
@@ -3194,8 +3204,25 @@ function paintTripInfoMenu() {
   panel.innerHTML = rows;
 }
 
+function toggleFuelCard() {
+  const next = HuberaHud.foldFuelCard({
+    fuelCardCollapsed,
+    navigating,
+    mapsStartedFuel,
+    fuelTrip,
+  });
+  fuelCardCollapsed = next.fuelCardCollapsed;
+  if (navigating) tripInfoOpen = !fuelCardCollapsed;
+  syncFuelChrome();
+  paintTripInfoMenu();
+}
+
 function toggleTripInfo() {
   if (!navigating && !tripPlanning()) return;
+  if (navigating) {
+    toggleFuelCard();
+    return;
+  }
   tripInfoOpen = !tripInfoOpen;
   if (tripInfoOpen) requestFuelSnapshot(false);
   paintTripInfoMenu();
@@ -3215,8 +3242,11 @@ function syncFuelChrome() {
   const logo = fuelLogoOn();
   document.body.classList.toggle('fuel-logo', logo);
   document.body.classList.toggle('fuel-live', live);
+  document.body.classList.toggle('fuel-card-collapsed', fuelCardCollapsed);
   const fab = document.getElementById('fuelFab');
   const radial = document.getElementById('fuelRadial');
+  const handle = document.getElementById('fuelCardHandle');
+  const foldBtns = ['fuelCardFold', 'fuelPageFold'].map((id) => document.getElementById(id));
   if (logo) {
     fuelEl.hidden = true;
     if (fab) {
@@ -3226,7 +3256,7 @@ function syncFuelChrome() {
       fab.setAttribute('aria-label', live ? 'Fuel — trajet en cours' : 'Fuel');
       fab.title = live ? 'Pause, arrêter, plein' : 'Démarrer, plein, garage';
     }
-  } else if (live && (navigating || hudCollapsed)) {
+  } else if (live && (navigating || hudCollapsed) && !fuelCardCollapsed) {
     fuelEl.hidden = false;
     if (fab) fab.hidden = true;
     if (radial) {
@@ -3234,9 +3264,18 @@ function syncFuelChrome() {
       radial.classList.remove('open');
     }
   } else {
-    if (!live) fuelEl.hidden = true;
+    if (!live || fuelCardCollapsed) fuelEl.hidden = true;
     if (fab) fab.hidden = true;
   }
+  if (handle) handle.hidden = !(fuelCardCollapsed && !logo && (navigating || live));
+  for (const foldBtn of foldBtns) {
+    if (!foldBtn) continue;
+    foldBtn.textContent = fuelCardCollapsed ? '▴' : '▾';
+    foldBtn.setAttribute('aria-label', fuelCardCollapsed ? 'Déplier la carte Fuel' : 'Replier la carte Fuel');
+    foldBtn.title = foldBtn.getAttribute('aria-label');
+  }
+  const pageFuel = document.getElementById('pageFuel');
+  if (pageFuel && fuelCardCollapsed) pageFuel.hidden = true;
   paintFuelRadial();
   paintFuelStats();
 }
@@ -3771,6 +3810,7 @@ function stopNavigation(opts) {
   const stopFuel = !!(opts && opts.stopFuel);
   navigating = false;
   hudCollapsed = false;
+  fuelCardCollapsed = false;
   smoothMe = null;
   lastCamAt = 0;
   lastWatchAt = 0;
@@ -5814,6 +5854,10 @@ function setTab(id) {
     openFuelSheet();
     return;
   }
+  if (id === 'trips') {
+    fuelCardCollapsed = false;
+    document.body.classList.remove('fuel-card-collapsed');
+  }
   activeTab = id;
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === id));
   const pageFuel = document.getElementById('pageFuel');
@@ -6044,6 +6088,21 @@ if (tripInfoToggle) tripInfoToggle.addEventListener('click', (e) => {
   e.stopPropagation();
   toggleTripInfo();
 });
+const tripInfoPanel = document.getElementById('tripInfoPanel');
+if (tripInfoPanel) tripInfoPanel.addEventListener('click', (e) => {
+  if (!navigating || fuelCardCollapsed) return;
+  e.stopPropagation();
+  toggleFuelCard();
+});
+for (const id of ['fuelCardFold', 'fuelPageFold', 'fuelCardHandle']) {
+  const el = document.getElementById(id);
+  if (!el) continue;
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    toggleFuelCard();
+  });
+}
   if (roadSignEl) {
   roadSignEl.addEventListener('click', () => {
     if (navigating || tripPlanning()) toggleTripInfo();

@@ -244,8 +244,8 @@
       max-width: min(176px, 46vw);
     }
     .trip-info-toggle {
-      width: 28px; height: 22px; border-radius: 8px; border: 1px solid #2d2d44;
-      background: rgba(15,15,26,.92); color: #f8fafc; font-size: 11px; font-weight: 800; cursor: pointer;
+      width: 44px; height: 32px; border-radius: 8px; border: 1px solid #2d2d44;
+      background: rgba(15,15,26,.92); color: #f8fafc; font-size: 14px; font-weight: 800; cursor: pointer;
     }
     .trip-info-panel {
       width: 168px; background: rgba(15,15,26,.94); border: 1px solid #2d2d44; border-radius: 14px;
@@ -492,6 +492,25 @@
     .fuel .row { display: flex; gap: 8px; margin-right: 58px; }
     body.music-off.fuel-live .fuel .row { margin-left: 0; }
     .fuel button, .panel button.act, .page-actions button { flex: 1; border: 0; border-radius: 999px; padding: 8px; font-weight: 700; cursor: pointer; }
+    .fuel-fold {
+      position: absolute; top: 6px; right: 8px; z-index: 2; flex: none; pointer-events: auto;
+      width: 44px; height: 32px; border-radius: 8px; border: 1px solid #2d2d44;
+      background: #16213e; color: #f8fafc; font-size: 14px; font-weight: 800; cursor: pointer;
+    }
+    #fuelPageFold { top: 8px; right: 16px; }
+    .fuel > .fuel-fold {
+      flex: none; width: 44px; height: 32px; padding: 0;
+      border: 1px solid #2d2d44; border-radius: 8px;
+    }
+    .fuel-card-handle {
+      position: absolute; z-index: 1207; left: 10px; bottom: var(--chrome);
+      border: 1px solid #2d2d44; border-bottom: 0; background: #1a1a2e; color: #f1f5f9;
+      border-radius: 12px 12px 0 0; padding: 8px 14px; font-size: 13px; font-weight: 800; cursor: pointer;
+    }
+    .fuel-card-handle[hidden] { display: none !important; }
+    body.fuel-card-collapsed #pageFuel,
+    body.fuel-card-collapsed #fuel,
+    body.fuel-card-collapsed .trip-info-panel { display: none !important; }
     .pause { background: #16213e; color: #f1f5f9; }
     .stop { background: #3f1d2e; color: #e94560; }
     .fill { background: #16302a; color: #34d399; }
@@ -908,7 +927,7 @@
   </button>
   <div class="nav-signs" id="navSigns">
     <div class="trip-info" id="tripInfoMenu" hidden>
-      <button type="button" class="trip-info-toggle" id="tripInfoToggle" title="Infos trajet" aria-expanded="false" aria-controls="tripInfoPanel">▾</button>
+      <button type="button" class="trip-info-toggle" id="tripInfoToggle" title="Replier ou déplier la carte Fuel" aria-expanded="false" aria-controls="tripInfoPanel">▾</button>
       <div class="trip-info-panel" id="tripInfoPanel" hidden></div>
     </div>
     <div class="hud-speed" id="hudSpeed" hidden>
@@ -959,6 +978,7 @@
   </div>
   <div class="alts" id="alts" hidden></div>
   <div class="fuel" id="fuel" hidden>
+    <button type="button" class="fuel-fold" id="fuelCardFold" title="Replier la carte Fuel" aria-label="Replier la carte Fuel">▾</button>
     <div class="title" id="fuelTitle">Suivi Fuel</div>
     <div class="stats" id="fuelStats"></div>
     <div class="row">
@@ -967,7 +987,9 @@
       <button type="button" class="fill" id="btnFill">Plein</button>
     </div>
   </div>
+  <button type="button" class="fuel-card-handle" id="fuelCardHandle" hidden title="Déplier la carte Fuel" aria-label="Déplier la carte Fuel">Fuel</button>
   <div class="page" id="pageFuel" hidden>
+    <button type="button" class="fuel-fold" id="fuelPageFold" title="Replier la carte Fuel" aria-label="Replier la carte Fuel">▾</button>
     <div class="page-head">
       <button type="button" class="ico" id="btnFuelPageBack" aria-label="Retour carte">←</button>
       <h1>Fuel</h1>
@@ -1146,6 +1168,7 @@
   <script src="leaflet.js"></script>
   <script src="speed-core.js"></script>
   <script src="traffic-core.js"></script>
+  <script src="hud-core.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
