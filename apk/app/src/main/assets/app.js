@@ -215,6 +215,10 @@ let pendingAssign = null;
 let lastDest = null;
 let lastOrigin = null;
 let pendingEnd = null;
+let endEditGen = 0;
+let detourPollAt = 0;
+let ignoredDetourKey = '';
+let offeredDetour = null;
 let activeTab = 'maps';
 let altLayers = [];
 let routeChoices = [];
@@ -867,7 +871,10 @@ function applyNavFix(pos) {
   if (followNav && navigating) applyNavCamera(next.lat, next.lon, false);
   appendTrace(next.lat, next.lon);
   paintHud(currentChoice());
-  if (navigating && isCarMode()) void refreshWorksNearMe(next);
+  if (navigating && isCarMode()) {
+    void refreshWorksNearMe(next);
+    void refreshTrafficLive(next);
+  }
 }
 
 function metersBetween(a, b) {
@@ -2057,34 +2064,6 @@ async function refreshWorksNearMe(here) {
     return;
   }
   paintWorks(works);
-  const choice = currentChoice();
-  const hit = works.find(
-    (wk) =>
-      metersBetween(here, wk) < 420 &&
-      choice &&
-      geomTouchesWork(choice.geometry, wk, 90),
-  );
-  if (!hit) return;
-  toast(`Travaux : ${hit.name} — recalcul de l’itinéraire…`);
-  try {
-    const via = offsetAroundWork(hit, here, lastDest);
-    const detour = await osrmPath([here, via, lastDest], 0);
-    const d = detour[0];
-    if (!d) return;
-    const live = {
-      ...d,
-      id: `live-works:${d.min}:${Date.now()}`,
-      kind: 'works',
-      label: 'Évite travaux',
-      worksHit: 0,
-    };
-    routeChoices = [live, ...routeChoices.filter((r) => r.kind !== 'works')];
-    selectedRouteId = live.id;
-    drawChoices(live.id);
-    paintHud(live);
-  } catch {
-    /* OSRM indisponible */
-  }
 }
 
 function corridorVias(from, to) {
@@ -2200,6 +2179,142 @@ function trafficNoteHtml() {
     text += ' « Évite le bouchon » est proposé : tu le choisis, il n’est pas lancé à ta place.';
   }
   return `<p class="works-note">${text}</p>`;
+}
+
+function clearDetourOffer() {
+  offeredDetour = null;
+  const el = document.getElementById('detourOffer');
+  if (el) el.hidden = true;
+}
+
+function showDetourOffer(gain) {
+  const el = document.getElementById('detourOffer');
+  const t = document.getElementById('detourOfferText');
+  if (!el) return;
+  const mins = Math.max(1, Math.round(Number(gain) || 0));
+  if (t) {
+    t.textContent = `Circulation Bison Futé : une autre route gagne ${mins} min. Elle n’est pas prise toute seule.`;
+  }
+  el.hidden = false;
+}
+
+function trafficOfferFrom(routes) {
+  if (typeof HuberaTraffic === 'undefined' || !routes || !routes.length) return null;
+  const alt = routes.find((r) => r && r.kind === 'traffic');
+  if (!alt) return null;
+  const base =
+    routes.find((r) => r && r.id === selectedRouteId && r.kind !== 'traffic') ||
+    routes.find((r) => r && r.kind !== 'traffic' && HuberaTraffic.isHeavy(r));
+  if (!base || !HuberaTraffic.isHeavy(base)) return null;
+  const gain = Math.round((base.min || 0) - (alt.min || 0));
+  if (gain < HuberaTraffic.ALT_GAIN_MIN) return null;
+  if ((base.trafficDelayMin || 0) < HuberaTraffic.HEAVY_DELAY_MIN) return null;
+  return { alt, base, gain };
+}
+
+function maybeShowTrafficOffer(routes) {
+  const offer = trafficOfferFrom(routes);
+  if (!offer) {
+    clearDetourOffer();
+    return;
+  }
+  if (ignoredDetourKey === offer.alt.id || selectedRouteId === offer.alt.id) {
+    clearDetourOffer();
+    return;
+  }
+  offeredDetour = offer.alt;
+  showDetourOffer(offer.gain);
+}
+
+function ignoreDetourOffer() {
+  if (offeredDetour) ignoredDetourKey = offeredDetour.id;
+  clearDetourOffer();
+}
+
+function takeDetourOffer() {
+  const alt = offeredDetour;
+  if (!alt) return;
+  const rest = routeChoices.filter((r) => r.id !== alt.id);
+  if (!rest.some((r) => r.id === alt.id)) rest.push(alt);
+  routeChoices = rest;
+  selectedRouteId = alt.id;
+  drawChoices(alt.id);
+  clearDetourOffer();
+  if (navigating) paintHud(currentChoice());
+  else renderAlts();
+  toast('Nouvelle route prise');
+}
+
+async function refreshTrafficLive(here) {
+  if (!navigating || travelMode !== 'car' || !here || !placeHasPoint(lastDest)) return;
+  if (typeof HuberaTraffic === 'undefined') return;
+  const now = Date.now();
+  const wait = detourPollAt ? 45000 : 8000;
+  if (now - detourPollAt < wait) return;
+  detourPollAt = now;
+  const choice = currentChoice();
+  if (!choice || !choice.geometry) return;
+  let stations = [];
+  try {
+    stations = await loadTrafficStations();
+  } catch {
+    return;
+  }
+  if (!stations.length) {
+    clearDetourOffer();
+    return;
+  }
+  const tagged = HuberaTraffic.annotateRoutes([choice], stations);
+  const base = tagged[0];
+  if (!base) return;
+  const keptId = choice.id;
+  const i = routeChoices.findIndex((r) => r.id === keptId);
+  if (i >= 0) {
+    routeChoices[i] = {
+      ...routeChoices[i],
+      ...base,
+      id: keptId,
+      kind: choice.kind,
+      label: choice.label,
+    };
+  }
+  if (!HuberaTraffic.isHeavy(base) || !base.trafficJam) {
+    clearDetourOffer();
+    paintHud(currentChoice());
+    return;
+  }
+  const via = offsetAroundWork(base.trafficJam, here, lastDest);
+  let detour = [];
+  try {
+    detour = await osrmPath([here, via, lastDest], 0, '');
+  } catch {
+    return;
+  }
+  const offered = HuberaTraffic.offerAvoidJam([base], detour[0] || null, stations);
+  const alt = offered.find((r) => r && r.kind === 'traffic');
+  if (!alt) {
+    clearDetourOffer();
+    paintHud(currentChoice());
+    return;
+  }
+  const gain = Math.round((base.min || 0) - (alt.min || 0));
+  if (gain < HuberaTraffic.ALT_GAIN_MIN || (base.trafficDelayMin || 0) < HuberaTraffic.HEAVY_DELAY_MIN) {
+    clearDetourOffer();
+    paintHud(currentChoice());
+    return;
+  }
+  if (ignoredDetourKey === alt.id || selectedRouteId === alt.id) {
+    clearDetourOffer();
+    paintHud(currentChoice());
+    return;
+  }
+  const without = routeChoices.filter((r) => r.kind !== 'traffic' && r.id !== alt.id);
+  routeChoices = without.concat(alt);
+  if (!routeChoices.some((r) => r.id === keptId)) selectedRouteId = keptId;
+  offeredDetour = alt;
+  showDetourOffer(gain);
+  drawChoices(selectedRouteId);
+  paintHud(currentChoice());
 }
 
 function routeCacheKey(from, to) {
@@ -2470,34 +2585,85 @@ function bindModeButtons(root) {
   });
 }
 
+function endEditText(p, fallback) {
+  if (!p) return fallback;
+  if (p._typed != null && String(p._typed).length) return String(p._typed);
+  const label = String(p.label || '').trim();
+  if (label) return label;
+  const title = String(p.title || '').trim();
+  const addr = String(p.address || '').trim();
+  if (title && addr && addr !== title) return `${title}, ${addr}`;
+  return title || addr || fallback;
+}
+
+function endSnap() {
+  const el = document.activeElement;
+  if (!el || !el.classList || !el.classList.contains('route-end-input')) return null;
+  return {
+    end: el.dataset.end,
+    value: el.value,
+    start: el.selectionStart,
+    endSel: el.selectionEnd,
+  };
+}
+
+function restoreEndSnap(snap) {
+  if (!snap || !routeCardEl) return;
+  const el = routeCardEl.querySelector(`.route-end-input[data-end="${snap.end}"]`);
+  if (!el) return;
+  el.value = snap.value;
+  try {
+    el.focus({ preventScroll: true });
+  } catch {
+    try { el.focus(); } catch { /* */ }
+  }
+  try {
+    const a = Number.isFinite(snap.start) ? snap.start : el.value.length;
+    const b = Number.isFinite(snap.endSel) ? snap.endSel : a;
+    el.setSelectionRange(a, b);
+  } catch {
+    /* curseur */
+  }
+}
+
 function endsRowHtml() {
-  const o = lastOrigin || {};
-  const d = lastDest || {};
-  const oTitle = o.title || 'Ma position';
-  const oAddr = o.address && o.address !== oTitle ? o.address : o.label && o.label !== oTitle ? o.label : '';
-  const dTitle = d.title || shortNameFromLabel(d.label) || 'Arrivée';
-  const dAddr = d.address && d.address !== dTitle ? d.address : d.label && d.label !== dTitle ? d.label : '';
+  const oText = endEditText(lastOrigin, 'Ma position');
+  const dText = endEditText(lastDest, 'Arrivée');
   return (
     `<div class="route-io">` +
     `<div class="route-io-fields">` +
-    `<button type="button" class="route-end" id="btnEditOrigin">` +
-    `<span class="ab-dot origin"></span><span class="txt"><strong>${esc(oTitle)}</strong>${oAddr ? `<em>${esc(oAddr)}</em>` : ''}</span></button>` +
-    `<button type="button" class="route-end" id="btnEditDest">` +
-    `<span class="ab-dot dest"></span><span class="txt"><strong>${esc(dTitle)}</strong>${dAddr ? `<em>${esc(dAddr)}</em>` : ''}</span></button>` +
+    `<label class="route-end">` +
+    `<span class="ab-dot origin"></span>` +
+    `<input type="text" class="route-end-input" data-end="origin" value="${esc(oText)}" autocomplete="off" enterkeyhint="done" aria-label="Départ" />` +
+    `</label>` +
+    `<label class="route-end">` +
+    `<span class="ab-dot dest"></span>` +
+    `<input type="text" class="route-end-input" data-end="dest" value="${esc(dText)}" autocomplete="off" enterkeyhint="done" aria-label="Arrivée" />` +
+    `</label>` +
     `</div>` +
     `<div class="route-io-side">` +
-    `<button type="button" class="route-close" id="btnDismissRoute" aria-label="Masquer l’itinéraire">✕</button>` +
+    `<button type="button" class="route-close" id="btnDismissRoute" aria-label="Fermer l’itinéraire">✕</button>` +
     `<button type="button" class="route-swap" id="btnSwapEnds" title="Inverser" aria-label="Inverser départ et arrivée">⇅</button>` +
     `</div></div>`
   );
 }
 
 function showAltsShell(extraHtml) {
+  const snap = endSnap();
   const html = endsRowHtml() + modesRowHtml() + (extraHtml || '');
   if (routeCardEl) {
     routeCardEl.hidden = false;
     routeCardEl.innerHTML = html;
     bindModeButtons(routeCardEl);
+    restoreEndSnap(snap);
+    const close = routeCardEl.querySelector('#btnDismissRoute');
+    if (close) {
+      close.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dismissRoutePreview();
+      };
+    }
   }
   if (altsEl) {
     altsEl.hidden = true;
@@ -2514,6 +2680,7 @@ function showAltsShell(extraHtml) {
 }
 
 function dismissRoutePreview() {
+  endEditGen += 1;
   routeGen += 1;
   if (routeAbort) {
     try {
@@ -2527,6 +2694,7 @@ function dismissRoutePreview() {
   lastDest = null;
   lastOrigin = null;
   pendingEnd = null;
+  showHits([]);
   qEl.placeholder = 'Rechercher ici';
   searchForm.hidden = false;
   if (routeCardEl) {
@@ -2540,6 +2708,9 @@ function dismissRoutePreview() {
   clearRoute();
   if (chipsEl) chipsEl.hidden = false;
   document.body.classList.remove('routing');
+  clearDetourOffer();
+  tripInfoOpen = false;
+  paintTripInfoMenu();
   if (originMarker) {
     map.removeLayer(originMarker);
     originMarker = null;
@@ -2567,7 +2738,22 @@ function bindRouteCard() {
   };
   routeCardEl.addEventListener('click', onDismiss, true);
   routeCardEl.addEventListener('pointerup', onDismiss, true);
+  routeCardEl.addEventListener('input', (e) => {
+    const input = e.target.closest && e.target.closest('.route-end-input');
+    if (!input) return;
+    const place = input.dataset.end === 'origin' ? lastOrigin : lastDest;
+    if (place) place._typed = input.value;
+    scheduleEndEdit(input);
+  });
+  routeCardEl.addEventListener('keydown', (e) => {
+    const input = e.target.closest && e.target.closest('.route-end-input');
+    if (!input || e.key !== 'Enter') return;
+    e.preventDefault();
+    const gen = ++endEditGen;
+    void commitEndEdit(input.dataset.end === 'origin' ? 'origin' : 'dest', input.value, gen);
+  });
   routeCardEl.addEventListener('click', (e) => {
+    if (e.target.closest('.route-end-input')) return;
     if (e.target.closest('.route-close') || e.target.closest('#btnDismissRoute')) {
       e.preventDefault();
       dismissRoutePreview();
@@ -2576,16 +2762,6 @@ function bindRouteCard() {
     if (e.target.closest('#btnSwapEnds')) {
       e.preventDefault();
       void swapRouteEnds();
-      return;
-    }
-    if (e.target.closest('#btnEditOrigin')) {
-      e.preventDefault();
-      startEditEnd('origin');
-      return;
-    }
-    if (e.target.closest('#btnEditDest')) {
-      e.preventDefault();
-      startEditEnd('dest');
       return;
     }
     const mode = e.target.closest('.mode');
@@ -2614,14 +2790,46 @@ function placeHasPoint(p) {
   return p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon));
 }
 
+function scheduleEndEdit(input) {
+  const gen = ++endEditGen;
+  const which = input.dataset.end === 'origin' ? 'origin' : 'dest';
+  clearTimeout(scheduleEndEdit._t);
+  scheduleEndEdit._t = setTimeout(() => {
+    void commitEndEdit(which, input.value, gen);
+  }, 480);
+}
+
+async function commitEndEdit(which, raw, gen) {
+  const q = String(raw || '').trim();
+  if (q.length < 2 || gen !== endEditGen) return;
+  let hits = [];
+  try {
+    hits = await searchPhoton(q);
+  } catch {
+    return;
+  }
+  if (gen !== endEditGen || !hits[0] || !Number.isFinite(Number(hits[0].lat))) return;
+  const place = await enrichPlace(asPlace(hits[0].lat, hits[0].lon, hits[0].label || q));
+  if (gen !== endEditGen || !placeHasPoint(place)) return;
+  place._typed = q;
+  if (which === 'origin') lastOrigin = place;
+  else lastDest = place;
+  if (!placeHasPoint(lastOrigin)) lastOrigin = await hereAsPlace();
+  if (!placeHasPoint(lastDest)) return;
+  await routeFromTo(lastOrigin, lastDest);
+}
+
 function startEditEnd(which) {
   pendingEnd = which === 'origin' ? 'origin' : 'dest';
-  qEl.value = '';
-  qEl.placeholder = pendingEnd === 'origin' ? 'Choisir un départ' : 'Choisir une arrivée';
+  const cur = pendingEnd === 'origin' ? lastOrigin : lastDest;
+  qEl.value = endEditText(cur, '');
+  qEl.placeholder = pendingEnd === 'origin' ? 'Modifier le départ' : 'Modifier l’arrivée';
   searchForm.hidden = false;
   syncClear();
   try {
-    qEl.focus();
+    qEl.focus({ preventScroll: true });
+    const n = qEl.value.length;
+    if (n > 0) qEl.setSelectionRange(n, n);
   } catch {
     /* */
   }
@@ -2676,7 +2884,7 @@ function renderAlts() {
     ? `<p class="works-note">Travaux / déviations OSM : ${worksN} sur le trajet. Un itinéraire « Évite travaux » est proposé quand c’est possible.</p>`
     : '';
   showAltsShell(
-    `<div class="picks">` +
+    `<div class="route-picks-label">Itinéraires</div><div class="picks">` +
       routeChoices
         .map((r) => {
           const delay = (r.trafficDelayMin || 0) >= 1 ? ` · +${r.trafficDelayMin} min` : '';
@@ -3090,6 +3298,49 @@ function startFuelTrip() {
   promptFuelGate('start');
 }
 
+function gateDefaultVehicleId(list) {
+  const snap = loadFuelSnap();
+  const ids = (list || []).map((v) => Number(v.id || v.vehicleId)).filter((id) => id > 0);
+  const lastTrip = Number(snap.lastTripVehicleId) || 0;
+  if (lastTrip > 0 && ids.includes(lastTrip)) return lastTrip;
+  const chosen = fuelChoiceId(snap);
+  if (chosen > 0 && ids.includes(chosen)) return chosen;
+  return ids.length === 1 ? ids[0] : 0;
+}
+
+function paintGateArc(pct, tank, l100) {
+  const svg = document.getElementById('fuelGateArc');
+  const label = document.getElementById('fuelGateGaugeVal');
+  const hidden = document.getElementById('fuelGateGauge');
+  const known = Number.isFinite(Number(pct));
+  const p = known ? Math.max(0, Math.min(100, Number(pct))) : 0;
+  if (hidden) hidden.value = known ? String(Math.round(p)) : '';
+  const liters = known && tank > 0 ? Math.round((tank * p) / 10) / 10 : null;
+  const range = liters != null && l100 > 0 ? Math.round((liters / l100) * 100) : 0;
+  if (label) {
+    label.textContent = liters != null
+      ? `${Math.round(p)} % · ${liters.toFixed(1)} L${range > 0 ? ` · ~${range} km` : ''}`
+      : 'Niveau inconnu';
+  }
+  if (!svg) return;
+  const cx = 130;
+  const cy = 118;
+  const r = 96;
+  const ang = Math.PI * (1 - (known ? p : 0) / 100);
+  const x = cx + r * Math.cos(ang);
+  const y = cy - r * Math.sin(ang);
+  const color = !known ? '#64748b' : p < 12 ? '#e94560' : p < 28 ? '#f59e0b' : '#22c55e';
+  const needle = known
+    ? `<path d="M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${x} ${y}" fill="none" stroke="${color}" stroke-width="16"/>` +
+      `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${color}" stroke-width="4" stroke-linecap="round"/>`
+    : '';
+  svg.innerHTML =
+    `<path d="M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}" fill="none" stroke="#2d2d44" stroke-width="16"/>` +
+    needle +
+    `<circle cx="${cx}" cy="${cy}" r="7" fill="${color}"/>` +
+    `<text x="${cx}" y="${cy - 28}" text-anchor="middle" fill="#f1f5f9" font-size="28" font-weight="800">${known ? Math.round(p) + '%' : '—'}</text>`;
+}
+
 function promptFuelGate(kind) {
   const sheet = document.getElementById('fuelGate');
   if (!sheet) {
@@ -3100,11 +3351,9 @@ function promptFuelGate(kind) {
     return;
   }
   const list = loadFuelSnap().vehicles || [];
-  const sel = document.getElementById('fuelGateVeh');
+  const row = document.getElementById('fuelGateVeh');
   const title = document.getElementById('fuelGateTitle');
   const hint = document.getElementById('fuelGateHint');
-  const gauge = document.getElementById('fuelGateGauge');
-  const gaugeVal = document.getElementById('fuelGateGaugeVal');
   if (title) title.textContent = kind === 'start' ? 'Démarrer le trajet' : 'Confirmer la jauge';
   if (hint) {
     hint.textContent =
@@ -3112,41 +3361,76 @@ function promptFuelGate(kind) {
         ? 'Voiture + jauge. Le trajet ne démarre que si tu valides.'
         : 'Ajuste la jauge. Je confirme nourrit l’IA conso ; Je ne confirme pas enregistre sans apprendre.';
   }
-  if (sel) {
-    sel.innerHTML =
-      `<option value="0">Sans véhicule</option>` +
-      list
-        .map((v) => {
-          const id = v.id || v.vehicleId;
-          const name = v.name || v.label || ('Véhicule ' + id);
-          const on = String(id) === String(fuelSelectedVehicleId) ? ' selected' : '';
-          return `<option value="${id}"${on}>${esc(name)}</option>`;
-        })
-        .join('');
-  }
-  if (gauge && gaugeVal) {
-    gaugeVal.textContent = `${gauge.value} %`;
-    gauge.oninput = () => {
-      gaugeVal.textContent = `${gauge.value} %`;
+  let picked = gateDefaultVehicleId(list);
+  const paintVeh = () => {
+    if (!row) return;
+    row.innerHTML = list.length
+      ? list
+          .map((v) => {
+            const id = Number(v.id || v.vehicleId);
+            const name = v.name || v.label || ('Véhicule ' + id);
+            const on = id === picked ? ' on' : '';
+            return `<button type="button" class="fuel-veh${on}" data-vid="${id}">${esc(name)} · n°${id}</button>`;
+          })
+          .join('')
+      : '<span class="m">Aucun véhicule Fuel</span>';
+    row.querySelectorAll('[data-vid]').forEach((btn) => {
+      btn.onclick = () => {
+        picked = Number(btn.dataset.vid);
+        const veh = list.find((v) => Number(v.id || v.vehicleId) === picked);
+        paintVeh();
+        paintGateArc(veh && veh.pct >= 0 ? veh.pct : NaN, veh && veh.tank, veh && veh.l100);
+      };
+    });
+  };
+  const veh0 = list.find((v) => Number(v.id || v.vehicleId) === picked);
+  paintVeh();
+  paintGateArc(veh0 && veh0.pct >= 0 ? veh0.pct : NaN, veh0 && veh0.tank, veh0 && veh0.l100);
+  const arc = document.getElementById('fuelGateArc');
+  if (arc) {
+    const setFromEvent = (ev) => {
+      const point = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+      const rect = arc.getBoundingClientRect();
+      const x = point.clientX - rect.left;
+      const y = point.clientY - rect.top;
+      const cx = rect.width / 2;
+      const cy = rect.height * (118 / 140);
+      let frac = Math.atan2(cy - y, x - cx) / Math.PI;
+      if (frac < 0) frac = 0;
+      if (frac > 1) frac = 1;
+      const veh = list.find((v) => Number(v.id || v.vehicleId) === picked);
+      paintGateArc(Math.round((1 - frac) * 100), veh && veh.tank, veh && veh.l100);
+    };
+    arc.onpointerdown = (ev) => {
+      if (arc.setPointerCapture) arc.setPointerCapture(ev.pointerId);
+      setFromEvent(ev);
+    };
+    arc.onpointermove = (ev) => {
+      if (ev.buttons) setFromEvent(ev);
     };
   }
   sheet.hidden = false;
-  const clear = () => {};
   const go = async (skip) => {
-    clear();
     sheet.hidden = true;
-    if (kind === 'start') {
-      const okLoc = await requestPreciseLoc();
-      if (!okLoc && !me) {
-        explainLocMiss();
-        return;
-      }
-      if (sel && sel.value && sel.value !== '0') setSelectedFuelVehicle(sel.value, true);
-      startFreeTracking(sel && sel.value !== '0' ? sel.value : 0);
-      if (!skip) toast('Jauge enregistrée pour ce départ');
-    } else {
+    if (kind !== 'start') {
       toast(skip ? 'Trajet enregistré sans apprentissage IA' : 'Conso confirmée pour l’IA');
+      return;
     }
+    const okLoc = await requestPreciseLoc();
+    if (!okLoc && !me) {
+      explainLocMiss();
+      return;
+    }
+    if (picked) setSelectedFuelVehicle(picked, true);
+    const hidden = document.getElementById('fuelGateGauge');
+    const veh = list.find((v) => Number(v.id || v.vehicleId) === picked);
+    const pct = Number(hidden && hidden.value);
+    const liters =
+      !skip && veh && veh.tank > 0 && Number.isFinite(pct)
+        ? Math.round((veh.tank * pct) / 10) / 10
+        : '';
+    startFreeTracking(picked, liters);
+    if (!skip) toast('Jauge enregistrée pour ce départ');
   };
   const btnGo = document.getElementById('fuelGateGo');
   const btnSkip = document.getElementById('fuelGateSkip');
@@ -3156,16 +3440,10 @@ function promptFuelGate(kind) {
     btnSkip.textContent = kind === 'start' ? 'Démarrer quand même' : 'Je ne confirme pas';
     btnSkip.onclick = () => go(true);
   }
-  if (btnCancel) {
-    btnCancel.onclick = () => {
-      clear();
-      sheet.hidden = true;
-    };
-  }
+  if (btnCancel) btnCancel.onclick = () => { sheet.hidden = true; };
 }
 
-function startFreeTracking(vehicleId) {
-  setTab('maps');
+function startFreeTracking(vehicleId, liters) {
   if (navigating && mapsStartedFuel) {
     toast('Trajet déjà en cours');
     return;
@@ -3180,6 +3458,7 @@ function startFreeTracking(vehicleId) {
   const extra = {};
   const vid = vehicleId || fuelSelectedVehicleId || (activeFuelVehicle() && activeFuelVehicle().id);
   if (vid) extra.vehicleId = vid;
+  if (liters !== '' && liters != null && Number.isFinite(Number(liters))) extra.liters = Number(liters);
   const ok = fuelControl('start', extra);
   if (!ok) toast('Fuel non joignable depuis ce navigateur');
   speakNav('Trajet Fuel démarré', 0);
@@ -3876,12 +4155,15 @@ function openPlaceActions(kind, place) {
   const title = placeNick(place, kind === 'home' ? 'Maison' : kind === 'work' ? 'Travail' : 'Lieu');
   sheetEl.hidden = false;
   sheetEl.innerHTML =
-    `<strong>${esc(title)}</strong>` +
+    `<div class="route-head"><strong>${esc(title)}</strong>` +
+    `<button type="button" class="panel-close" id="paClose" aria-label="Fermer">✕</button></div>` +
     `<span>${esc(place.label || '')}</span>` +
     `<button type="button" class="go" id="paGo">Itinéraire</button>` +
     `<button type="button" class="go" id="paEdit" style="margin-top:8px;background:#16213e">Modifier l’adresse</button>` +
     `<button type="button" class="go" id="paNick" style="margin-top:8px;background:#16213e">Petit nom</button>` +
     `<button type="button" class="go" id="paDel" style="margin-top:8px;background:#3f1d2e;color:#e94560">Supprimer</button>`;
+  const closer = document.getElementById('paClose');
+  if (closer) closer.onclick = () => { sheetEl.hidden = true; };
   const go = document.getElementById('paGo');
   const edit = document.getElementById('paEdit');
   const nickBtn = document.getElementById('paNick');
@@ -4070,6 +4352,7 @@ async function routeFromTo(origin, dest) {
     return;
   }
   selectedRouteId = routeChoices[0].id;
+  clearDetourOffer();
   drawChoices(selectedRouteId);
   renderAlts();
   paintTripInfoMenu();
@@ -4096,6 +4379,7 @@ async function routeFromTo(origin, dest) {
       routeChoices = next;
       if (!routeChoices.some((r) => r.id === keep)) selectedRouteId = routeChoices[0].id;
       drawChoices(selectedRouteId);
+      maybeShowTrafficOffer(routeChoices);
       if (!navigating) renderAlts();
       else paintHud(currentChoice());
     })();
@@ -4784,6 +5068,8 @@ function parseFuelSnapPack(raw) {
       out.budget = { amount: Number(amount) || 0, spent: Number(spent) || 0, name: name || 'Budget' };
     } else if (kind === 'L') {
       out.lastVehicleId = Number(body) || 0;
+    } else if (kind === 'T') {
+      out.lastTripVehicleId = Number(body) || 0;
     }
   }
   return out;
@@ -5579,9 +5865,23 @@ window.__mapsBack = function () {
     closeFuelSheet();
     return true;
   }
+  const detour = document.getElementById('detourOffer');
+  if (detour && !detour.hidden) {
+    ignoreDetourOffer();
+    return true;
+  }
+  if (sheetEl && !sheetEl.hidden && sheetEl.querySelector('#paClose')) {
+    sheetEl.hidden = true;
+    return true;
+  }
+  if (!navigating && routeCardEl && !routeCardEl.hidden) {
+    dismissRoutePreview();
+    return true;
+  }
   if (!hitsEl.hidden) {
     showHits([]);
     pendingAssign = null;
+    pendingEnd = null;
     qEl.placeholder = 'Rechercher ici';
     return true;
   }
@@ -5721,7 +6021,8 @@ chipsEl.addEventListener('click', (e) => {
   const p = loadPlaces();
   const place = p[kind];
   if (place) {
-    openPlaceActions(kind, place);
+    const title = place.label || placeNick(place, kind === 'home' ? 'Maison' : kind === 'work' ? 'Travail' : 'Lieu');
+    void routeTo(Number(place.lat), Number(place.lon), title);
     return;
   }
   startAssign(kind);
@@ -5809,6 +6110,33 @@ if (offlineBody) {
 document.getElementById('btnDefineHome').addEventListener('click', () => startAssign('home'));
 document.getElementById('btnDefineWork').addEventListener('click', () => startAssign('work'));
 scrim.addEventListener('click', closeDrawer);
+
+document.addEventListener('pointerdown', (e) => {
+  const t = e.target;
+  if (!t || !t.closest) return;
+  if (sheetEl && !sheetEl.hidden && sheetEl.querySelector('#paClose') && !sheetEl.contains(t)) {
+    sheetEl.hidden = true;
+  }
+  if (navigating) return;
+  if (!routeCardEl || routeCardEl.hidden) return;
+  if (routeCardEl.contains(t)) return;
+  const offer = document.getElementById('detourOffer');
+  if (offer && !offer.hidden && offer.contains(t)) return;
+  const top = document.getElementById('topChrome');
+  if (top && top.contains(t)) return;
+  dismissRoutePreview();
+}, true);
+
+document.getElementById('detourIgnore')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  ignoreDetourOffer();
+});
+document.getElementById('detourTake')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  takeDetourOffer();
+});
 
 drawer.addEventListener('click', (e) => {
   const item = e.target.closest('.d-item');

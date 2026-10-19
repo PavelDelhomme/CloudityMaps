@@ -1,5 +1,15 @@
 # Hubera Maps — versions
 
+## 0.1.112 (19 oct. 2026)
+
+- Démarrer le trajet au-dessus de la barre, fenêtre Fuel qui se ferme en restant sur l’onglet Fuel, jauge demi-cercle, voiture du dernier trajet.
+- Dual APK `cloud.hubera.maps` + `ovh.delhomme.maps`, versionCode 113. OTA `forceUpdate: false` / `mandatory: false`.
+
+## 0.1.111 (18 oct. 2026)
+- Raccourci d’adresse : le texte reste dans le champ, on peut corriger quelques caractères, la fenêtre se ferme (croix, retour, tap sur la carte).
+- Au départ, les itinéraires s’affichent tout de suite. Pendant le trajet, un détour Bison Futé n’est proposé que si la perte est d’au moins 5 min et le gain d’au moins 3. Ignorer ou prendre. Jamais imposé. Pas de bouchon inventé.
+- Dual APK `cloud.hubera.maps` + `ovh.delhomme.maps`, versionCode 112. OTA `forceUpdate: false` / `mandatory: false`.
+
 ## 0.1.110 (18 oct. 2026)
 - « Ma position » et la recherche autour de soi disent « position pas encore trouvée » tant que le GPS est allumé et la permission accordée.
 - Les contacts enregistrés se chargent aussi dans la WebView (`file://`), sans requête Fetch refusée.

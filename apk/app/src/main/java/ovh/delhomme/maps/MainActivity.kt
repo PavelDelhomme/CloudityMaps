@@ -34,6 +34,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -77,6 +78,7 @@ class MainActivity : AppCompatActivity() {
         bindWeb(web)
         bindSafeArea(web)
         web.loadUrl(urlFromIntent(intent))
+        bindSystemBack()
         // Carte d’abord. SSO / GPS / OTA après le premier paint — jamais bloquer le thread UI.
         main.post {
             runCatching { if (this::suite.isInitialized) suite.ingest(intent?.data) }
@@ -356,17 +358,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun bindSystemBack() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (!this@MainActivity::web.isInitialized) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                    return
+                }
+                web.evaluateJavascript(
+                    "(function(){try{return !!(window.__mapsBack&&window.__mapsBack());}catch(e){return false;}})()",
+                ) { raw ->
+                    if (raw == "true") return@evaluateJavascript
+                    if (web.canGoBack()) web.goBack()
+                    else moveTaskToBack(true)
+                }
+            }
+        })
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (!this::web.isInitialized) {
-            super.onBackPressed()
-            return
-        }
-        web.evaluateJavascript("(function(){try{return window.__mapsBack&&window.__mapsBack()||false;}catch(e){return false;}})()") { raw ->
-            if (raw == "true") return@evaluateJavascript
-            if (web.canGoBack()) web.goBack()
-            else moveTaskToBack(true)
-        }
+        onBackPressedDispatcher.onBackPressed()
     }
 
     private fun offerHuberaAccount(force: Boolean = false) {

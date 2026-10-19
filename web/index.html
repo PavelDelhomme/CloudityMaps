@@ -32,10 +32,13 @@
       background: #0e4d5c; color: #fff; font-weight: 700; cursor: pointer;
     }
     .gate-sheet {
-      position: absolute; z-index: 1400; left: 0; right: 0; bottom: 0;
+      position: absolute; z-index: 1900; left: 0; right: 0; bottom: var(--chrome);
       background: #1a1a2e; color: #f1f5f9; border-radius: 20px 20px 0 0;
-      padding: 16px 16px calc(16px + var(--safe-bottom)); box-shadow: 0 -8px 28px rgba(0,0,0,.4);
+      padding: 16px 16px 16px; box-shadow: 0 -8px 28px rgba(0,0,0,.4);
+      max-height: calc(100% - var(--chrome) - 12px); overflow: auto;
     }
+    .gate-veh-row { display: flex; gap: 8px; overflow-x: auto; margin: 8px 0 12px; }
+    .gate-arc { width: 100%; height: 132px; display: block; touch-action: none; }
     .gate-sheet[hidden] { display: none !important; }
     .gate-sheet h3 { margin: 0 0 8px; }
     .gate-sheet input[type=range] { width: 100%; }
@@ -274,6 +277,26 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .route-end em { display: block; font-style: normal; color: #94a3b8; font-size: 11px; margin-top: 2px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .route-end-input {
+      flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: transparent;
+      color: #f1f5f9; font-size: 16px; font-weight: 700; line-height: 1.3; padding: 2px 0;
+      caret-color: #e94560;
+    }
+    .route-picks-label {
+      color: #94a3b8; font-size: 11px; font-weight: 800; letter-spacing: .04em;
+      text-transform: uppercase; margin: 2px 0 6px;
+    }
+    .detour-offer {
+      margin-top: 8px; background: #1a1a2e; border: 1px solid #f59e0b; border-radius: 14px;
+      padding: 10px 12px; color: #f8fafc; box-shadow: 0 2px 8px rgba(0,0,0,.45);
+    }
+    .detour-offer p { margin: 0; font-size: 13px; line-height: 1.35; }
+    .detour-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .detour-actions button {
+      flex: 1; border: 0; border-radius: 999px; padding: 10px; font-weight: 800; cursor: pointer;
+    }
+    #detourIgnore { background: #16213e; color: #f1f5f9; }
+    #detourTake { background: #e94560; color: #fff; }
     .route-swap, .route-close {
       width: 40px; min-width: 40px; height: 40px; border: 0; border-radius: 12px; background: #2d2d44; color: #f8fafc;
       font-size: 18px; cursor: pointer; flex-shrink: 0;
@@ -629,7 +652,7 @@
       background: transparent; border: 0; border-bottom: 1px solid #2d2d44; color: #f1f5f9;
       padding: 14px 0; cursor: pointer; font-size: 15px;
     }
-    .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], .route-card[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden], .music-sheet[hidden], .poi-card[hidden], .nav-signs[hidden], .hud-speed[hidden], .trip-info[hidden], .trip-info-panel[hidden] { display: none !important; }
+    .hits[hidden], .sheet[hidden], .fuel[hidden], .panel[hidden], .nav-bar[hidden], .hud[hidden], .alts[hidden], .search-bar[hidden], .route-card[hidden], #chips[hidden], .page[hidden], .music-peek[hidden], .road-sign[hidden], .fab[hidden], .music-sheet[hidden], .poi-card[hidden], .nav-signs[hidden], .hud-speed[hidden], .trip-info[hidden], .trip-info-panel[hidden], .detour-offer[hidden] { display: none !important; }
     .chrome {
       padding: 0 0 calc(10px + var(--safe-bottom));
       border-top: 1px solid #2d2d44;
@@ -872,6 +895,13 @@
     <div class="chips" id="chips"></div>
     <div class="hits" id="hits" hidden></div>
     <div class="route-card" id="routeCard" hidden></div>
+    <div class="detour-offer" id="detourOffer" hidden>
+      <p id="detourOfferText"></p>
+      <div class="detour-actions">
+        <button type="button" id="detourIgnore">Ignorer</button>
+        <button type="button" id="detourTake">Prendre cette route</button>
+      </div>
+    </div>
   </div>
   <button type="button" class="fab" id="btnHere" title="Ma position" aria-label="Ma position">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
@@ -1065,13 +1095,10 @@
   <div class="gate-sheet" id="fuelGate" hidden>
     <h3 id="fuelGateTitle">Démarrer le trajet</h3>
     <p class="m" id="fuelGateHint"></p>
-    <label>Véhicule
-      <select id="fuelGateVeh"></select>
-    </label>
-    <label>Jauge (%)
-      <input type="range" id="fuelGateGauge" min="0" max="100" value="50" />
-      <span id="fuelGateGaugeVal">50 %</span>
-    </label>
+    <div class="gate-veh-row" id="fuelGateVeh"></div>
+    <svg class="gate-arc" id="fuelGateArc" viewBox="0 0 260 140" aria-label="Jauge carburant"></svg>
+    <div id="fuelGateGaugeVal" class="m">—</div>
+    <input type="hidden" id="fuelGateGauge" value="" />
     <div class="gate-actions">
       <button type="button" class="go" id="fuelGateGo">Démarrer</button>
       <button type="button" class="ghost" id="fuelGateSkip">Démarrer quand même</button>
