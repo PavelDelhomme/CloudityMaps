@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -13,7 +14,11 @@ import android.net.Uri
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -74,7 +79,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun bootUi() {
         web = WebView(this)
-        setContentView(web)
+        mountWeb(web)
         bindWeb(web)
         bindSafeArea(web)
         web.loadUrl(urlFromIntent(intent))
@@ -229,11 +234,73 @@ class MainActivity : AppCompatActivity() {
     private fun showBareMap() {
         if (!this::web.isInitialized) {
             web = WebView(this)
-            setContentView(web)
+            mountWeb(web)
             runCatching { bindWeb(web) }
             bindSafeArea(web)
         }
         runCatching { web.loadUrl("file:///android_asset/index.html") }
+    }
+
+    private var chromeRoot: FrameLayout? = null
+    private var edgeDownX = 0f
+    private var edgeDownY = 0f
+
+    private fun mountWeb(target: WebView) {
+        val root = chromeRoot ?: FrameLayout(this).also { chromeRoot = it }
+        if (target.parent != root) {
+            (target.parent as? ViewGroup)?.removeView(target)
+            root.addView(
+                target,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
+        }
+        if (root.findViewWithTag<View>("hubera-edge") == null) {
+            val density = resources.displayMetrics.density
+            val edge = (28 * density).toInt().coerceAtLeast(1)
+            val strip = View(this)
+            strip.tag = "hubera-edge"
+            strip.setOnTouchListener { _, ev ->
+                when (ev.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        edgeDownX = ev.rawX
+                        edgeDownY = ev.rawY
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = ev.rawX - edgeDownX
+                        val dy = ev.rawY - edgeDownY
+                        if (edgeDownX <= edge && dx > 12f * density && kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+                            if (this::web.isInitialized) {
+                                web.evaluateJavascript("try{openDrawer()}catch(e){}", null)
+                            }
+                        }
+                        true
+                    }
+                    else -> true
+                }
+            }
+            strip.elevation = 24f
+            root.addView(
+                strip,
+                FrameLayout.LayoutParams(edge, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START),
+            )
+            root.bringChildToFront(strip)
+        }
+        setContentView(root)
+        window.decorView.post { excludeLeftEdge() }
+    }
+
+    private fun excludeLeftEdge() {
+        if (Build.VERSION.SDK_INT < 29) return
+        val view = window.decorView
+        val density = view.resources.displayMetrics.density
+        val width = (28 * density).toInt().coerceAtLeast(1)
+        val height = view.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        if (height <= 0) return
+        ViewCompat.setSystemGestureExclusionRects(view, listOf(Rect(0, 0, width, height)))
     }
 
     private fun askLocationIfNeeded() {
@@ -264,6 +331,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        window.decorView.post { excludeLeftEdge() }
         runCatching { InAppUpdate(this).retryPending() }
         if (this::web.isInitialized) {
             runCatching {
