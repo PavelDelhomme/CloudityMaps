@@ -6272,6 +6272,52 @@ if (offlineBody) {
 document.getElementById('btnDefineHome').addEventListener('click', () => startAssign('home'));
 document.getElementById('btnDefineWork').addEventListener('click', () => startAssign('work'));
 scrim.addEventListener('click', closeDrawer);
+document.getElementById('btnCloseDrawer')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeDrawer();
+});
+(() => {
+  let drag = null;
+  const track = (x, y, id) => {
+    drag = { x, y, id };
+  };
+  const move = (x, y, id, ev) => {
+    if (!drag || id !== drag.id || !drawer.classList.contains('open')) return;
+    const dx = x - drag.x;
+    const dy = y - drag.y;
+    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) ev.preventDefault();
+    if (dx < -28 && Math.abs(dx) > Math.abs(dy)) {
+      drag = null;
+      closeDrawer();
+    }
+  };
+  const end = (x, y, id) => {
+    if (!drag || id !== drag.id) return;
+    const dx = x - drag.x;
+    const dy = y - drag.y;
+    drag = null;
+    if (drawer.classList.contains('open') && dx < -28 && Math.abs(dx) > Math.abs(dy)) closeDrawer();
+  };
+  const onDrawer = (el) => el && (el === drawer || el === scrim || drawer.contains(el));
+  window.addEventListener('touchstart', (e) => {
+    if (!drawer.classList.contains('open') || !onDrawer(e.target)) return;
+    const t = e.changedTouches[0];
+    track(t.clientX, t.clientY, t.identifier);
+  }, true);
+  window.addEventListener('touchmove', (e) => {
+    if (!drag) return;
+    const t = [...e.changedTouches].find((x) => x.identifier === drag.id);
+    if (!t) return;
+    move(t.clientX, t.clientY, t.identifier, e);
+  }, { capture: true, passive: false });
+  window.addEventListener('touchend', (e) => {
+    const t = [...e.changedTouches].find((x) => drag && x.identifier === drag.id);
+    if (!t) return;
+    end(t.clientX, t.clientY, t.identifier);
+  }, true);
+  window.addEventListener('touchcancel', () => { drag = null; }, true);
+})();
 
 document.addEventListener('pointerdown', (e) => {
   const t = e.target;

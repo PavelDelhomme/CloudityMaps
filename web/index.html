@@ -866,10 +866,12 @@
       position: absolute; z-index: 2001; top: 0; bottom: 0; left: 0; width: min(86vw, 320px);
       background: #1a1a2e; color: #f1f5f9; padding: calc(18px + var(--safe-top)) 0 16px;
       box-shadow: 4px 0 16px rgba(0,0,0,.4); transform: translateX(-105%); transition: transform .2s ease;
+      touch-action: pan-y;
     }
     .drawer.open { transform: translateX(0); }
     .scrim[hidden] { display: none !important; }
-    .d-head { display: flex; align-items: center; gap: 12px; padding: 8px 18px 16px; border-bottom: 1px solid #2d2d44; }
+    .d-head { display: flex; align-items: center; gap: 12px; padding: 8px 8px 16px 18px; border-bottom: 1px solid #2d2d44; }
+    .d-head .d-who { flex: 1; min-width: 0; }
     .d-head .who { font-weight: 700; }
     .d-head .mail { color: #94a3b8; font-size: 12px; }
     .d-item {
@@ -1065,10 +1067,13 @@
   <aside class="drawer" id="drawer" aria-hidden="true">
     <div class="d-head">
       <button type="button" class="avatar" id="drawerAvatar">P</button>
-      <div>
+      <div class="d-who">
         <div class="who">Paul</div>
         <div class="mail" id="drawerMail">Compte Hubera</div>
       </div>
+      <button type="button" class="ico" id="btnCloseDrawer" aria-label="Fermer le menu" title="Fermer le menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
     </div>
     <div class="d-label">Navigation</div>
     <button type="button" class="d-item" data-go="maps">Maps</button>
