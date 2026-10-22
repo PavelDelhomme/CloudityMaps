@@ -182,6 +182,7 @@
       color: #f1f5f9; cursor: pointer; display: grid; place-items: center; flex-shrink: 0;
     }
     .ico:active { background: #16213e; }
+    .ico.clear[hidden] { display: none !important; }
     .avatar {
       width: 36px; height: 36px; border-radius: 18px; border: 0; background: #e94560; color: #fff;
       font-weight: 700; font-size: 14px; cursor: pointer; flex-shrink: 0; margin-right: 4px;
@@ -334,7 +335,8 @@
     .route-card .go.cal { background: #0E4D5C; margin-top: 10px; }
     .set-row {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-      padding: 14px 0; border-bottom: 1px solid #2d2d44;
+      padding: 14px; margin: 8px 0; border: 1px solid #2d2d44; border-radius: 14px;
+      background: #16213e;
     }
     .set-row .lab { font-weight: 650; }
     .set-row .hint { color: #94a3b8; font-size: 12px; margin-top: 3px; }

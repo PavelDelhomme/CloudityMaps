@@ -230,6 +230,7 @@ let lastSpeedKmh = 0;
 let movingSince = 0;
 let fuelArmed = false;
 let tripInfoOpen = false;
+let tripInfoUserClosed = false;
 let fuelDriveMs = 0;
 let fuelDriveLast = 0;
 let lastNavAt = 0;
@@ -694,9 +695,14 @@ function placeRoadSign() {
 
 function syncClear() {
   const q = String(qEl && qEl.value ? qEl.value : '').trim();
-  const searching =
-    document.activeElement === qEl || document.body.classList.contains('kb');
-  btnClear.hidden = !(searching && q.length > 0);
+  btnClear.hidden = q.length === 0;
+}
+
+function dismissSearchChrome() {
+  showHits([]);
+  if (qEl) qEl.blur();
+  document.body.classList.remove('kb');
+  syncClear();
 }
 
 function clearPoi() {
@@ -2714,6 +2720,7 @@ function dismissRoutePreview() {
   document.body.classList.remove('routing');
   clearDetourOffer();
   tripInfoOpen = false;
+  tripInfoUserClosed = false;
   paintTripInfoMenu();
   if (originMarker) {
     map.removeLayer(originMarker);
@@ -3131,7 +3138,7 @@ function paintTripInfoMenu() {
     return;
   }
   if (navigating) tripInfoOpen = !fuelCardCollapsed;
-  else if (planning) tripInfoOpen = true;
+  else tripInfoOpen = !tripInfoUserClosed;
   if (tog) {
     tog.textContent = tripInfoOpen ? '▴' : '▾';
     tog.setAttribute('aria-expanded', tripInfoOpen ? 'true' : 'false');
@@ -3201,7 +3208,11 @@ function paintTripInfoMenu() {
       (rangeLab ? `${fuel.l100 > 0 ? ' · ' : ''}${esc(rangeLab)}` : '') +
       `</div>`;
   }
-  panel.innerHTML = rows;
+  panel.innerHTML =
+    rows +
+    `<div class="ti-k">Habitacle</div>` +
+    dashControlsHtml();
+  bindDashControls(panel);
 }
 
 function toggleFuelCard() {
@@ -3224,6 +3235,7 @@ function toggleTripInfo() {
     return;
   }
   tripInfoOpen = !tripInfoOpen;
+  tripInfoUserClosed = !tripInfoOpen;
   if (tripInfoOpen) requestFuelSnapshot(false);
   paintTripInfoMenu();
 }
@@ -3383,6 +3395,10 @@ function paintGateArc(pct, tank, l100) {
 function promptFuelGate(kind) {
   const sheet = document.getElementById('fuelGate');
   if (!sheet) {
+    if (kind === 'nav') {
+      void beginGuidedNav();
+      return;
+    }
     if (kind === 'start') {
       const veh = activeFuelVehicle();
       startFreeTracking(veh && veh.id);
@@ -3393,12 +3409,18 @@ function promptFuelGate(kind) {
   const row = document.getElementById('fuelGateVeh');
   const title = document.getElementById('fuelGateTitle');
   const hint = document.getElementById('fuelGateHint');
-  if (title) title.textContent = kind === 'start' ? 'Démarrer le trajet' : 'Confirmer la jauge';
+  const before = kind === 'start' || kind === 'nav';
+  if (title) {
+    title.textContent = kind === 'nav'
+      ? 'Jauge avant le trajet'
+      : kind === 'start'
+        ? 'Démarrer le trajet'
+        : 'Confirmer la jauge';
+  }
   if (hint) {
-    hint.textContent =
-      kind === 'start'
-        ? 'Voiture + jauge. Le trajet ne démarre que si tu valides.'
-        : 'Ajuste la jauge. Je confirme nourrit l’IA conso ; Je ne confirme pas enregistre sans apprendre.';
+    hint.textContent = before
+      ? 'Voiture + jauge. Le trajet ne démarre que si tu valides.'
+      : 'Ajuste la jauge. Je confirme nourrit l’IA conso ; Je ne confirme pas enregistre sans apprendre.';
   }
   let picked = gateDefaultVehicleId(list);
   const paintVeh = () => {
@@ -3451,6 +3473,26 @@ function promptFuelGate(kind) {
   sheet.hidden = false;
   const go = async (skip) => {
     sheet.hidden = true;
+    if (kind === 'nav') {
+      if (picked) setSelectedFuelVehicle(picked, true);
+      const hiddenNav = document.getElementById('fuelGateGauge');
+      const vehNav = list.find((v) => Number(v.id || v.vehicleId) === picked);
+      const pctNav = Number(hiddenNav && hiddenNav.value);
+      const litersNav =
+        !skip && vehNav && vehNav.tank > 0 && Number.isFinite(pctNav)
+          ? Math.round((vehNav.tank * pctNav) / 10) / 10
+          : '';
+      const extra = {};
+      if (picked) extra.vehicleId = picked;
+      if (litersNav !== '' && Number.isFinite(Number(litersNav))) extra.liters = Number(litersNav);
+      mapsStartedFuel = true;
+      await beginGuidedNav({ quietFuel: true });
+      fuelControl('start', extra);
+      startFuelPoll();
+      startFuelHudTick();
+      if (!skip) toast('Jauge enregistrée · guidage et Fuel démarrés');
+      return;
+    }
     if (kind !== 'start') {
       toast(skip ? 'Trajet enregistré sans apprentissage IA' : 'Conso confirmée pour l’IA');
       return;
@@ -3476,7 +3518,7 @@ function promptFuelGate(kind) {
   const btnCancel = document.getElementById('fuelGateCancel');
   if (btnGo) btnGo.onclick = () => go(false);
   if (btnSkip) {
-    btnSkip.textContent = kind === 'start' ? 'Démarrer quand même' : 'Je ne confirme pas';
+    btnSkip.textContent = kind === 'start' || kind === 'nav' ? 'Démarrer quand même' : 'Je ne confirme pas';
     btnSkip.onclick = () => go(true);
   }
   if (btnCancel) btnCancel.onclick = () => { sheet.hidden = true; };
@@ -3851,17 +3893,8 @@ function stopNavigation(opts) {
   syncFuelChrome();
 }
 
-async function startNavigation() {
-  const okLoc = await requestPreciseLoc();
-  if (!okLoc && !me) {
-    explainLocMiss();
-    return;
-  }
-  const r = currentChoice();
-  if (!r) {
-    toast('Choisis un itinéraire avant de démarrer.');
-    return;
-  }
+async function beginGuidedNav(opts) {
+  const quietFuel = !!(opts && opts.quietFuel);
   paused = false;
   lastSpeedKmh = 0;
   movingSince = 0;
@@ -3869,10 +3902,10 @@ async function startNavigation() {
   stopIdleGeo();
   enterNavUi();
   if (isCarMode()) {
-    if (mapsStartedFuel || Number(fuelTrip) > 0) {
+    if (quietFuel || mapsStartedFuel || Number(fuelTrip) > 0) {
       startFuelPoll();
       startFuelHudTick();
-      toast('Guidage — Fuel déjà en cours');
+      if (!quietFuel) toast('Guidage — Fuel déjà en cours');
     } else {
       fuelArmed = true;
       mapsStartedFuel = false;
@@ -3884,6 +3917,24 @@ async function startNavigation() {
   }
   startNavWatch(applyNavFix);
   if (me) applyNavCamera(me.lat, me.lon, true);
+}
+
+async function startNavigation() {
+  const okLoc = await requestPreciseLoc();
+  if (!okLoc && !me) {
+    explainLocMiss();
+    return;
+  }
+  const r = currentChoice();
+  if (!r) {
+    toast('Choisis un itinéraire avant de démarrer.');
+    return;
+  }
+  if (isCarMode() && !(mapsStartedFuel || Number(fuelTrip) > 0)) {
+    promptFuelGate('nav');
+    return;
+  }
+  await beginGuidedNav();
 }
 
 let lastPaintedLimit = null;
@@ -4198,12 +4249,30 @@ function openPlaceActions(kind, place) {
     `<div class="route-head"><strong>${esc(title)}</strong>` +
     `<button type="button" class="panel-close" id="paClose" aria-label="Fermer">✕</button></div>` +
     `<span>${esc(place.label || '')}</span>` +
+    `<div id="paMap" style="height:160px;border-radius:12px;margin-top:10px;overflow:hidden"></div>` +
+    `<button type="button" class="go" id="paSee" style="margin-top:8px;background:#0E4D5C">Voir sur la carte</button>` +
     `<button type="button" class="go" id="paGo">Itinéraire</button>` +
     `<button type="button" class="go" id="paEdit" style="margin-top:8px;background:#16213e">Modifier l’adresse</button>` +
     `<button type="button" class="go" id="paNick" style="margin-top:8px;background:#16213e">Petit nom</button>` +
     `<button type="button" class="go" id="paDel" style="margin-top:8px;background:#3f1d2e;color:#e94560">Supprimer</button>`;
   const closer = document.getElementById('paClose');
   if (closer) closer.onclick = () => { sheetEl.hidden = true; };
+  const paMapEl = document.getElementById('paMap');
+  if (paMapEl && window.L && Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon))) {
+    const mini = L.map(paMapEl, { zoomControl: false, attributionControl: false }).setView([place.lat, place.lon], 15);
+    const spec = TILE_SOURCES[0];
+    L.tileLayer(spec.url, Object.assign({ maxZoom: 19, attribution: '' }, spec.opts || {})).addTo(mini);
+    L.circleMarker([place.lat, place.lon], { radius: 8, color: '#e94560', fillColor: '#e94560', fillOpacity: 0.9 }).addTo(mini);
+    setTimeout(() => { try { mini.invalidateSize(); } catch (_) { /* */ } }, 80);
+  }
+  const see = document.getElementById('paSee');
+  if (see) {
+    see.onclick = () => {
+      sheetEl.hidden = true;
+      setTab('maps');
+      try { map.setView([place.lat, place.lon], 16); } catch (_) { /* */ }
+    };
+  }
   const go = document.getElementById('paGo');
   const edit = document.getElementById('paEdit');
   const nickBtn = document.getElementById('paNick');
@@ -5432,39 +5501,79 @@ function comfortFactor(p) {
 function dashControlsHtml() {
   const p = dashPrefs();
   const factor = comfortFactor(p);
-  const extra = p.open
-    ? `<div class="comfort-row">` +
-      `<button type="button" id="dashAc" class="${p.ac ? 'on' : ''}">Clim</button>` +
-      `<button type="button" id="dashHeat" class="${p.heat ? 'on' : ''}">Chauffage</button>` +
-      `<label>Degré <input id="dashDeg" type="number" min="-10" max="40" value="${p.deg}"></label>` +
-      `</div>` +
-      `<div class="dash-note">Estimation locale de conso × ${factor.toFixed(2)} (clim, chauffage, température). Ce n’est pas une mesure Fuel.</div>`
-    : '';
-  return `<button type="button" class="ghost" id="dashToggle">${p.open ? 'Masquer le tableau de bord' : 'Tableau de bord'}</button>` + extra;
+  return (
+    `<div class="comfort-row">` +
+    `<button type="button" id="dashAc" class="${p.ac ? 'on' : ''}" role="switch" aria-checked="${p.ac ? 'true' : 'false'}">Clim ${p.ac ? 'on' : 'off'}</button>` +
+    `<button type="button" id="dashHeat" class="${p.heat ? 'on' : ''}" role="switch" aria-checked="${p.heat ? 'true' : 'false'}">Chauffage ${p.heat ? 'on' : 'off'}</button>` +
+    `<button type="button" id="dashDegOpen">${p.deg}°</button>` +
+    `</div>` +
+    `<div class="dash-note">Estimation locale de conso × ${factor.toFixed(2)} (clim ou chauffage, température).</div>`
+  );
+}
+
+function openComfortGauge() {
+  let sheet = document.getElementById('comfortSheet');
+  if (!sheet) {
+    sheet = document.createElement('div');
+    sheet.id = 'comfortSheet';
+    sheet.className = 'sheet';
+    document.body.appendChild(sheet);
+  }
+  const p = dashPrefs();
+  const ticks = [-5, 0, 10, 18, 21, 24, 28, 35];
+  sheet.hidden = false;
+  sheet.innerHTML =
+    `<div class="route-head"><strong>Température habitacle</strong>` +
+    `<button type="button" class="panel-close" id="comfortClose" aria-label="Fermer">✕</button></div>` +
+    `<div style="font-size:36px;font-weight:800;text-align:center;margin:8px 0">${p.deg}°</div>` +
+    `<div class="comfort-row">` +
+    ticks.map((n) => `<button type="button" data-deg="${n}" class="${n === p.deg ? 'on' : ''}">${n}</button>`).join('') +
+    `</div>`;
+  const close = sheet.querySelector('#comfortClose');
+  if (close) close.onclick = () => { sheet.hidden = true; };
+  sheet.querySelectorAll('[data-deg]').forEach((b) => {
+    b.onclick = () => {
+      const d = dashPrefs();
+      d.deg = Number(b.dataset.deg);
+      d.open = true;
+      saveDash(d);
+      sheet.hidden = true;
+      renderFuelHome();
+      paintTripInfoMenu();
+    };
+  });
 }
 
 function bindDashControls(root) {
   if (!root) return;
-  const toggle = root.querySelector('#dashToggle');
-  if (toggle) {
-    toggle.onclick = () => {
-      const p = dashPrefs();
-      p.open = !p.open;
-      saveDash(p);
-      renderFuelHome();
-    };
-  }
   const ac = root.querySelector('#dashAc');
   const heat = root.querySelector('#dashHeat');
-  const deg = root.querySelector('#dashDeg');
-  if (ac) ac.onclick = () => { const p = dashPrefs(); p.ac = !p.ac; saveDash(p); renderFuelHome(); };
-  if (heat) heat.onclick = () => { const p = dashPrefs(); p.heat = !p.heat; saveDash(p); renderFuelHome(); };
-  if (deg) deg.onchange = () => {
-    const p = dashPrefs();
-    const n = Number(deg.value);
-    p.deg = Number.isFinite(n) ? Math.max(-10, Math.min(40, n)) : 20;
-    saveDash(p);
+  const deg = root.querySelector('#dashDegOpen');
+  const refresh = () => {
     renderFuelHome();
+    paintTripInfoMenu();
+  };
+  if (ac) ac.onclick = (e) => {
+    e.stopPropagation();
+    const p = dashPrefs();
+    p.ac = !p.ac;
+    if (p.ac) p.heat = false;
+    p.open = true;
+    saveDash(p);
+    refresh();
+  };
+  if (heat) heat.onclick = (e) => {
+    e.stopPropagation();
+    const p = dashPrefs();
+    p.heat = !p.heat;
+    if (p.heat) p.ac = false;
+    p.open = true;
+    saveDash(p);
+    refresh();
+  };
+  if (deg) deg.onclick = (e) => {
+    e.stopPropagation();
+    openComfortGauge();
   };
 }
 
@@ -5663,7 +5772,6 @@ function showFuelRecap() {
   const rows = loadCachedFuelTrips();
   const similar = rows[0] ? fuelSimilarNote({ origin: rows[0].origin, dest: rows[0].dest, id: -1, km }, rows) : '';
   toast(`Trajet terminé · ${km.toFixed(1)} km${similar ? ' · ' + similar : ''}`);
-  if (isCarMode()) promptFuelGate('end');
 }
 
 function renderSettings() {
@@ -5922,11 +6030,9 @@ window.__mapsBack = function () {
     dismissRoutePreview();
     return true;
   }
-  if (!hitsEl.hidden) {
-    showHits([]);
-    pendingAssign = null;
-    pendingEnd = null;
-    qEl.placeholder = 'Rechercher ici';
+  const searchKb = document.body.classList.contains('kb') || document.activeElement === qEl;
+  if (!hitsEl.hidden || searchKb) {
+    dismissSearchChrome();
     return true;
   }
   if (activeTab === 'trips' || activeTab === 'saved' || activeTab === 'settings' || activeTab === 'offline' || activeTab === 'fuelux') {
@@ -5992,9 +6098,7 @@ if (window.visualViewport) {
 
 btnClear.addEventListener('click', () => {
   qEl.value = '';
-  syncClear();
-  qEl.focus();
-  void showSuggestHits('');
+  dismissSearchChrome();
 });
 
 document.getElementById('searchForm').addEventListener('submit', (e) => {
@@ -6090,9 +6194,8 @@ if (tripInfoToggle) tripInfoToggle.addEventListener('click', (e) => {
 });
 const tripInfoPanel = document.getElementById('tripInfoPanel');
 if (tripInfoPanel) tripInfoPanel.addEventListener('click', (e) => {
-  if (!navigating || fuelCardCollapsed) return;
   e.stopPropagation();
-  toggleFuelCard();
+  e.preventDefault();
 });
 for (const id of ['fuelCardFold', 'fuelPageFold', 'fuelCardHandle']) {
   const el = document.getElementById(id);
