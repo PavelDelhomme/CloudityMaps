@@ -209,6 +209,7 @@ let routeLayer = null;
 let traceLayer = null;
 let trace = [];
 let fuelTrip = null;
+let pendingResumeId = null;
 let paused = false;
 let searchTimer = 0;
 let pendingAssign = null;
@@ -823,14 +824,7 @@ function maybeStartFuelOnMove() {
   if (!fuelArmed || mapsStartedFuel || paused || !isCarMode()) return;
   if (!isRolling()) return;
   fuelArmed = false;
-  mapsStartedFuel = true;
-  if (!fuelHudStartedAt) fuelHudStartedAt = Date.now();
-  fuelDriveMs = 0;
-  fuelDriveLast = Date.now();
-  const ok = fuelControl('start', { dest: destShort() });
-  startFuelPoll();
-  startFuelHudTick();
-  toast(ok ? 'Fuel démarré — tu roules.' : 'Tu roules — Fuel non joignable');
+  promptFuelGate('nav');
 }
 
 function updateSpeed(coords, next) {
@@ -3395,23 +3389,16 @@ function paintGateArc(pct, tank, l100) {
 function promptFuelGate(kind) {
   const sheet = document.getElementById('fuelGate');
   if (!sheet) {
-    if (kind === 'nav') {
-      void beginGuidedNav();
-      return;
-    }
-    if (kind === 'start') {
-      const veh = activeFuelVehicle();
-      startFreeTracking(veh && veh.id);
-    }
+    toast('Confirme la jauge avant de démarrer le trajet.');
     return;
   }
   const list = loadFuelSnap().vehicles || [];
   const row = document.getElementById('fuelGateVeh');
   const title = document.getElementById('fuelGateTitle');
   const hint = document.getElementById('fuelGateHint');
-  const before = kind === 'start' || kind === 'nav';
+  const before = kind === 'start' || kind === 'nav' || kind === 'resume';
   if (title) {
-    title.textContent = kind === 'nav'
+    title.textContent = kind === 'nav' || kind === 'resume'
       ? 'Jauge avant le trajet'
       : kind === 'start'
         ? 'Démarrer le trajet'
@@ -3473,6 +3460,13 @@ function promptFuelGate(kind) {
   sheet.hidden = false;
   const go = async (skip) => {
     sheet.hidden = true;
+    if (kind === 'resume') {
+      const id = pendingResumeId;
+      pendingResumeId = null;
+      if (id) fuelTrip = id;
+      enterFreeHud(fuelTrip);
+      return;
+    }
     if (kind === 'nav') {
       if (picked) setSelectedFuelVehicle(picked, true);
       const hiddenNav = document.getElementById('fuelGateGauge');
@@ -3518,10 +3512,13 @@ function promptFuelGate(kind) {
   const btnCancel = document.getElementById('fuelGateCancel');
   if (btnGo) btnGo.onclick = () => go(false);
   if (btnSkip) {
-    btnSkip.textContent = kind === 'start' || kind === 'nav' ? 'Démarrer quand même' : 'Je ne confirme pas';
+    btnSkip.textContent = kind === 'start' || kind === 'nav' || kind === 'resume' ? 'Démarrer quand même' : 'Je ne confirme pas';
     btnSkip.onclick = () => go(true);
   }
-  if (btnCancel) btnCancel.onclick = () => { sheet.hidden = true; };
+  if (btnCancel) btnCancel.onclick = () => {
+    sheet.hidden = true;
+    pendingResumeId = null;
+  };
 }
 
 function startFreeTracking(vehicleId, liters) {
@@ -3901,18 +3898,14 @@ async function beginGuidedNav(opts) {
   setFollowNav(true);
   stopIdleGeo();
   enterNavUi();
+  fuelArmed = false;
   if (isCarMode()) {
-    if (quietFuel || mapsStartedFuel || Number(fuelTrip) > 0) {
+    if (quietFuel || mapsStartedFuel) {
       startFuelPoll();
       startFuelHudTick();
       if (!quietFuel) toast('Guidage — Fuel déjà en cours');
-    } else {
-      fuelArmed = true;
-      mapsStartedFuel = false;
-      toast('Guidage — Fuel se lance dès que tu roules.');
     }
   } else {
-    fuelArmed = false;
     toast('Guidage démarré');
   }
   startNavWatch(applyNavFix);
@@ -3930,7 +3923,7 @@ async function startNavigation() {
     toast('Choisis un itinéraire avant de démarrer.');
     return;
   }
-  if (isCarMode() && !(mapsStartedFuel || Number(fuelTrip) > 0)) {
+  if (isCarMode() && !mapsStartedFuel) {
     promptFuelGate('nav');
     return;
   }
@@ -6568,8 +6561,9 @@ document.addEventListener('click', (e) => {
   const dest = row.dataset.dest || '';
   const origin = row.dataset.origin || '';
   if (active) {
-    enterFreeHud(row.dataset.id);
+    pendingResumeId = row.dataset.id;
     setTab('maps');
+    promptFuelGate('resume');
     return;
   }
   const q = dest || origin;
@@ -6618,25 +6612,9 @@ function applyFuelFromQuery() {
   } else {
     runDest();
   }
-  if (tripId) {
+  if (tripId && (navigating || mapsStartedFuel)) {
     fuelTrip = tripId;
-    paused = false;
     showFuelBar(`Trajet Fuel · ${tripId}`);
-    lastDest = { lat: me?.lat || 0, lon: me?.lon || 0, label: `Trajet Fuel ${tripId}` };
-    searchForm.hidden = true;
-    navBar.hidden = false;
-    chipsEl.hidden = true;
-    document.body.classList.add('nav');
-    const titleEl = document.getElementById('hudTitle');
-    const metaEl = document.getElementById('hudMeta');
-    const distEl = document.getElementById('hudDist');
-    if (titleEl) titleEl.textContent = 'Trajet Fuel';
-    if (metaEl) metaEl.textContent = `trajet Fuel ${tripId}`;
-    if (distEl) distEl.textContent = 'GPS';
-    navigating = true;
-    setFollowNav(true);
-    stopIdleGeo();
-    startNavWatch(applyNavFix);
   }
 }
 
@@ -6725,15 +6703,11 @@ window.__mapsFuelEvent = function (raw) {
     const id = q.get('tripId');
     const kmQ = Number(q.get('km'));
     if (Number.isFinite(kmQ) && kmQ > 0) fuelLiveKm = kmQ;
-    if (id && Number(id) > 0) {
+    if (id && Number(id) > 0 && (navigating || mapsStartedFuel)) {
       fuelTrip = id;
       showFuelBar(`Trajet Fuel · ${id}`);
-      if (!navigating && !hudCollapsed) {
-        enterFreeHud(id);
-      } else {
-        paintFuelStats();
-        if (navigating) paintHud(currentChoice());
-      }
+      paintFuelStats();
+      if (navigating) paintHud(currentChoice());
     }
     const msg = q.get('msg');
     if (msg && msg !== 'Historique Fuel' && msg !== 'Fuel') toast(msg);
