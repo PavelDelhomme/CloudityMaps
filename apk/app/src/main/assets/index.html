@@ -365,6 +365,9 @@
     .place-badge.kind-work {
       width: 28px; height: 28px; border-radius: 9px; background: #b45309;
     }
+    .place-badge.kind-saved {
+      width: 28px; height: 28px; border-radius: 14px; background: #0E4D5C;
+    }
     .place-badge.kind-person {
       width: 22px; height: 22px; border-radius: 11px; background: #7c3aed;
     }
@@ -456,6 +459,7 @@
       background: #1a1a2e; box-shadow: 0 -2px 8px rgba(0,0,0,.4);
     }
     .sheet { left: 12px; right: 12px; bottom: calc(var(--chrome) + 16px); border-radius: 16px; padding: 14px; width: auto; z-index: 1210; }
+    .sheet.place-sheet { max-height: 42vh; overflow-y: auto; }
     #fillSheet {
       z-index: 4000; top: calc(52px + var(--safe-top)); bottom: auto;
       max-height: 72vh; overflow-y: auto;

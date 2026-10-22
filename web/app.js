@@ -247,6 +247,7 @@ let lastSpokenAt = 0;
 let followNav = true;
 let poiLayer = null;
 let contactLayer = null;
+let placeFocusMarker = null;
 let originMarker = null;
 let worksLayer = null;
 let mapsStartedFuel = false;
@@ -1021,6 +1022,7 @@ const PLACE_SVGS = {
   home: '<svg viewBox="0 0 24 24" width="24" height="24" fill="#fff" aria-hidden="true"><path d="M12 3.4 3.2 10.8a1 1 0 0 0-.3.7V20a1.3 1.3 0 0 0 1.3 1.3h5.4v-6.4h4.8v6.4h5.4A1.3 1.3 0 0 0 21.1 20v-8.5a1 1 0 0 0-.3-.7L12 3.4z"/></svg>',
   work: '<svg viewBox="0 0 24 24" width="22" height="22" fill="#fff" aria-hidden="true"><path d="M9 7V5.6A2.6 2.6 0 0 1 11.6 3h.8A2.6 2.6 0 0 1 15 5.6V7h3.4A1.6 1.6 0 0 1 20 8.6V12H4V8.6A1.6 1.6 0 0 1 5.6 7H9zm1.5 0h3V5.7c0-.4-.3-.7-.7-.7h-1.6c-.4 0-.7.3-.7.7V7zM4 13.5h16V19a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 19v-5.5z"/></svg>',
   person: '<svg viewBox="0 0 24 24" width="18" height="18" fill="#fff" aria-hidden="true"><circle cx="12" cy="8" r="3.7"/><path d="M5.1 19.4c.5-3.5 3.3-5.5 6.9-5.5s6.4 2 6.9 5.5c.04.4-.3.8-.8.8H5.9c-.5 0-.84-.4-.8-.8z"/></svg>',
+  saved: '<svg viewBox="0 0 24 24" width="18" height="18" fill="#fff" aria-hidden="true"><path d="M12 3.2 14.7 9l6.3.6-4.8 4.1 1.5 6.1L12 16.8 6.3 19.8 7.8 13.7 3 9.6 9.3 9 12 3.2z"/></svg>',
 };
 
 function pinNamesVisible() {
@@ -1151,6 +1153,18 @@ function paintPlacePins() {
       .addTo(contactLayer)
       .on('click', () => openPlaceActions('work', places.work));
   }
+  (places.saved || []).forEach((rec, i) => {
+    if (!rec || !Number.isFinite(Number(rec.lat)) || !Number.isFinite(Number(rec.lon))) return;
+    if (hideSavedPlaceBecauseHere(rec) || hideSavedBecauseRoute(rec)) return;
+    const name = placeNick(rec, (rec.label || '').split(',')[0] || 'Lieu');
+    L.marker([Number(rec.lat), Number(rec.lon)], {
+      icon: placePinIcon('saved', name),
+      zIndexOffset: 400,
+      keyboard: false,
+    })
+      .addTo(contactLayer)
+      .on('click', () => openPlaceActions('saved', { ...rec, _i: i }));
+  });
   syncPinLabels();
 }
 
@@ -4228,7 +4242,56 @@ function startAssign(kind) {
   syncClear();
   setTab('maps');
   qEl.focus();
+  try {
+    const n = qEl.value.length;
+    if (n > 0) qEl.setSelectionRange(n, n);
+  } catch {
+    /* le texte du raccourci reste en place */
+  }
   void showSuggestHits(qEl.value);
+}
+
+function clearPlaceFocus() {
+  if (!placeFocusMarker) return;
+  try { map.removeLayer(placeFocusMarker); } catch { /* */ }
+  placeFocusMarker = null;
+}
+
+function closePlaceSheet() {
+  clearPlaceFocus();
+  if (!sheetEl) return;
+  sheetEl.hidden = true;
+  sheetEl.classList.remove('place-sheet');
+}
+
+function placeDistanceLine(place) {
+  if (!me || !place || !Number.isFinite(Number(place.lat)) || !Number.isFinite(Number(place.lon))) {
+    return 'Montrée sur la carte';
+  }
+  const km = haversineKm(me, { lat: Number(place.lat), lon: Number(place.lon) });
+  if (!Number.isFinite(km)) return 'Montrée sur la carte';
+  if (km < 1) return `À ${Math.max(1, Math.round(km * 1000))} m · montrée sur la carte`;
+  return `À ${km.toFixed(1)} km · montrée sur la carte`;
+}
+
+function focusPlaceOnMap(place, label, kind) {
+  const lat = Number(place && place.lat);
+  const lon = Number(place && place.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  setTab('maps');
+  clearPlaceFocus();
+  const pinKind = kind === 'work' ? 'work' : kind === 'saved' ? 'saved' : 'home';
+  placeFocusMarker = L.marker([lat, lon], {
+    icon: placePinIcon(pinKind, label || 'Lieu'),
+    zIndexOffset: 900,
+    keyboard: false,
+  }).addTo(map);
+  try {
+    map.setView([lat, lon], 16, { animate: false });
+    map.panBy([0, -160], { animate: false });
+  } catch {
+    /* carte pas prête */
+  }
 }
 
 function openPlaceActions(kind, place) {
@@ -4237,48 +4300,33 @@ function openPlaceActions(kind, place) {
     return;
   }
   const title = placeNick(place, kind === 'home' ? 'Maison' : kind === 'work' ? 'Travail' : 'Lieu');
+  focusPlaceOnMap(place, title, kind);
+  sheetEl.classList.add('place-sheet');
   sheetEl.hidden = false;
   sheetEl.innerHTML =
     `<div class="route-head"><strong>${esc(title)}</strong>` +
     `<button type="button" class="panel-close" id="paClose" aria-label="Fermer">✕</button></div>` +
     `<span>${esc(place.label || '')}</span>` +
-    `<div id="paMap" style="height:160px;border-radius:12px;margin-top:10px;overflow:hidden"></div>` +
-    `<button type="button" class="go" id="paSee" style="margin-top:8px;background:#0E4D5C">Voir sur la carte</button>` +
+    `<span>${esc(placeDistanceLine(place))}</span>` +
     `<button type="button" class="go" id="paGo">Itinéraire</button>` +
     `<button type="button" class="go" id="paEdit" style="margin-top:8px;background:#16213e">Modifier l’adresse</button>` +
     `<button type="button" class="go" id="paNick" style="margin-top:8px;background:#16213e">Petit nom</button>` +
     `<button type="button" class="go" id="paDel" style="margin-top:8px;background:#3f1d2e;color:#e94560">Supprimer</button>`;
   const closer = document.getElementById('paClose');
-  if (closer) closer.onclick = () => { sheetEl.hidden = true; };
-  const paMapEl = document.getElementById('paMap');
-  if (paMapEl && window.L && Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon))) {
-    const mini = L.map(paMapEl, { zoomControl: false, attributionControl: false }).setView([place.lat, place.lon], 15);
-    const spec = TILE_SOURCES[0];
-    L.tileLayer(spec.url, Object.assign({ maxZoom: 19, attribution: '' }, spec.opts || {})).addTo(mini);
-    L.circleMarker([place.lat, place.lon], { radius: 8, color: '#e94560', fillColor: '#e94560', fillOpacity: 0.9 }).addTo(mini);
-    setTimeout(() => { try { mini.invalidateSize(); } catch (_) { /* */ } }, 80);
-  }
-  const see = document.getElementById('paSee');
-  if (see) {
-    see.onclick = () => {
-      sheetEl.hidden = true;
-      setTab('maps');
-      try { map.setView([place.lat, place.lon], 16); } catch (_) { /* */ }
-    };
-  }
+  if (closer) closer.onclick = () => closePlaceSheet();
   const go = document.getElementById('paGo');
   const edit = document.getElementById('paEdit');
   const nickBtn = document.getElementById('paNick');
   const del = document.getElementById('paDel');
   if (go) {
     go.onclick = () => {
-      sheetEl.hidden = true;
+      closePlaceSheet();
       void routeTo(place.lat, place.lon, place.label || title);
     };
   }
   if (edit) {
     edit.onclick = () => {
-      sheetEl.hidden = true;
+      closePlaceSheet();
       startAssign(kind);
     };
   }
@@ -4296,7 +4344,7 @@ function openPlaceActions(kind, place) {
       savePlaces(p);
       renderChips();
       renderSaved();
-      sheetEl.hidden = true;
+      closePlaceSheet();
       toast('Petit nom enregistré');
     };
   }
@@ -4311,7 +4359,7 @@ function openPlaceActions(kind, place) {
       savePlaces(p);
       renderChips();
       renderSaved();
-      sheetEl.hidden = true;
+      closePlaceSheet();
       toast('Adresse supprimée');
     };
   }
@@ -6016,7 +6064,7 @@ window.__mapsBack = function () {
     return true;
   }
   if (sheetEl && !sheetEl.hidden && sheetEl.querySelector('#paClose')) {
-    sheetEl.hidden = true;
+    closePlaceSheet();
     return true;
   }
   if (!navigating && routeCardEl && !routeCardEl.hidden) {
@@ -6162,8 +6210,7 @@ chipsEl.addEventListener('click', (e) => {
   const p = loadPlaces();
   const place = p[kind];
   if (place) {
-    const title = place.label || placeNick(place, kind === 'home' ? 'Maison' : kind === 'work' ? 'Travail' : 'Lieu');
-    void routeTo(Number(place.lat), Number(place.lon), title);
+    openPlaceActions(kind, place);
     return;
   }
   startAssign(kind);
@@ -6316,7 +6363,7 @@ document.addEventListener('pointerdown', (e) => {
   const t = e.target;
   if (!t || !t.closest) return;
   if (sheetEl && !sheetEl.hidden && sheetEl.querySelector('#paClose') && !sheetEl.contains(t)) {
-    sheetEl.hidden = true;
+    closePlaceSheet();
   }
   if (navigating) return;
   if (!routeCardEl || routeCardEl.hidden) return;
