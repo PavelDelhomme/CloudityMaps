@@ -212,6 +212,8 @@ let fuelTrip = null;
 let pendingResumeId = null;
 let paused = false;
 let searchTimer = 0;
+let searchGen = 0;
+let suppressSuggestUntil = 0;
 let pendingAssign = null;
 let lastDest = null;
 let lastOrigin = null;
@@ -700,8 +702,16 @@ function syncClear() {
   btnClear.hidden = q.length === 0;
 }
 
+function suggestSuppressed() {
+  return Date.now() < suppressSuggestUntil;
+}
+
 function dismissSearchChrome() {
+  searchGen += 1;
+  clearTimeout(searchTimer);
+  suppressSuggestUntil = Date.now() + 400;
   showHits([]);
+  if (chipsEl && !document.body.classList.contains('routing')) chipsEl.hidden = false;
   if (qEl) qEl.blur();
   document.body.classList.remove('kb');
   syncClear();
@@ -4366,16 +4376,19 @@ function openPlaceActions(kind, place) {
 }
 
 async function showSuggestHits(q) {
+  const gen = searchGen;
   const items = [];
   const query = String(q || '').trim();
   if (query.length >= 2) {
     chipsEl.hidden = true;
     try {
       const found = await searchPhoton(query);
+      if (gen !== searchGen) return;
       for (const h of found) items.push(h);
     } catch {
       /* hors ligne */
     }
+    if (gen !== searchGen) return;
     if (!items.length) {
       items.push({
         lat: me ? me.lat : 0,
@@ -4417,6 +4430,7 @@ async function showSuggestHits(q) {
       });
     }
   }
+  if (gen !== searchGen || suggestSuppressed()) return;
   showHits(items);
 }
 
@@ -6043,6 +6057,16 @@ function setTab(id) {
   closeDrawer();
 }
 
+window.__mapsDismissSearch = function () {
+  const open =
+    (hitsEl && !hitsEl.hidden) ||
+    document.body.classList.contains('kb') ||
+    (qEl && document.activeElement === qEl);
+  if (!open) return false;
+  dismissSearchChrome();
+  return true;
+};
+
 window.__mapsBack = function () {
   if (drawer.classList.contains('open')) {
     closeDrawer();
@@ -6071,11 +6095,7 @@ window.__mapsBack = function () {
     dismissRoutePreview();
     return true;
   }
-  const searchKb = document.body.classList.contains('kb') || document.activeElement === qEl;
-  if (!hitsEl.hidden || searchKb) {
-    dismissSearchChrome();
-    return true;
-  }
+  if (window.__mapsDismissSearch()) return true;
   if (activeTab === 'trips' || activeTab === 'saved' || activeTab === 'settings' || activeTab === 'offline' || activeTab === 'fuelux') {
     setTab('maps');
     return true;
@@ -6107,32 +6127,51 @@ window.__mapsBack = function () {
 };
 
 qEl.addEventListener('input', () => {
-  if (ignoreSearchInput) return;
+  if (ignoreSearchInput || suggestSuppressed()) return;
   syncClear();
   clearTimeout(searchTimer);
   const q = qEl.value.trim();
+  const gen = searchGen;
   searchTimer = setTimeout(() => {
-    showSuggestHits(q).catch(() => showHits([]));
+    if (gen !== searchGen || suggestSuppressed()) return;
+    showSuggestHits(q).catch(() => {
+      if (gen === searchGen) showHits([]);
+    });
   }, q.length < 2 ? 0 : 220);
 });
 
 qEl.addEventListener('focus', () => {
   document.body.classList.add('kb');
   syncClear();
+  if (suggestSuppressed()) return;
   if (!qEl.value.trim()) void showSuggestHits('');
 });
 qEl.addEventListener('blur', () => {
   window.setTimeout(() => {
-    if (document.activeElement !== qEl) document.body.classList.remove('kb');
+    if (document.activeElement === qEl) {
+      syncClear();
+      return;
+    }
+    document.body.classList.remove('kb');
+    const ae = document.activeElement;
+    const onHit = ae && ae.closest && ae.closest('#hits');
+    if (!onHit) dismissSearchChrome();
     syncClear();
   }, 180);
 });
 
 if (window.visualViewport) {
   const vv = window.visualViewport;
+  let kbWasOpen = false;
   const applyKb = () => {
     const kb = window.innerHeight - vv.height > 90;
-    document.body.classList.toggle('kb', kb || document.activeElement === qEl);
+    const focused = document.activeElement === qEl;
+    document.body.classList.toggle('kb', kb || focused);
+    if (kb) kbWasOpen = true;
+    else if (kbWasOpen && focused && hitsEl && !hitsEl.hidden) {
+      kbWasOpen = false;
+      dismissSearchChrome();
+    } else if (!kb) kbWasOpen = false;
   };
   vv.addEventListener('resize', applyKb);
 }

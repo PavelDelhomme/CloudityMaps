@@ -644,6 +644,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Android 15 : env(safe-area-inset-*) est souvent 0 dans la WebView. */
     private var lastSafeJs = ""
+    private var imeWasOpen = false
 
     private fun applySafeAreaJs(target: WebView, insets: WindowInsetsCompat) {
         val topRaw = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
@@ -666,9 +667,42 @@ class MainActivity : AppCompatActivity() {
     private fun bindSafeArea(target: WebView) {
         ViewCompat.setOnApplyWindowInsetsListener(target) { _, insets ->
             applySafeAreaJs(target, insets)
+            val ime = insets.isVisible(WindowInsetsCompat.Type.ime())
+            if (imeWasOpen && !ime) {
+                target.evaluateJavascript(
+                    "(function(){try{return !!(window.__mapsDismissSearch&&window.__mapsDismissSearch());}catch(e){return false;}})()",
+                    null,
+                )
+            }
+            imeWasOpen = ime
             WindowInsetsCompat.CONSUMED
         }
+        bindImeFallback(target)
         ViewCompat.requestApplyInsets(target)
+    }
+
+    private var imeFallbackBound = false
+
+    /** Android 9 (adjustPan) ne signale pas l’IME dans les insets. Le cadre visible, oui. */
+    private fun bindImeFallback(target: WebView) {
+        if (imeFallbackBound) return
+        imeFallbackBound = true
+        val root = window.decorView
+        var lastKb = false
+        root.viewTreeObserver.addOnGlobalLayoutListener {
+            val rect = Rect()
+            root.getWindowVisibleDisplayFrame(rect)
+            val full = root.rootView.height
+            if (full <= 0) return@addOnGlobalLayoutListener
+            val kb = full - rect.bottom > full * 0.15
+            if (lastKb && !kb && this::web.isInitialized) {
+                web.evaluateJavascript(
+                    "(function(){try{return !!(window.__mapsDismissSearch&&window.__mapsDismissSearch());}catch(e){return false;}})()",
+                    null,
+                )
+            }
+            lastKb = kb
+        }
     }
 
     private fun urlFromIntent(intent: Intent?): String {
