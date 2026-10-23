@@ -5837,41 +5837,62 @@ function renderSettings() {
   const dock = musicDockOn();
   const mode = travelMode;
   const id = loadId();
+  const card = (title, hint, actions) =>
+    `<section class="set-card"><h2>${title}</h2><p>${hint}</p>${
+      actions ? `<div class="set-actions">${actions}</div>` : ''
+    }</section>`;
+  const btn = (set, val, label, on) =>
+    `<button type="button" class="set-btn${on ? ' on' : ''}" data-set="${set}" data-val="${val}">${label}</button>`;
   body.innerHTML =
-    `<p class="page-hint">Compte ${esc(id.email)} · Maps ${esc(appVersionLabel())}</p>` +
-    `<div class="set-row"><div><div class="lab">Notifications sonores</div><div class="hint">Annonces de guidage</div></div>` +
-    `<div class="seg"><button type="button" class="choice${voice ? ' on' : ''}" data-set="voice" data-val="1">On</button>` +
-    `<button type="button" class="choice${voice ? '' : ' on'}" data-set="voice" data-val="0">Off</button></div></div>` +
-    `<div class="set-row"><div><div class="lab">Carte nuit</div><div class="hint">Auto = 21h–6h</div></div>` +
-    `<div class="seg">` +
-    ['auto', 'on', 'off']
-      .map(
-        (v) =>
-          `<button type="button" class="choice${night === v ? ' on' : ''}" data-set="night" data-val="${v}">${
-            v === 'auto' ? 'Auto' : v === 'on' ? 'Nuit' : 'Jour'
-          }</button>`,
-      )
-      .join('') +
-    `</div></div>` +
-    `<div class="set-row"><div><div class="lab">Mode de déplacement</div><div class="hint">Par défaut pour les itinéraires</div></div>` +
-    `<div class="seg">` +
-    TRAVEL_MODES.map(
-      ([idm, lab]) =>
-        `<button type="button" class="choice${mode === idm ? ' on' : ''}" data-set="mode" data-val="${idm}">${lab}</button>`,
-    ).join('') +
-    `</div></div>` +
-    `<div class="set-row"><div><div class="lab">Barre Music</div><div class="hint">Dock en bas de l’écran</div></div>` +
-    `<div class="seg"><button type="button" class="choice${dock ? ' on' : ''}" data-set="dock" data-val="1">On</button>` +
-    `<button type="button" class="choice${dock ? '' : ' on'}" data-set="dock" data-val="0">Off</button></div></div>` +
-    `<div class="set-row"><div><div class="lab">Logo Fuel</div><div class="hint">En bas de la carte : Pause, Arrêter, Plein</div></div>` +
-    `<div class="seg"><button type="button" class="choice${fuelLogoOn() ? ' on' : ''}" data-set="fuellogo" data-val="1">On</button>` +
-    `<button type="button" class="choice${fuelLogoOn() ? '' : ' on'}" data-set="fuellogo" data-val="0">Off</button></div></div>` +
-    `<div class="set-row"><div><div class="lab">Mise à jour</div><div class="hint">Installer depuis Maps, sans Chrome</div></div>` +
-    `<div class="seg"><button type="button" class="choice" data-set="update">Vérifier</button></div></div>` +
-    `<div class="set-row"><div><div class="lab">Comparer Fuel</div><div class="hint">Pistes UX (onglet Fuel intégré par défaut)</div></div>` +
-    `<div class="seg"><button type="button" class="choice" data-set="fuelux">Ouvrir</button></div></div>` +
-    `<div class="set-row"><div><div class="lab">Cartes hors ligne</div><div class="hint">Télécharger une zone (Maison, ici…)</div></div>` +
-    `<div class="seg"><button type="button" class="choice" data-set="goto-offline">Ouvrir</button></div></div>`;
+    card(
+      'Compte',
+      `Maps ${esc(appVersionLabel())}${id.email ? ` · ${esc(id.email)}` : ''}`,
+      '',
+    ) +
+    card(
+      'Notifications sonores',
+      'Annonces de guidage',
+      btn('voice', '1', 'On', voice) + btn('voice', '0', 'Off', !voice),
+    ) +
+    card(
+      'Carte nuit',
+      'Auto = 21h–6h',
+      ['auto', 'on', 'off']
+        .map((v) =>
+          btn('night', v, v === 'auto' ? 'Auto' : v === 'on' ? 'Nuit' : 'Jour', night === v),
+        )
+        .join(''),
+    ) +
+    card(
+      'Mode de déplacement',
+      'Par défaut pour les itinéraires',
+      TRAVEL_MODES.map(([idm, lab]) => btn('mode', idm, lab, mode === idm)).join(''),
+    ) +
+    card(
+      'Barre Music',
+      'Dock en bas de l’écran',
+      btn('dock', '1', 'On', dock) + btn('dock', '0', 'Off', !dock),
+    ) +
+    card(
+      'Logo Fuel',
+      'En bas de la carte : Pause, Arrêter, Plein',
+      btn('fuellogo', '1', 'On', fuelLogoOn()) + btn('fuellogo', '0', 'Off', !fuelLogoOn()),
+    ) +
+    card(
+      'Mise à jour',
+      'Installer depuis Maps, sans Chrome',
+      btn('update', '', 'Vérifier', false),
+    ) +
+    card(
+      'Comparer Fuel',
+      'Pistes UX (onglet Fuel intégré par défaut)',
+      btn('fuelux', '', 'Ouvrir', false),
+    ) +
+    card(
+      'Cartes hors ligne',
+      'Télécharger une zone (Maison, ici…)',
+      btn('goto-offline', '', 'Ouvrir', false),
+    );
 }
 
 function applySetting(set, val) {
