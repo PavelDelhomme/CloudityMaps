@@ -6378,6 +6378,8 @@ document.addEventListener('pointerdown', (e) => {
   if (offer && !offer.hidden && offer.contains(t)) return;
   const top = document.getElementById('topChrome');
   if (top && top.contains(t)) return;
+  /* Le menu Fuel à droite (jauge, estimation, repli) ne ferme pas l’itinéraire et ne le démarre pas. */
+  if (t.closest('#navSigns')) return;
   dismissRoutePreview();
 }, true);
 
