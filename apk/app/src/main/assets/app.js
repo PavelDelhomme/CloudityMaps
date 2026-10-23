@@ -6264,7 +6264,13 @@ document.getElementById('btnVoiceNav').addEventListener('click', () => {
   toast(on ? 'Notifications sonores activées' : 'Notifications sonores coupées');
   if (on && navigating) speakNav('Guidage vocal activé', 0);
 });
-document.getElementById('btnUser').addEventListener('click', openDrawer);
+document.getElementById('btnUser').addEventListener('click', () => {
+  if (typeof HuberaSuite !== 'undefined' && HuberaSuite.openAccountChooser) {
+    HuberaSuite.openAccountChooser();
+    return;
+  }
+  openDrawer();
+});
 const btnSettingsGear = document.getElementById('btnSettingsGear');
 if (btnSettingsGear) btnSettingsGear.addEventListener('click', () => setTab('settings'));
 document.getElementById('drawerAvatar').addEventListener('click', openDrawer);

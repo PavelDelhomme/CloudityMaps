@@ -484,8 +484,7 @@ class MainActivity : AppCompatActivity() {
         })
         val dialog = AlertDialog.Builder(this).setView(ScrollView(this).apply { addView(box) }).create()
         accounts.forEach { acc ->
-            val title = accountTitle(acc.displayName, acc.email)
-            box.addView(accountRow(title, acc.email, accountInitial(title, acc.email), acc.email, ink, muted) {
+            box.addView(accountRow(acc.email, "Compte Hubera ID", accountInitial(acc.email, acc.email), acc.email, ink, muted) {
                 dialog.dismiss()
                 if (acc.accessToken.isBlank() && acc.refreshToken.isBlank()) {
                     Toast.makeText(this@MainActivity, "Session absente", Toast.LENGTH_LONG).show()
@@ -494,6 +493,12 @@ class MainActivity : AppCompatActivity() {
                 }
             })
         }
+        box.addView(accountRow("Paramètres", null, null, null, ink, muted) {
+            dialog.dismiss()
+            if (this::web.isInitialized) {
+                web.evaluateJavascript("try{setTab('settings')}catch(e){}", null)
+            }
+        })
         box.addView(accountRow("Ajouter un compte", null, null, null, ink, muted) {
             dialog.dismiss()
             promptNewAccount()
@@ -508,14 +513,6 @@ class MainActivity : AppCompatActivity() {
             dialog.window?.setBackgroundDrawable(ColorDrawable(surface))
         }
         dialog.show()
-    }
-
-    private fun accountTitle(displayName: String, email: String): String {
-        val name = displayName.trim()
-        if (name.isNotEmpty() && !name.equals(email, ignoreCase = true)) return name
-        val local = email.substringBefore('@').trim()
-        if (local.isEmpty()) return email
-        return local.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
     }
 
     private fun accountInitial(title: String, email: String): String {
